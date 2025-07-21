@@ -108,7 +108,7 @@ git clone https://github.com/yourusername/oryxid.git
 cd oryxid
 ```
 
-2. Generate RSA keys for JWT signing:
+1. Generate RSA keys for JWT signing:
 
 ```bash
 make generate-keys
@@ -118,14 +118,14 @@ openssl genrsa -out docker/certs/private_key.pem 4096
 openssl rsa -in docker/certs/private_key.pem -pubout -out docker/certs/public_key.pem
 ```
 
-3. Create environment file:
+1. Create environment file:
 
 ```bash
 cp .env.example .env
 # Edit .env with your configuration
 ```
 
-4. Start the services:
+1. Start the services:
 
 ```bash
 docker-compose -f docker/docker-compose.yml up -d
@@ -133,7 +133,7 @@ docker-compose -f docker/docker-compose.yml up -d
 
 ### Manual Installation
 
-#### Backend
+#### Backend Installation
 
 ```bash
 cd backend
@@ -142,7 +142,7 @@ go build -o bin/oryxid cmd/server/main.go
 ./bin/oryxid
 ```
 
-#### Frontend
+#### Frontend Installation
 
 ```bash
 cd frontend
@@ -212,7 +212,7 @@ security:
 
 #### Authorization Endpoint
 
-```
+```text
 GET /oauth/authorize
 ```
 
@@ -228,7 +228,7 @@ Parameters:
 
 #### Token Endpoint
 
-```
+```text
 POST /oauth/token
 ```
 
@@ -249,25 +249,25 @@ curl -X POST https://auth.example.com/oauth/token \
 
 #### Token Introspection
 
-```
+```text
 POST /oauth/introspect
 ```
 
 #### Token Revocation
 
-```
+```text
 POST /oauth/revoke
 ```
 
 #### OpenID Connect Discovery
 
-```
+```text
 GET /.well-known/openid-configuration
 ```
 
 #### JWKS Endpoint
 
-```
+```text
 GET /.well-known/jwks.json
 ```
 
