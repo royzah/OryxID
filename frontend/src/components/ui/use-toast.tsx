@@ -1,16 +1,22 @@
 import * as React from "react";
 
 const TOAST_LIMIT = 1;
-const TOAST_REMOVE_DELAY = 1000000;
+const TOAST_REMOVE_DELAY = 5000;
 
-type ToasterToast = Toast & {
+export type ToastActionElement = React.ReactElement;
+
+export interface ToastProps {
   id: string;
   title?: React.ReactNode;
   description?: React.ReactNode;
   action?: ToastActionElement;
-};
+  variant?: "default" | "destructive";
+  duration?: number;
+  open?: boolean;
+  onOpenChange?: (open: boolean) => void;
+}
 
-type Toast = Omit<ToasterToast, "id">;
+export type ToasterToast = ToastProps;
 
 const actionTypes = {
   ADD_TOAST: "ADD_TOAST",
@@ -52,7 +58,7 @@ interface State {
 
 const toastTimeouts = new Map<string, ReturnType<typeof setTimeout>>();
 
-const addToRemoveQueue = (toastId: string) => {
+const addToRemoveQueue = (toastId: string, duration?: number) => {
   if (toastTimeouts.has(toastId)) {
     return;
   }
@@ -63,7 +69,7 @@ const addToRemoveQueue = (toastId: string) => {
       type: "REMOVE_TOAST",
       toastId: toastId,
     });
-  }, TOAST_REMOVE_DELAY);
+  }, duration || TOAST_REMOVE_DELAY);
 
   toastTimeouts.set(toastId, timeout);
 };
@@ -91,7 +97,7 @@ export const reducer = (state: State, action: Action): State => {
         addToRemoveQueue(toastId);
       } else {
         state.toasts.forEach((toast) => {
-          addToRemoveQueue(toast.id);
+          addToRemoveQueue(toast.id, toast.duration);
         });
       }
 
@@ -132,33 +138,46 @@ function dispatch(action: Action) {
   });
 }
 
-type ToastActionElement = React.ReactElement<any>;
-
-interface ToastOptions extends Toast {
+export interface ToastOptions {
+  title?: React.ReactNode;
+  description?: React.ReactNode;
+  action?: ToastActionElement;
   variant?: "default" | "destructive";
+  duration?: number;
 }
 
-function toast({ ...props }: ToastOptions) {
+function toast(options: ToastOptions) {
   const id = genId();
+  const { title, description, action, variant = "default", duration } = options;
 
-  const update = (props: ToasterToast) =>
+  const update = (props: Partial<ToasterToast>) =>
     dispatch({
       type: "UPDATE_TOAST",
       toast: { ...props, id },
     });
+
   const dismiss = () => dispatch({ type: "DISMISS_TOAST", toastId: id });
 
   dispatch({
     type: "ADD_TOAST",
     toast: {
-      ...props,
       id,
+      title,
+      description,
+      action,
+      variant,
+      duration,
       open: true,
       onOpenChange: (open: boolean) => {
         if (!open) dismiss();
       },
     },
   });
+
+  // Auto dismiss after duration
+  if (duration !== Infinity) {
+    addToRemoveQueue(id, duration);
+  }
 
   return {
     id: id,
