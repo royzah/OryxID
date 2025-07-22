@@ -42,7 +42,7 @@ export default function Applications() {
   const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
   const [selectedApp, setSelectedApp] = useState<Application | null>(null);
   const [showSecrets, setShowSecrets] = useState<{ [key: string]: boolean }>(
-    {}
+    {},
   );
 
   const queryClient = useQueryClient();
@@ -97,7 +97,7 @@ export default function Applications() {
   const filteredApplications = applications?.filter(
     (app: Application) =>
       app.name.toLowerCase().includes(search.toLowerCase()) ||
-      app.client_id.toLowerCase().includes(search.toLowerCase())
+      app.client_id.toLowerCase().includes(search.toLowerCase()),
   );
 
   const toggleSecretVisibility = (id: string) => {

@@ -187,7 +187,7 @@ export default function ApplicationDialog({
     if (current.includes(grantType)) {
       setValue(
         "grant_types",
-        current.filter((gt) => gt !== grantType)
+        current.filter((gt) => gt !== grantType),
       );
     } else {
       setValue("grant_types", [...current, grantType]);
@@ -324,7 +324,7 @@ export default function ApplicationDialog({
                           setValue(
                             "scope_ids",
                             selectedScopes?.filter((id) => id !== scope.id) ||
-                              []
+                              [],
                           );
                         }
                       }}
@@ -366,8 +366,8 @@ export default function ApplicationDialog({
                           setValue(
                             "audience_ids",
                             selectedAudiences?.filter(
-                              (id) => id !== audience.id
-                            ) || []
+                              (id) => id !== audience.id,
+                            ) || [],
                           );
                         }
                       }}

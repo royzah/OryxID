@@ -35,7 +35,7 @@ export default function Audiences() {
   const [dialogOpen, setDialogOpen] = useState(false);
   const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
   const [selectedAudience, setSelectedAudience] = useState<Audience | null>(
-    null
+    null,
   );
 
   const queryClient = useQueryClient();

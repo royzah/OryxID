@@ -60,7 +60,7 @@ export default function Layout() {
         className={cn(
           "fixed inset-y-0 left-0 z-50 flex w-64 flex-col bg-white dark:bg-gray-800 lg:hidden",
           "transform transition-transform duration-300 ease-in-out",
-          sidebarOpen ? "translate-x-0" : "-translate-x-full"
+          sidebarOpen ? "translate-x-0" : "-translate-x-full",
         )}
       >
         <div className="flex h-16 items-center justify-between px-4">
@@ -85,14 +85,14 @@ export default function Layout() {
                   "group flex items-center px-2 py-2 text-sm font-medium rounded-md",
                   isActive
                     ? "bg-primary text-white"
-                    : "text-gray-700 hover:bg-gray-100 dark:text-gray-300 dark:hover:bg-gray-700"
+                    : "text-gray-700 hover:bg-gray-100 dark:text-gray-300 dark:hover:bg-gray-700",
                 )}
                 onClick={() => setSidebarOpen(false)}
               >
                 <item.icon
                   className={cn(
                     "mr-3 h-5 w-5",
-                    isActive ? "text-white" : "text-gray-400"
+                    isActive ? "text-white" : "text-gray-400",
                   )}
                 />
                 {item.name}
@@ -119,13 +119,13 @@ export default function Layout() {
                     "group flex items-center px-2 py-2 text-sm font-medium rounded-md",
                     isActive
                       ? "bg-primary text-white"
-                      : "text-gray-700 hover:bg-gray-100 dark:text-gray-300 dark:hover:bg-gray-700"
+                      : "text-gray-700 hover:bg-gray-100 dark:text-gray-300 dark:hover:bg-gray-700",
                   )}
                 >
                   <item.icon
                     className={cn(
                       "mr-3 h-5 w-5",
-                      isActive ? "text-white" : "text-gray-400"
+                      isActive ? "text-white" : "text-gray-400",
                     )}
                   />
                   {item.name}

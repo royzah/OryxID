@@ -184,7 +184,7 @@ export default function AudienceDialog({
                           setValue(
                             "scope_ids",
                             selectedScopes?.filter((id) => id !== scope.id) ||
-                              []
+                              [],
                           );
                         }
                       }}
