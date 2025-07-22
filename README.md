@@ -76,7 +76,7 @@ OryxID/
 
 ```bash
 # Clone the repository
-git clone https://github.com/yourusername/oryxid.git
+git clone https://github.com/tiiuae/oryxid.git
 cd oryxid
 
 # Initial setup (generates keys, installs dependencies)
@@ -103,7 +103,7 @@ Default admin credentials:
 1. Clone the repository:
 
 ```bash
-git clone https://github.com/yourusername/oryxid.git
+git clone https://github.com/tiiuae/oryxid.git
 cd oryxid
 ```
 
