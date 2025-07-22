@@ -3,7 +3,6 @@
 ![Go Version](https://img.shields.io/badge/Go-1.21+-00ADD8?style=for-the-badge&logo=go)
 ![React Version](https://img.shields.io/badge/React-18+-61DAFB?style=for-the-badge&logo=react)
 ![TypeScript Version](https://img.shields.io/badge/TypeScript-5+-3178C6?style=for-the-badge&logo=typescript)
-![License](https://img.shields.io/badge/License-MIT-green?style=for-the-badge)
 
 A modern, high-performance OAuth2/OpenID Connect server built with Go and React. OryxID provides enterprise-grade authentication and authorization services with a focus on performance, security, and ease of deployment.
 
@@ -118,14 +117,14 @@ openssl genrsa -out docker/certs/private_key.pem 4096
 openssl rsa -in docker/certs/private_key.pem -pubout -out docker/certs/public_key.pem
 ```
 
-1. Create environment file:
+2. Create environment file:
 
 ```bash
 cp .env.example .env
 # Edit .env with your configuration
 ```
 
-1. Start the services:
+3. Start the services:
 
 ```bash
 docker-compose -f docker/docker-compose.yml up -d

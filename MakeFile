@@ -1,0 +1,188 @@
+.PHONY: help
+help: ## Display this help message
+	@echo "OryxID - Modern OAuth2/OIDC Server"
+	@echo ""
+	@echo "Usage: make [target]"
+	@echo ""
+	@echo "Targets:"
+	@awk 'BEGIN {FS = ":.*##"; printf "\033[36m\033[0m"} /^[a-zA-Z_-]+:.*?##/ { printf "  \033[36m%-15s\033[0m %s\n", $$1, $$2 } /^##@/ { printf "\n\033[1m%s\033[0m\n", substr($$0, 5) } ' $(MAKEFILE_LIST)
+
+##@ Development
+
+.PHONY: dev
+dev: ## Start development environment
+	@echo "Starting development environment..."
+	docker-compose -f docker/docker-compose.yml up -d
+	@echo "OryxID is running at http://localhost:3000"
+	@echo "API is available at http://localhost:9000"
+
+.PHONY: dev-logs
+dev-logs: ## Show development logs
+	docker-compose -f docker/docker-compose.yml logs -f
+
+.PHONY: dev-stop
+dev-stop: ## Stop development environment
+	docker-compose -f docker/docker-compose.yml stop
+
+.PHONY: dev-down
+dev-down: ## Stop and remove development containers
+	docker-compose -f docker/docker-compose.yml down
+
+.PHONY: dev-clean
+dev-clean: ## Clean development environment (removes volumes)
+	docker-compose -f docker/docker-compose.yml down -v
+
+##@ Backend
+
+.PHONY: backend-run
+backend-run: ## Run backend locally (requires Go)
+	cd backend && go run cmd/server/main.go
+
+.PHONY: backend-build
+backend-build: ## Build backend binary
+	cd backend && go build -o bin/oryxid cmd/server/main.go
+
+.PHONY: backend-test
+backend-test: ## Run backend tests
+	cd backend && go test -v ./...
+
+.PHONY: backend-lint
+backend-lint: ## Lint backend code
+	cd backend && golangci-lint run
+
+.PHONY: backend-fmt
+backend-fmt: ## Format backend code
+	cd backend && go fmt ./...
+
+.PHONY: backend-mod
+backend-mod: ## Update backend dependencies
+	cd backend && go mod tidy && go mod vendor
+
+##@ Frontend
+
+.PHONY: frontend-install
+frontend-install: ## Install frontend dependencies
+	cd frontend && npm install
+
+.PHONY: frontend-run
+frontend-run: ## Run frontend locally
+	cd frontend && npm run dev
+
+.PHONY: frontend-build
+frontend-build: ## Build frontend for production
+	cd frontend && npm run build
+
+.PHONY: frontend-lint
+frontend-lint: ## Lint frontend code
+	cd frontend && npm run lint
+
+.PHONY: frontend-format
+frontend-format: ## Format frontend code
+	cd frontend && npm run format
+
+##@ Database
+
+.PHONY: db-migrate
+db-migrate: ## Run database migrations
+	docker-compose -f docker/docker-compose.yml exec backend go run cmd/migrate/main.go up
+
+.PHONY: db-rollback
+db-rollback: ## Rollback last migration
+	docker-compose -f docker/docker-compose.yml exec backend go run cmd/migrate/main.go down
+
+.PHONY: db-reset
+db-reset: ## Reset database (WARNING: destroys all data)
+	docker-compose -f docker/docker-compose.yml exec backend go run cmd/migrate/main.go reset
+
+.PHONY: db-seed
+db-seed: ## Seed database with test data
+	docker-compose -f docker/docker-compose.yml exec backend go run cmd/seed/main.go
+
+##@ Docker
+
+.PHONY: docker-build
+docker-build: ## Build all Docker images
+	docker-compose -f docker/docker-compose.yml build
+
+.PHONY: docker-build-backend
+docker-build-backend: ## Build backend Docker image
+	docker build -t oryxid-backend:latest ./backend
+
+.PHONY: docker-build-frontend
+docker-build-frontend: ## Build frontend Docker image
+	docker build -t oryxid-frontend:latest ./frontend
+
+.PHONY: docker-push
+docker-push: ## Push Docker images to registry
+	docker push oryxid-backend:latest
+	docker push oryxid-frontend:latest
+
+##@ Security
+
+.PHONY: generate-keys
+generate-keys: ## Generate RSA key pair for JWT signing
+	@mkdir -p docker/certs
+	@echo "Generating RSA key pair..."
+	@openssl genrsa -out docker/certs/private_key.pem 4096
+	@openssl rsa -in docker/certs/private_key.pem -pubout -out docker/certs/public_key.pem
+	@echo "Keys generated in docker/certs/"
+
+.PHONY: generate-secrets
+generate-secrets: ## Generate secure secrets
+	@echo "Generating secure secrets..."
+	@echo "DB_PASSWORD=$$(openssl rand -base64 32)"
+	@echo "REDIS_PASSWORD=$$(openssl rand -base64 32)"
+	@echo "ADMIN_PASSWORD=$$(openssl rand -base64 16)"
+
+##@ Testing
+
+.PHONY: test
+test: backend-test ## Run all tests
+	@echo "All tests completed"
+
+.PHONY: test-oauth
+test-oauth: ## Test OAuth flows
+	./scripts/test-oauth.sh
+
+.PHONY: load-test
+load-test: ## Run load tests
+	k6 run scripts/load-test.js
+
+##@ Production
+
+.PHONY: prod-build
+prod-build: ## Build for production
+	docker build -t oryxid-backend:prod -f backend/Dockerfile ./backend
+	docker build -t oryxid-frontend:prod -f frontend/Dockerfile --target production ./frontend
+
+.PHONY: deploy
+deploy: ## Deploy to Kubernetes
+	kubectl apply -f k8s/
+
+.PHONY: deploy-rollback
+deploy-rollback: ## Rollback Kubernetes deployment
+	kubectl rollout undo deployment/oryxid-backend -n oryxid
+	kubectl rollout undo deployment/oryxid-frontend -n oryxid
+
+##@ Utilities
+
+.PHONY: logs
+logs: ## Show all logs
+	docker-compose -f docker/docker-compose.yml logs -f
+
+.PHONY: ps
+ps: ## Show running containers
+	docker-compose -f docker/docker-compose.yml ps
+
+.PHONY: clean
+clean: ## Clean all generated files and containers
+	docker-compose -f docker/docker-compose.yml down -v
+	rm -rf backend/bin
+	rm -rf frontend/dist
+	rm -rf frontend/node_modules
+	rm -rf docker/certs/*.pem
+
+.PHONY: setup
+setup: generate-keys frontend-install ## Initial project setup
+	@echo "Project setup complete!"
+	@echo "Run 'make dev' to start the development environment"
