@@ -16,7 +16,7 @@ import (
 
 type Server struct {
 	db           *gorm.DB
-	tokenManager *tokens.TokenManager
+	TokenManager *tokens.TokenManager
 }
 
 type AuthorizeRequest struct {
@@ -48,7 +48,7 @@ type TokenRequest struct {
 func NewServer(db *gorm.DB, tm *tokens.TokenManager) *Server {
 	return &Server{
 		db:           db,
-		tokenManager: tm,
+		TokenManager: tm,
 	}
 }
 
@@ -168,12 +168,12 @@ func (s *Server) ExchangeAuthorizationCode(req *TokenRequest) (*tokens.TokenResp
 	s.db.Save(&authCode)
 
 	// Generate tokens
-	accessToken, err := s.tokenManager.GenerateAccessToken(&app, authCode.User, authCode.Scope, authCode.Audience, nil)
+	accessToken, err := s.TokenManager.GenerateAccessToken(&app, authCode.User, authCode.Scope, authCode.Audience, nil)
 	if err != nil {
 		return nil, err
 	}
 
-	refreshToken, err := s.tokenManager.GenerateRefreshToken(&app, authCode.User, authCode.Scope)
+	refreshToken, err := s.TokenManager.GenerateRefreshToken(&app, authCode.User, authCode.Scope)
 	if err != nil {
 		return nil, err
 	}
@@ -188,7 +188,7 @@ func (s *Server) ExchangeAuthorizationCode(req *TokenRequest) (*tokens.TokenResp
 
 	// Generate ID token if openid scope is present
 	if strings.Contains(authCode.Scope, "openid") && authCode.User != nil {
-		idToken, err := s.tokenManager.GenerateIDToken(&app, authCode.User, authCode.Nonce, authCode.CreatedAt)
+		idToken, err := s.TokenManager.GenerateIDToken(&app, authCode.User, authCode.Nonce, authCode.CreatedAt)
 		if err != nil {
 			return nil, err
 		}
@@ -235,7 +235,7 @@ func (s *Server) ClientCredentialsGrant(req *TokenRequest) (*tokens.TokenRespons
 	}
 
 	// Generate access token
-	accessToken, err := s.tokenManager.GenerateAccessToken(&app, nil, scope, req.Audience, nil)
+	accessToken, err := s.TokenManager.GenerateAccessToken(&app, nil, scope, req.Audience, nil)
 	if err != nil {
 		return nil, err
 	}
@@ -262,7 +262,7 @@ func (s *Server) RefreshTokenGrant(req *TokenRequest) (*tokens.TokenResponse, er
 	}
 
 	// Validate refresh token
-	claims, err := s.tokenManager.ValidateToken(req.RefreshToken)
+	claims, err := s.TokenManager.ValidateToken(req.RefreshToken)
 	if err != nil {
 		return nil, errors.New("invalid refresh token")
 	}
@@ -282,7 +282,7 @@ func (s *Server) RefreshTokenGrant(req *TokenRequest) (*tokens.TokenResponse, er
 	}
 
 	// Generate new access token
-	accessToken, err := s.tokenManager.GenerateAccessToken(&app, user, claims.Scope, claims.Audience[0], nil)
+	accessToken, err := s.TokenManager.GenerateAccessToken(&app, user, claims.Scope, claims.Audience[0], nil)
 	if err != nil {
 		return nil, err
 	}
