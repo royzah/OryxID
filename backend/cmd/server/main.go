@@ -15,6 +15,7 @@ import (
 	"github.com/tiiuae/oryxid/internal/config"
 	"github.com/tiiuae/oryxid/internal/database"
 	"github.com/tiiuae/oryxid/internal/handlers"
+	"github.com/tiiuae/oryxid/internal/middleware"
 	"github.com/tiiuae/oryxid/internal/oauth"
 	"github.com/tiiuae/oryxid/internal/tokens"
 	"github.com/tiiuae/oryxid/pkg/crypto"

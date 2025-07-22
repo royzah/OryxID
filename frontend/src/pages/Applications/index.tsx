@@ -1,10 +1,10 @@
-import { useState } from 'react';
-import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
-import { Plus, Search, MoreVertical, Copy, Eye, EyeOff } from 'lucide-react';
-import { format } from 'date-fns';
-import api from '../../services/api';
-import { Button } from '../../components/ui/button';
-import { Input } from '../../components/ui/input';
+import { useState } from "react";
+import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
+import { Plus, Search, MoreVertical, Copy, Eye, EyeOff } from "lucide-react";
+import { format } from "date-fns";
+import api from "../../services/api";
+import { Button } from "../../components/ui/button";
+import { Input } from "../../components/ui/input";
 import {
   Table,
   TableBody,
@@ -12,17 +12,17 @@ import {
   TableHead,
   TableHeader,
   TableRow,
-} from '../../components/ui/table';
+} from "../../components/ui/table";
 import {
   DropdownMenu,
   DropdownMenuContent,
   DropdownMenuItem,
   DropdownMenuTrigger,
-} from '../../components/ui/dropdown-menu';
-import { Badge } from '../../components/ui/badge';
-import { useToast } from '../../components/ui/use-toast';
-import ApplicationDialog from '../../components/ApplicationDialog';
-import DeleteDialog from '../../components/DeleteDialog';
+} from "../../components/ui/dropdown-menu";
+import { Badge } from "../../components/ui/badge";
+import { useToast } from "../../components/ui/use-toast";
+import ApplicationDialog from "../../components/ApplicationDialog";
+import DeleteDialog from "../../components/DeleteDialog";
 
 interface Application {
   id: string;
@@ -37,19 +37,21 @@ interface Application {
 }
 
 export default function Applications() {
-  const [search, setSearch] = useState('');
+  const [search, setSearch] = useState("");
   const [dialogOpen, setDialogOpen] = useState(false);
   const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
   const [selectedApp, setSelectedApp] = useState<Application | null>(null);
-  const [showSecrets, setShowSecrets] = useState<{ [key: string]: boolean }>({});
-  
+  const [showSecrets, setShowSecrets] = useState<{ [key: string]: boolean }>(
+    {}
+  );
+
   const queryClient = useQueryClient();
   const { toast } = useToast();
 
   const { data: applications, isLoading } = useQuery({
-    queryKey: ['applications'],
+    queryKey: ["applications"],
     queryFn: async () => {
-      const response = await api.get('/api/v1/applications');
+      const response = await api.get("/api/v1/applications");
       return response.data;
     },
   });
@@ -59,19 +61,19 @@ export default function Applications() {
       await api.delete(`/api/v1/applications/${id}`);
     },
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['applications'] });
+      queryClient.invalidateQueries({ queryKey: ["applications"] });
       toast({
-        title: 'Application deleted',
-        description: 'The application has been deleted successfully.',
+        title: "Application deleted",
+        description: "The application has been deleted successfully.",
       });
       setDeleteDialogOpen(false);
       setSelectedApp(null);
     },
     onError: () => {
       toast({
-        title: 'Error',
-        description: 'Failed to delete the application.',
-        variant: 'destructive',
+        title: "Error",
+        description: "Failed to delete the application.",
+        variant: "destructive",
       });
     },
   });
@@ -80,25 +82,26 @@ export default function Applications() {
     try {
       await navigator.clipboard.writeText(text);
       toast({
-        title: 'Copied',
-        description: 'Client ID copied to clipboard.',
+        title: "Copied",
+        description: "Client ID copied to clipboard.",
       });
     } catch (err) {
       toast({
-        title: 'Error',
-        description: 'Failed to copy to clipboard.',
-        variant: 'destructive',
+        title: "Error",
+        description: "Failed to copy to clipboard.",
+        variant: "destructive",
       });
     }
   };
 
-  const filteredApplications = applications?.filter((app: Application) =>
-    app.name.toLowerCase().includes(search.toLowerCase()) ||
-    app.client_id.toLowerCase().includes(search.toLowerCase())
+  const filteredApplications = applications?.filter(
+    (app: Application) =>
+      app.name.toLowerCase().includes(search.toLowerCase()) ||
+      app.client_id.toLowerCase().includes(search.toLowerCase())
   );
 
   const toggleSecretVisibility = (id: string) => {
-    setShowSecrets(prev => ({ ...prev, [id]: !prev[id] }));
+    setShowSecrets((prev) => ({ ...prev, [id]: !prev[id] }));
   };
 
   return (
@@ -115,7 +118,12 @@ export default function Applications() {
             />
           </div>
         </div>
-        <Button onClick={() => { setSelectedApp(null); setDialogOpen(true); }}>
+        <Button
+          onClick={() => {
+            setSelectedApp(null);
+            setDialogOpen(true);
+          }}
+        >
           <Plus className="mr-2 h-4 w-4" />
           New Application
         </Button>
@@ -153,14 +161,18 @@ export default function Applications() {
                     <div>
                       <div className="font-medium">{app.name}</div>
                       {app.description && (
-                        <div className="text-sm text-gray-500">{app.description}</div>
+                        <div className="text-sm text-gray-500">
+                          {app.description}
+                        </div>
                       )}
                     </div>
                   </TableCell>
                   <TableCell>
                     <div className="flex items-center space-x-2">
                       <code className="text-sm bg-gray-100 dark:bg-gray-700 px-2 py-1 rounded">
-                        {showSecrets[app.id] ? app.client_id : '••••••••••••••••'}
+                        {showSecrets[app.id]
+                          ? app.client_id
+                          : "••••••••••••••••"}
                       </code>
                       <Button
                         variant="ghost"
@@ -183,20 +195,32 @@ export default function Applications() {
                     </div>
                   </TableCell>
                   <TableCell>
-                    <Badge variant={app.client_type === 'confidential' ? 'default' : 'secondary'}>
+                    <Badge
+                      variant={
+                        app.client_type === "confidential"
+                          ? "default"
+                          : "secondary"
+                      }
+                    >
                       {app.client_type}
                     </Badge>
                   </TableCell>
                   <TableCell>
                     <div className="flex flex-wrap gap-1">
                       {app.grant_types.map((grant) => (
-                        <Badge key={grant} variant="outline" className="text-xs">
+                        <Badge
+                          key={grant}
+                          variant="outline"
+                          className="text-xs"
+                        >
                           {grant}
                         </Badge>
                       ))}
                     </div>
                   </TableCell>
-                  <TableCell>{format(new Date(app.created_at), 'MMM d, yyyy')}</TableCell>
+                  <TableCell>
+                    {format(new Date(app.created_at), "MMM d, yyyy")}
+                  </TableCell>
                   <TableCell>
                     <DropdownMenu>
                       <DropdownMenuTrigger asChild>
@@ -237,7 +261,7 @@ export default function Applications() {
         onOpenChange={setDialogOpen}
         application={selectedApp}
         onSuccess={() => {
-          queryClient.invalidateQueries({ queryKey: ['applications'] });
+          queryClient.invalidateQueries({ queryKey: ["applications"] });
           setDialogOpen(false);
           setSelectedApp(null);
         }}
