@@ -36,7 +36,7 @@ export default [
       // Turn off rules that are no longer necessary with modern React/Vite
       "react/react-in-jsx-scope": "off",
       "react/jsx-uses-react": "off",
-
+      "react/prop-types": "off",
       // Rule for Vite's Fast Refresh
       "react-refresh/only-export-components": "warn",
     },

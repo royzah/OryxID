@@ -28,11 +28,12 @@ import {
   SelectValue,
 } from "./ui/select";
 import { Checkbox } from "./ui/checkbox";
+import type { Application } from "../types";
 
 interface ApplicationDialogProps {
   open: boolean;
   onOpenChange: (open: boolean) => void;
-  application?: any;
+  application?: Application;
   onSuccess: () => void;
 }
 
@@ -115,9 +116,9 @@ export default function ApplicationDialog({
         grant_types: application.grant_types,
         redirect_uris: application.redirect_uris?.join("\n") || "",
         post_logout_uris: application.post_logout_uris?.join("\n") || "",
-        scope_ids: application.scopes?.map((s: any) => s.id) || [],
-        audience_ids: application.audiences?.map((a: any) => a.id) || [],
-        skip_authorization: application.skip_authorization,
+        scope_ids: application.scopes?.map((s) => s.id) || [],
+        audience_ids: application.audiences?.map((a) => a.id) || [],
+        skip_authorization: application.skip_authorization || false,
       });
     } else {
       reset();
@@ -142,7 +143,10 @@ export default function ApplicationDialog({
       }
     },
     onSuccess: (response) => {
-      if (!isEdit && response.data.client_secret) {
+      const responseData = response.data;
+
+      // Type guard: The 'create' response has a client_secret, 'update' does not.
+      if (!isEdit && responseData && "client_secret" in responseData) {
         // Show client secret for new applications
         toast({
           title: "Application created",
@@ -154,7 +158,7 @@ export default function ApplicationDialog({
                   Client Secret (save this now!):
                 </p>
                 <code className="text-xs break-all">
-                  {response.data.client_secret}
+                  {String(responseData.client_secret)}
                 </code>
               </div>
             </div>
@@ -309,7 +313,7 @@ export default function ApplicationDialog({
             <div className="grid gap-2">
               <Label>Scopes</Label>
               <div className="space-y-2 max-h-32 overflow-y-auto border rounded p-2">
-                {scopes?.map((scope: any) => (
+                {scopes?.map((scope) => (
                   <div key={scope.id} className="flex items-center space-x-2">
                     <Checkbox
                       id={`scope-${scope.id}`}
@@ -348,7 +352,7 @@ export default function ApplicationDialog({
             <div className="grid gap-2">
               <Label>Audiences</Label>
               <div className="space-y-2 max-h-32 overflow-y-auto border rounded p-2">
-                {audiences?.map((audience: any) => (
+                {audiences?.map((audience) => (
                   <div
                     key={audience.id}
                     className="flex items-center space-x-2"

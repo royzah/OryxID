@@ -17,11 +17,12 @@ import { Input } from "./ui/input";
 import { Label } from "./ui/label";
 import { Textarea } from "./ui/textarea";
 import { Checkbox } from "./ui/checkbox";
+import type { Audience } from "../types";
 
 interface AudienceDialogProps {
   open: boolean;
   onOpenChange: (open: boolean) => void;
-  audience?: any;
+  audience?: Audience;
   onSuccess: () => void;
 }
 
@@ -73,7 +74,7 @@ export default function AudienceDialog({
         identifier: audience.identifier,
         name: audience.name || "",
         description: audience.description || "",
-        scope_ids: audience.scopes?.map((s: any) => s.id) || [],
+        scope_ids: audience.scopes?.map((s) => s.id) || [],
       });
     } else {
       reset();
@@ -169,12 +170,12 @@ export default function AudienceDialog({
             <div className="grid gap-2">
               <Label>Available Scopes</Label>
               <div className="space-y-2 max-h-48 overflow-y-auto border rounded p-2">
-                {scopes?.map((scope: any) => (
+                {scopes?.map((scope) => (
                   <div key={scope.id} className="flex items-center space-x-2">
                     <Checkbox
                       id={`scope-${scope.id}`}
                       checked={selectedScopes?.includes(scope.id)}
-                      onCheckedChange={(checked: boolean) => {
+                      onCheckedChange={(checked) => {
                         if (checked) {
                           setValue("scope_ids", [
                             ...(selectedScopes || []),

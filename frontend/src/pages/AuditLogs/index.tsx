@@ -14,19 +14,6 @@ import {
 import { Badge } from "../../components/ui/badge";
 import { Button } from "../../components/ui/button";
 
-interface AuditLog {
-  id: string;
-  user?: { id: string; username: string };
-  application?: { id: string; name: string };
-  action: string;
-  resource: string;
-  resource_id: string;
-  ip_address: string;
-  user_agent: string;
-  metadata?: Record<string, any>;
-  created_at: string;
-}
-
 const actionColors: Record<string, string> = {
   "user.login": "bg-green-100 text-green-800",
   "user.logout": "bg-gray-100 text-gray-800",
@@ -104,7 +91,7 @@ export default function AuditLogs() {
                 </TableCell>
               </TableRow>
             ) : (
-              logs.map((log: AuditLog) => (
+              logs.map((log) => (
                 <TableRow key={log.id}>
                   <TableCell>
                     <div className="flex items-center space-x-1 text-sm">

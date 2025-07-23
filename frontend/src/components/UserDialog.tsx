@@ -16,11 +16,14 @@ import { Button } from "./ui/button";
 import { Input } from "./ui/input";
 import { Label } from "./ui/label";
 import { Checkbox } from "./ui/checkbox";
+import type { User } from "../types";
+import type { AxiosError } from "axios";
+import type { ApiError } from "../types";
 
 interface UserDialogProps {
   open: boolean;
   onOpenChange: (open: boolean) => void;
-  user?: any;
+  user?: User;
   onSuccess: () => void;
 }
 
@@ -75,7 +78,8 @@ export default function UserDialog({
     mutationFn: async (data: UserForm) => {
       // Remove password if empty on edit
       if (isEdit && !data.password) {
-        const { password, ...updateData } = data;
+        // eslint-disable-next-line @typescript-eslint/no-unused-vars
+        const { password: _, ...updateData } = data;
         return await userService.update(user.id, updateData);
       }
 
@@ -92,7 +96,7 @@ export default function UserDialog({
       });
       onSuccess();
     },
-    onError: (error: any) => {
+    onError: (error: AxiosError<ApiError>) => {
       toast({
         title: "Error",
         description:
@@ -198,8 +202,8 @@ export default function UserDialog({
                 <Checkbox
                   id="is_active"
                   checked={watch("is_active")}
-                  onCheckedChange={(checked: boolean) =>
-                    setValue("is_active", checked)
+                  onCheckedChange={(checked) =>
+                    setValue("is_active", checked as boolean)
                   }
                 />
                 <Label
@@ -214,8 +218,8 @@ export default function UserDialog({
                 <Checkbox
                   id="is_admin"
                   checked={watch("is_admin")}
-                  onCheckedChange={(checked: boolean) =>
-                    setValue("is_admin", checked)
+                  onCheckedChange={(checked) =>
+                    setValue("is_admin", checked as boolean)
                   }
                 />
                 <Label

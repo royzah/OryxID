@@ -23,18 +23,7 @@ import { Badge } from "../../components/ui/badge";
 import { useToast } from "../../components/ui/use-toast";
 import ApplicationDialog from "../../components/ApplicationDialog";
 import DeleteDialog from "../../components/DeleteDialog";
-
-interface Application {
-  id: string;
-  name: string;
-  description: string;
-  client_id: string;
-  client_type: string;
-  grant_types: string[];
-  scopes: Array<{ id: string; name: string }>;
-  created_at: string;
-  updated_at: string;
-}
+import type { Application } from "../../types";
 
 export default function Applications() {
   const [search, setSearch] = useState("");
@@ -52,7 +41,7 @@ export default function Applications() {
     queryKey: ["applications"],
     queryFn: async () => {
       const response = await api.get("/api/v1/applications");
-      return response.data;
+      return response.data as Application[];
     },
   });
 
@@ -85,7 +74,7 @@ export default function Applications() {
         title: "Copied",
         description: "Client ID copied to clipboard.",
       });
-    } catch (err) {
+    } catch {
       toast({
         title: "Error",
         description: "Failed to copy to clipboard.",
@@ -95,7 +84,7 @@ export default function Applications() {
   };
 
   const filteredApplications = applications?.filter(
-    (app: Application) =>
+    (app) =>
       app.name.toLowerCase().includes(search.toLowerCase()) ||
       app.client_id.toLowerCase().includes(search.toLowerCase()),
   );
@@ -155,7 +144,7 @@ export default function Applications() {
                 </TableCell>
               </TableRow>
             ) : (
-              filteredApplications?.map((app: Application) => (
+              filteredApplications?.map((app) => (
                 <TableRow key={app.id}>
                   <TableCell>
                     <div>
@@ -259,7 +248,7 @@ export default function Applications() {
       <ApplicationDialog
         open={dialogOpen}
         onOpenChange={setDialogOpen}
-        application={selectedApp}
+        application={selectedApp || undefined}
         onSuccess={() => {
           queryClient.invalidateQueries({ queryKey: ["applications"] });
           setDialogOpen(false);

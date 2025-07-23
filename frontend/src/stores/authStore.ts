@@ -1,14 +1,7 @@
 import { create } from "zustand";
 import { persist } from "zustand/middleware";
 import api from "../services/api";
-
-interface User {
-  id: string;
-  username: string;
-  email: string;
-  roles: string[];
-  is_admin: boolean;
-}
+import type { User } from "../types";
 
 interface AuthState {
   user: User | null;
@@ -60,8 +53,8 @@ const useAuthStore = create<AuthState>()(
       logout: async () => {
         try {
           await api.post("/auth/logout");
-        } catch (error) {
-          console.error("Logout error:", error);
+        } catch {
+          // Ignore logout errors
         } finally {
           set({
             user: null,
@@ -88,7 +81,7 @@ const useAuthStore = create<AuthState>()(
             isAuthenticated: true,
             isLoading: false,
           });
-        } catch (error) {
+        } catch {
           set({
             user: null,
             token: null,

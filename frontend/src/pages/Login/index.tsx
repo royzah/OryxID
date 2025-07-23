@@ -6,6 +6,8 @@ import useAuthStore from "../../stores/authStore";
 import { Button } from "../../components/ui/button";
 import { Input } from "../../components/ui/input";
 import { useToast } from "../../components/ui/use-toast";
+import type { AxiosError } from "axios";
+import type { ApiError } from "../../types";
 
 interface LoginForm {
   username: string;
@@ -29,10 +31,11 @@ export default function Login() {
     try {
       await login(data.username, data.password);
       navigate("/dashboard");
-    } catch (error: any) {
+    } catch (error) {
+      const axiosError = error as AxiosError<ApiError>;
       toast({
         title: "Login failed",
-        description: error.response?.data?.error || "Invalid credentials",
+        description: axiosError.response?.data?.error || "Invalid credentials",
         variant: "destructive",
       });
     } finally {

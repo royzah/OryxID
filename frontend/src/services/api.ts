@@ -1,5 +1,13 @@
 import axios, { AxiosInstance, AxiosError } from "axios";
 import { toast } from "../components/ui/use-toast";
+import type {
+  ApiError,
+  Application,
+  Scope,
+  Audience,
+  User,
+  AuditLogResponse,
+} from "../types";
 
 const API_URL = import.meta.env.VITE_API_URL || "http://localhost:9000";
 
@@ -27,7 +35,7 @@ api.interceptors.request.use(
 // Response interceptor for error handling
 api.interceptors.response.use(
   (response) => response,
-  (error: AxiosError) => {
+  (error: AxiosError<ApiError>) => {
     if (error.response) {
       switch (error.response.status) {
         case 401:
@@ -58,10 +66,7 @@ api.interceptors.response.use(
           });
           break;
         default:
-          const errorData = error.response.data as {
-            error?: string;
-            message?: string;
-          };
+          const errorData = error.response.data;
           toast({
             title: "Error",
             description:
@@ -83,62 +88,70 @@ api.interceptors.response.use(
 
 export default api;
 
-// API service functions
+// API service functions with proper typing
 export const authService = {
   login: (username: string, password: string) =>
     api.post("/auth/login", { username, password }),
 
   logout: () => api.post("/auth/logout"),
 
-  me: () => api.get("/auth/me"),
+  me: () => api.get<User>("/auth/me"),
 };
 
 export const applicationService = {
   list: (params?: { search?: string }) =>
-    api.get("/api/v1/applications", { params }),
+    api.get<Application[]>("/api/v1/applications", { params }),
 
-  create: (data: any) => api.post("/api/v1/applications", data),
+  create: <T>(data: T) =>
+    api.post<Application & { client_secret?: string }>(
+      "/api/v1/applications",
+      data,
+    ),
 
-  get: (id: string) => api.get(`/api/v1/applications/${id}`),
+  get: (id: string) => api.get<Application>(`/api/v1/applications/${id}`),
 
-  update: (id: string, data: any) =>
-    api.put(`/api/v1/applications/${id}`, data),
+  update: <T>(id: string, data: T) =>
+    api.put<Application>(`/api/v1/applications/${id}`, data),
 
   delete: (id: string) => api.delete(`/api/v1/applications/${id}`),
 };
 
 export const scopeService = {
-  list: () => api.get("/api/v1/scopes"),
+  list: () => api.get<Scope[]>("/api/v1/scopes"),
 
-  create: (data: any) => api.post("/api/v1/scopes", data),
+  create: <T>(data: T) => api.post<Scope>("/api/v1/scopes", data),
 
-  get: (id: string) => api.get(`/api/v1/scopes/${id}`),
+  get: (id: string) => api.get<Scope>(`/api/v1/scopes/${id}`),
 
-  update: (id: string, data: any) => api.put(`/api/v1/scopes/${id}`, data),
+  update: <T>(id: string, data: T) =>
+    api.put<Scope>(`/api/v1/scopes/${id}`, data),
 
   delete: (id: string) => api.delete(`/api/v1/scopes/${id}`),
 };
 
 export const audienceService = {
-  list: () => api.get("/api/v1/audiences"),
+  list: () => api.get<Audience[]>("/api/v1/audiences"),
 
-  create: (data: any) => api.post("/api/v1/audiences", data),
+  create: <T>(data: T) => api.post<Audience>("/api/v1/audiences", data),
 
-  get: (id: string) => api.get(`/api/v1/audiences/${id}`),
+  get: (id: string) => api.get<Audience>(`/api/v1/audiences/${id}`),
 
-  update: (id: string, data: any) => api.put(`/api/v1/audiences/${id}`, data),
+  update: <T>(id: string, data: T) =>
+    api.put<Audience>(`/api/v1/audiences/${id}`, data),
 
   delete: (id: string) => api.delete(`/api/v1/audiences/${id}`),
 };
 
 export const userService = {
-  list: (params?: { search?: string }) => api.get("/api/v1/users", { params }),
+  list: (params?: { search?: string }) =>
+    api.get<User[]>("/api/v1/users", { params }),
 
-  create: (data: any) => api.post("/api/v1/users", data),
+  create: <T>(data: T) => api.post<User>("/api/v1/users", data),
 
-  get: (id: string) => api.get(`/api/v1/users/${id}`),
+  get: (id: string) => api.get<User>(`/api/v1/users/${id}`),
 
-  update: (id: string, data: any) => api.put(`/api/v1/users/${id}`, data),
+  update: <T>(id: string, data: T) =>
+    api.put<User>(`/api/v1/users/${id}`, data),
 
   delete: (id: string) => api.delete(`/api/v1/users/${id}`),
 };
@@ -150,7 +163,7 @@ export const auditService = {
     action?: string;
     page?: number;
     limit?: number;
-  }) => api.get("/api/v1/audit-logs", { params }),
+  }) => api.get<AuditLogResponse>("/api/v1/audit-logs", { params }),
 };
 
 export const statsService = {

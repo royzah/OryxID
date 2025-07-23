@@ -17,11 +17,12 @@ import { Input } from "./ui/input";
 import { Label } from "./ui/label";
 import { Textarea } from "./ui/textarea";
 import { Checkbox } from "./ui/checkbox";
+import type { Scope } from "../types";
 
 interface ScopeDialogProps {
   open: boolean;
   onOpenChange: (open: boolean) => void;
-  scope?: any;
+  scope?: Scope;
   onSuccess: () => void;
 }
 
@@ -152,8 +153,8 @@ export default function ScopeDialog({
               <Checkbox
                 id="is_default"
                 checked={watch("is_default")}
-                onCheckedChange={(checked: boolean) =>
-                  setValue("is_default", checked)
+                onCheckedChange={(checked) =>
+                  setValue("is_default", checked as boolean)
                 }
               />
               <Label

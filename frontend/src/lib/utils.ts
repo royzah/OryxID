@@ -30,7 +30,7 @@ export function truncate(str: string, length: number): string {
   return str.slice(0, length) + "...";
 }
 
-export function debounce<T extends (...args: any[]) => any>(
+export function debounce<T extends (...args: Parameters<T>) => ReturnType<T>>(
   func: T,
   wait: number,
 ): (...args: Parameters<T>) => void {
@@ -52,7 +52,12 @@ export function generateRandomString(length: number): string {
   return result;
 }
 
-export function parseJWT(token: string): any {
+interface JWTPayload {
+  exp?: number;
+  [key: string]: unknown;
+}
+
+export function parseJWT(token: string): JWTPayload | null {
   try {
     const base64Url = token.split(".")[1];
     const base64 = base64Url.replace(/-/g, "+").replace(/_/g, "/");
@@ -63,7 +68,7 @@ export function parseJWT(token: string): any {
         .join(""),
     );
     return JSON.parse(jsonPayload);
-  } catch (e) {
+  } catch {
     return null;
   }
 }
