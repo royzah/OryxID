@@ -5,6 +5,7 @@ import (
 	"strconv"
 
 	"github.com/gin-gonic/gin"
+	"github.com/google/uuid"
 	"github.com/tiiuae/oryxid/internal/database"
 	"github.com/tiiuae/oryxid/internal/tokens"
 	"github.com/tiiuae/oryxid/pkg/crypto"
@@ -75,17 +76,32 @@ func (h *AdminHandler) CreateApplication(c *gin.Context) {
 		return
 	}
 
+	// Hash client secret for storage
+	hashedSecret, err := bcrypt.GenerateFromPassword([]byte(clientSecret), bcrypt.DefaultCost)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to hash client secret"})
+		return
+	}
+
 	app := database.Application{
-		Name:              req.Name,
-		Description:       req.Description,
-		ClientID:          clientID,
-		ClientSecret:      clientSecret,
-		ClientType:        req.ClientType,
-		GrantTypes:        req.GrantTypes,
-		ResponseTypes:     req.ResponseTypes,
-		RedirectURIs:      req.RedirectURIs,
-		PostLogoutURIs:    req.PostLogoutURIs,
-		SkipAuthorization: req.SkipAuthorization,
+		Name:               req.Name,
+		Description:        req.Description,
+		ClientID:           clientID,
+		ClientSecret:       clientSecret, // Store plain text temporarily for legacy compatibility
+		HashedClientSecret: string(hashedSecret),
+		ClientType:         req.ClientType,
+		GrantTypes:         req.GrantTypes,
+		ResponseTypes:      req.ResponseTypes,
+		RedirectURIs:       req.RedirectURIs,
+		PostLogoutURIs:     req.PostLogoutURIs,
+		SkipAuthorization:  req.SkipAuthorization,
+	}
+
+	// Get current user ID
+	if userID := c.GetString("user_id"); userID != "" {
+		if uid, err := uuid.Parse(userID); err == nil {
+			app.OwnerID = &uid
+		}
 	}
 
 	// Start transaction
@@ -100,20 +116,34 @@ func (h *AdminHandler) CreateApplication(c *gin.Context) {
 	// Assign scopes
 	if len(req.ScopeIDs) > 0 {
 		var scopes []database.Scope
-		if err := tx.Where("id IN ?", req.ScopeIDs).Find(&scopes).Error; err == nil {
-			tx.Model(&app).Association("Scopes").Replace(scopes)
+		if err := tx.Where("id IN ?", req.ScopeIDs).Find(&scopes).Error; err == nil && len(scopes) > 0 {
+			if err := tx.Model(&app).Association("Scopes").Replace(scopes); err != nil {
+				tx.Rollback()
+				c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to assign scopes"})
+				return
+			}
 		}
 	}
 
 	// Assign audiences
 	if len(req.AudienceIDs) > 0 {
 		var audiences []database.Audience
-		if err := tx.Where("id IN ?", req.AudienceIDs).Find(&audiences).Error; err == nil {
-			tx.Model(&app).Association("Audiences").Replace(audiences)
+		if err := tx.Where("id IN ?", req.AudienceIDs).Find(&audiences).Error; err == nil && len(audiences) > 0 {
+			if err := tx.Model(&app).Association("Audiences").Replace(audiences); err != nil {
+				tx.Rollback()
+				c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to assign audiences"})
+				return
+			}
 		}
 	}
 
-	tx.Commit()
+	if err := tx.Commit().Error; err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to commit transaction"})
+		return
+	}
+
+	// Log audit event
+	h.logAudit(c, "application.create", "application", app.ID.String(), http.StatusCreated)
 
 	// Reload with associations
 	h.db.Preload("Scopes").Preload("Audiences").First(&app, app.ID)
@@ -209,7 +239,11 @@ func (h *AdminHandler) UpdateApplication(c *gin.Context) {
 		if len(req.ScopeIDs) > 0 {
 			tx.Where("id IN ?", req.ScopeIDs).Find(&scopes)
 		}
-		tx.Model(&app).Association("Scopes").Replace(scopes)
+		if err := tx.Model(&app).Association("Scopes").Replace(scopes); err != nil {
+			tx.Rollback()
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to update scopes"})
+			return
+		}
 	}
 
 	// Update audiences
@@ -218,10 +252,20 @@ func (h *AdminHandler) UpdateApplication(c *gin.Context) {
 		if len(req.AudienceIDs) > 0 {
 			tx.Where("id IN ?", req.AudienceIDs).Find(&audiences)
 		}
-		tx.Model(&app).Association("Audiences").Replace(audiences)
+		if err := tx.Model(&app).Association("Audiences").Replace(audiences); err != nil {
+			tx.Rollback()
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to update audiences"})
+			return
+		}
 	}
 
-	tx.Commit()
+	if err := tx.Commit().Error; err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to commit transaction"})
+		return
+	}
+
+	// Log audit event
+	h.logAudit(c, "application.update", "application", app.ID.String(), http.StatusOK)
 
 	// Reload with associations
 	h.db.Preload("Scopes").Preload("Audiences").First(&app, app.ID)
@@ -242,6 +286,9 @@ func (h *AdminHandler) DeleteApplication(c *gin.Context) {
 		c.JSON(http.StatusNotFound, gin.H{"error": "Application not found"})
 		return
 	}
+
+	// Log audit event
+	h.logAudit(c, "application.delete", "application", id, http.StatusNoContent)
 
 	c.JSON(http.StatusNoContent, nil)
 }
@@ -279,6 +326,9 @@ func (h *AdminHandler) CreateScope(c *gin.Context) {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to create scope"})
 		return
 	}
+
+	// Log audit event
+	h.logAudit(c, "scope.create", "scope", scope.ID.String(), http.StatusCreated)
 
 	c.JSON(http.StatusCreated, scope)
 }
@@ -336,6 +386,9 @@ func (h *AdminHandler) UpdateScope(c *gin.Context) {
 		return
 	}
 
+	// Log audit event
+	h.logAudit(c, "scope.update", "scope", scope.ID.String(), http.StatusOK)
+
 	c.JSON(http.StatusOK, scope)
 }
 
@@ -352,6 +405,9 @@ func (h *AdminHandler) DeleteScope(c *gin.Context) {
 		c.JSON(http.StatusNotFound, gin.H{"error": "Scope not found"})
 		return
 	}
+
+	// Log audit event
+	h.logAudit(c, "scope.delete", "scope", id, http.StatusNoContent)
 
 	c.JSON(http.StatusNoContent, nil)
 }
@@ -397,12 +453,22 @@ func (h *AdminHandler) CreateAudience(c *gin.Context) {
 	// Assign scopes
 	if len(req.ScopeIDs) > 0 {
 		var scopes []database.Scope
-		if err := tx.Where("id IN ?", req.ScopeIDs).Find(&scopes).Error; err == nil {
-			tx.Model(&audience).Association("Scopes").Replace(scopes)
+		if err := tx.Where("id IN ?", req.ScopeIDs).Find(&scopes).Error; err == nil && len(scopes) > 0 {
+			if err := tx.Model(&audience).Association("Scopes").Replace(scopes); err != nil {
+				tx.Rollback()
+				c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to assign scopes"})
+				return
+			}
 		}
 	}
 
-	tx.Commit()
+	if err := tx.Commit().Error; err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to commit transaction"})
+		return
+	}
+
+	// Log audit event
+	h.logAudit(c, "audience.create", "audience", audience.ID.String(), http.StatusCreated)
 
 	// Reload with associations
 	h.db.Preload("Scopes").First(&audience, audience.ID)
@@ -473,10 +539,20 @@ func (h *AdminHandler) UpdateAudience(c *gin.Context) {
 		if len(req.ScopeIDs) > 0 {
 			tx.Where("id IN ?", req.ScopeIDs).Find(&scopes)
 		}
-		tx.Model(&audience).Association("Scopes").Replace(scopes)
+		if err := tx.Model(&audience).Association("Scopes").Replace(scopes); err != nil {
+			tx.Rollback()
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to update scopes"})
+			return
+		}
 	}
 
-	tx.Commit()
+	if err := tx.Commit().Error; err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to commit transaction"})
+		return
+	}
+
+	// Log audit event
+	h.logAudit(c, "audience.update", "audience", audience.ID.String(), http.StatusOK)
 
 	// Reload with associations
 	h.db.Preload("Scopes").First(&audience, audience.ID)
@@ -497,6 +573,9 @@ func (h *AdminHandler) DeleteAudience(c *gin.Context) {
 		c.JSON(http.StatusNotFound, gin.H{"error": "Audience not found"})
 		return
 	}
+
+	// Log audit event
+	h.logAudit(c, "audience.delete", "audience", id, http.StatusNoContent)
 
 	c.JSON(http.StatusNoContent, nil)
 }
@@ -561,12 +640,22 @@ func (h *AdminHandler) CreateUser(c *gin.Context) {
 	// Assign roles
 	if len(req.RoleIDs) > 0 {
 		var roles []database.Role
-		if err := tx.Where("id IN ?", req.RoleIDs).Find(&roles).Error; err == nil {
-			tx.Model(&user).Association("Roles").Replace(roles)
+		if err := tx.Where("id IN ?", req.RoleIDs).Find(&roles).Error; err == nil && len(roles) > 0 {
+			if err := tx.Model(&user).Association("Roles").Replace(roles); err != nil {
+				tx.Rollback()
+				c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to assign roles"})
+				return
+			}
 		}
 	}
 
-	tx.Commit()
+	if err := tx.Commit().Error; err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to commit transaction"})
+		return
+	}
+
+	// Log audit event
+	h.logAudit(c, "user.create", "user", user.ID.String(), http.StatusCreated)
 
 	// Reload with associations
 	h.db.Preload("Roles").First(&user, user.ID)
@@ -653,10 +742,20 @@ func (h *AdminHandler) UpdateUser(c *gin.Context) {
 		if len(req.RoleIDs) > 0 {
 			tx.Where("id IN ?", req.RoleIDs).Find(&roles)
 		}
-		tx.Model(&user).Association("Roles").Replace(roles)
+		if err := tx.Model(&user).Association("Roles").Replace(roles); err != nil {
+			tx.Rollback()
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to update roles"})
+			return
+		}
 	}
 
-	tx.Commit()
+	if err := tx.Commit().Error; err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to commit transaction"})
+		return
+	}
+
+	// Log audit event
+	h.logAudit(c, "user.update", "user", user.ID.String(), http.StatusOK)
 
 	// Reload with associations
 	h.db.Preload("Roles").First(&user, user.ID)
@@ -684,6 +783,9 @@ func (h *AdminHandler) DeleteUser(c *gin.Context) {
 		c.JSON(http.StatusNotFound, gin.H{"error": "User not found"})
 		return
 	}
+
+	// Log audit event
+	h.logAudit(c, "user.delete", "user", id, http.StatusNoContent)
 
 	c.JSON(http.StatusNoContent, nil)
 }
@@ -754,4 +856,37 @@ func (h *AdminHandler) GetStatistics(c *gin.Context) {
 	h.db.Model(&database.Token{}).Where("expires_at > NOW() AND revoked = false").Count(&stats.ActiveTokens)
 
 	c.JSON(http.StatusOK, stats)
+}
+
+// Helper function to log audit events
+func (h *AdminHandler) logAudit(c *gin.Context, action, resource, resourceID string, statusCode int) {
+	audit := database.AuditLog{
+		Action:     action,
+		Resource:   resource,
+		ResourceID: resourceID,
+		IPAddress:  c.ClientIP(),
+		UserAgent:  c.GetHeader("User-Agent"),
+		StatusCode: statusCode,
+		Metadata: database.JSONB{
+			"method": c.Request.Method,
+			"path":   c.Request.URL.Path,
+		},
+	}
+
+	// Get user ID from context
+	if userID := c.GetString("user_id"); userID != "" {
+		if uid, err := uuid.Parse(userID); err == nil {
+			audit.UserID = &uid
+		}
+	}
+
+	// Get application ID from context
+	if appID := c.GetString("client_id"); appID != "" {
+		var app database.Application
+		if err := h.db.Where("client_id = ?", appID).First(&app).Error; err == nil {
+			audit.ApplicationID = &app.ID
+		}
+	}
+
+	h.db.Create(&audit)
 }

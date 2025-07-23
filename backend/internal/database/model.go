@@ -4,9 +4,11 @@ import (
 	"database/sql/driver"
 	"encoding/json"
 	"errors"
+	"strings"
 	"time"
 
 	"github.com/google/uuid"
+	"github.com/lib/pq"
 	"gorm.io/gorm"
 )
 
@@ -53,6 +55,7 @@ type Application struct {
 	Description          string      `json:"description"`
 	ClientID             string      `gorm:"uniqueIndex;not null" json:"client_id"`
 	ClientSecret         string      `gorm:"not null" json:"-"`
+	HashedClientSecret   string      `gorm:"not null" json:"-"`                                  // New field for bcrypt hashed secret
 	ClientType           string      `gorm:"not null;default:'confidential'" json:"client_type"` // confidential, public
 	GrantTypes           StringArray `gorm:"type:text[]" json:"grant_types"`
 	ResponseTypes        StringArray `gorm:"type:text[]" json:"response_types"`
@@ -119,6 +122,7 @@ type Token struct {
 	Audience      string      `json:"audience"`
 	ExpiresAt     time.Time   `json:"expires_at"`
 	Revoked       bool        `gorm:"default:false" json:"revoked"`
+	RevokedAt     *time.Time  `json:"revoked_at,omitempty"`
 }
 
 // Session represents user sessions
@@ -130,6 +134,7 @@ type Session struct {
 	IPAddress string    `json:"ip_address"`
 	UserAgent string    `json:"user_agent"`
 	ExpiresAt time.Time `json:"expires_at"`
+	LastUsed  time.Time `json:"last_used"`
 }
 
 // AuditLog represents audit trail
@@ -144,28 +149,61 @@ type AuditLog struct {
 	ResourceID    string       `json:"resource_id"`
 	IPAddress     string       `json:"ip_address"`
 	UserAgent     string       `json:"user_agent"`
+	StatusCode    int          `json:"status_code"`
 	Metadata      JSONB        `gorm:"type:jsonb" json:"metadata,omitempty"`
 }
 
 // StringArray is a custom type for PostgreSQL text[] support
 type StringArray []string
 
+// Value converts StringArray to database value
 func (s StringArray) Value() (driver.Value, error) {
-	if len(s) == 0 {
-		return "{}", nil
+	if s == nil {
+		return nil, nil
 	}
-	return s, nil
+	return pq.Array(s).Value()
 }
 
+// Scan converts database value to StringArray
 func (s *StringArray) Scan(value interface{}) error {
 	if value == nil {
-		*s = []string{}
+		*s = nil
 		return nil
 	}
-	// Handle the PostgreSQL array format
-	// TODO: This is a simplified version - a full implementation would need more parsing
-	*s = value.([]string)
+	return pq.Array(s).Scan(value)
+}
+
+// MarshalJSON custom JSON marshaling
+func (s StringArray) MarshalJSON() ([]byte, error) {
+	if s == nil {
+		return []byte("[]"), nil
+	}
+	return json.Marshal([]string(s))
+}
+
+// UnmarshalJSON custom JSON unmarshaling
+func (s *StringArray) UnmarshalJSON(data []byte) error {
+	var arr []string
+	if err := json.Unmarshal(data, &arr); err != nil {
+		return err
+	}
+	*s = StringArray(arr)
 	return nil
+}
+
+// Contains checks if the array contains a value
+func (s StringArray) Contains(value string) bool {
+	for _, v := range s {
+		if v == value {
+			return true
+		}
+	}
+	return false
+}
+
+// Join returns a string representation
+func (s StringArray) Join(separator string) string {
+	return strings.Join(s, separator)
 }
 
 // JSONB is a custom type for PostgreSQL JSONB support

@@ -1,19 +1,30 @@
 package handlers
 
 import (
+	"crypto/sha256"
+	"encoding/base64"
 	"net/http"
 	"strings"
+	"time"
 
 	"github.com/gin-gonic/gin"
+	"github.com/google/uuid"
+	"github.com/tiiuae/oryxid/internal/database"
 	"github.com/tiiuae/oryxid/internal/oauth"
+	"golang.org/x/crypto/bcrypt"
+	"gorm.io/gorm"
 )
 
 type OAuthHandler struct {
 	server *oauth.Server
+	db     *gorm.DB
 }
 
 func NewOAuthHandler(server *oauth.Server) *OAuthHandler {
-	return &OAuthHandler{server: server}
+	return &OAuthHandler{
+		server: server,
+		db:     server.GetDB(),
+	}
 }
 
 // AuthorizeHandler handles GET /oauth/authorize
@@ -39,6 +50,9 @@ func (h *OAuthHandler) AuthorizeHandler(c *gin.Context) {
 		})
 		return
 	}
+
+	// Log authorization attempt
+	h.logAudit(c, app, "oauth.authorize", "application", app.ID.String())
 
 	// If skip_authorization is true for the app, generate code immediately
 	if app.SkipAuthorization {
@@ -105,8 +119,17 @@ func (h *OAuthHandler) TokenHandler(c *gin.Context) {
 		return
 	}
 
+	// Validate client
+	app, err := h.validateClient(clientID, clientSecret)
+	if err != nil {
+		c.JSON(http.StatusUnauthorized, gin.H{
+			"error":             "invalid_client",
+			"error_description": err.Error(),
+		})
+		return
+	}
+
 	var response interface{}
-	var err error
 
 	switch req.GrantType {
 	case "authorization_code":
@@ -136,6 +159,9 @@ func (h *OAuthHandler) TokenHandler(c *gin.Context) {
 		return
 	}
 
+	// Log successful token generation
+	h.logAudit(c, app, "oauth.token", "token", req.GrantType)
+
 	c.JSON(http.StatusOK, response)
 }
 
@@ -156,13 +182,26 @@ func (h *OAuthHandler) IntrospectHandler(c *gin.Context) {
 		clientSecret = c.PostForm("client_secret")
 	}
 
-	// TODO: Validate client credentials
-	_ = clientID
-	_ = clientSecret
+	// Validate client
+	app, err := h.validateClient(clientID, clientSecret)
+	if err != nil {
+		c.JSON(http.StatusUnauthorized, gin.H{
+			"error": "invalid_client",
+		})
+		return
+	}
 
 	// Introspect token
 	response, err := h.server.TokenManager.IntrospectToken(token)
 	if err != nil {
+		c.JSON(http.StatusOK, gin.H{"active": false})
+		return
+	}
+
+	// Verify the token belongs to this client or was issued by this client
+	if response.ClientID != app.ClientID {
+		// Check if the token was issued for an audience that includes this client
+		// This is a simplified check - you might want to implement more complex logic
 		c.JSON(http.StatusOK, gin.H{"active": false})
 		return
 	}
@@ -189,10 +228,41 @@ func (h *OAuthHandler) RevokeHandler(c *gin.Context) {
 		clientSecret = c.PostForm("client_secret")
 	}
 
-	// TODO: Implement token revocation
-	_ = clientID
-	_ = clientSecret
-	_ = tokenTypeHint
+	// Validate client
+	app, err := h.validateClient(clientID, clientSecret)
+	if err != nil {
+		c.JSON(http.StatusUnauthorized, gin.H{
+			"error": "invalid_client",
+		})
+		return
+	}
+
+	// Attempt to validate the token
+	claims, err := h.server.TokenManager.ValidateToken(token)
+	if err != nil {
+		// Token is already invalid, return success
+		c.JSON(http.StatusOK, gin.H{})
+		return
+	}
+
+	// Verify the token belongs to this client
+	if claims.ClientID != app.ClientID {
+		c.JSON(http.StatusUnauthorized, gin.H{
+			"error": "invalid_client",
+		})
+		return
+	}
+
+	// Revoke the token
+	if err := h.revokeToken(token, tokenTypeHint); err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{
+			"error": "server_error",
+		})
+		return
+	}
+
+	// Log token revocation
+	h.logAudit(c, app, "oauth.revoke", "token", tokenTypeHint)
 
 	c.JSON(http.StatusOK, gin.H{})
 }
@@ -259,15 +329,126 @@ func (h *OAuthHandler) UserInfoHandler(c *gin.Context) {
 		return
 	}
 
-	// Return user info
+	// Check if token has openid scope
+	if !strings.Contains(claims.Scope, "openid") {
+		c.JSON(http.StatusForbidden, gin.H{
+			"error": "insufficient_scope",
+		})
+		return
+	}
+
+	// Build user info response based on requested scopes
 	userInfo := gin.H{
-		"sub":      claims.Subject,
-		"email":    claims.Email,
-		"username": claims.Username,
-		"roles":    claims.Roles,
+		"sub": claims.Subject,
+	}
+
+	// Add profile information if profile scope is present
+	if strings.Contains(claims.Scope, "profile") {
+		userInfo["username"] = claims.Username
+	}
+
+	// Add email if email scope is present
+	if strings.Contains(claims.Scope, "email") {
+		userInfo["email"] = claims.Email
+		userInfo["email_verified"] = true
+	}
+
+	// Add custom claims
+	if claims.Roles != nil && len(claims.Roles) > 0 {
+		userInfo["roles"] = claims.Roles
 	}
 
 	c.JSON(http.StatusOK, userInfo)
+}
+
+// Helper functions
+
+func (h *OAuthHandler) validateClient(clientID, clientSecret string) (*database.Application, error) {
+	var app database.Application
+	if err := h.db.Where("client_id = ?", clientID).First(&app).Error; err != nil {
+		return nil, err
+	}
+
+	// For public clients, don't check secret
+	if app.ClientType == "public" {
+		return &app, nil
+	}
+
+	// Check if we have a hashed secret
+	if app.HashedClientSecret != "" {
+		// Use bcrypt to compare
+		if err := bcrypt.CompareHashAndPassword([]byte(app.HashedClientSecret), []byte(clientSecret)); err != nil {
+			return nil, err
+		}
+	} else {
+		// Fallback to plain text comparison (for legacy support)
+		if app.ClientSecret != clientSecret {
+			return nil, gorm.ErrRecordNotFound
+		}
+	}
+
+	return &app, nil
+}
+
+func (h *OAuthHandler) revokeToken(token, tokenTypeHint string) error {
+	// Hash the token
+	hash := sha256.Sum256([]byte(token))
+	tokenHash := base64.URLEncoding.EncodeToString(hash[:])
+
+	// Update token status
+	now := time.Now()
+	result := h.db.Model(&database.Token{}).
+		Where("token_hash = ?", tokenHash).
+		Updates(map[string]interface{}{
+			"revoked":    true,
+			"revoked_at": now,
+		})
+
+	if result.Error != nil {
+		return result.Error
+	}
+
+	// If no token was found with the hash, try to revoke refresh tokens if hint suggests it
+	if result.RowsAffected == 0 && tokenTypeHint == "refresh_token" {
+		// Try to find and revoke as refresh token
+		result = h.db.Model(&database.Token{}).
+			Where("token_hash = ? AND token_type = ?", tokenHash, "refresh").
+			Updates(map[string]interface{}{
+				"revoked":    true,
+				"revoked_at": now,
+			})
+	}
+
+	return result.Error
+}
+
+func (h *OAuthHandler) logAudit(c *gin.Context, app *database.Application, action, resource, resourceID string) {
+	audit := database.AuditLog{
+		ApplicationID: &app.ID,
+		Action:        action,
+		Resource:      resource,
+		ResourceID:    resourceID,
+		IPAddress:     c.ClientIP(),
+		UserAgent:     c.GetHeader("User-Agent"),
+		StatusCode:    c.Writer.Status(),
+		Metadata: database.JSONB{
+			"method":    c.Request.Method,
+			"path":      c.Request.URL.Path,
+			"client_id": app.ClientID,
+		},
+	}
+
+	// Get user ID from token if available
+	if auth := c.GetHeader("Authorization"); auth != "" {
+		tokenString := strings.TrimPrefix(auth, "Bearer ")
+		if claims, err := h.server.TokenManager.ValidateToken(tokenString); err == nil && claims.Subject != "" {
+			if userID, err := uuid.Parse(claims.Subject); err == nil {
+				audit.UserID = &userID
+			}
+		}
+	}
+
+	h.db.Create(&audit)
 }
 
 func getBaseURL(c *gin.Context) string {
@@ -275,5 +456,16 @@ func getBaseURL(c *gin.Context) string {
 	if c.Request.TLS == nil {
 		scheme = "http"
 	}
-	return scheme + "://" + c.Request.Host
+
+	// Check for X-Forwarded headers (for reverse proxy scenarios)
+	if proto := c.GetHeader("X-Forwarded-Proto"); proto != "" {
+		scheme = proto
+	}
+
+	host := c.Request.Host
+	if forwardedHost := c.GetHeader("X-Forwarded-Host"); forwardedHost != "" {
+		host = forwardedHost
+	}
+
+	return scheme + "://" + host
 }

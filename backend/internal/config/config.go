@@ -7,6 +7,7 @@ import (
 
 	"github.com/golang-jwt/jwt/v5"
 	"github.com/spf13/viper"
+	"github.com/tiiuae/oryxid/pkg/crypto"
 )
 
 type Config struct {
@@ -110,6 +111,9 @@ func Load() (*Config, error) {
 		return nil, fmt.Errorf("error unmarshalling config: %w", err)
 	}
 
+	// Set JWT signing method
+	cfg.JWT.SigningMethod = jwt.SigningMethodRS256
+
 	// Load JWT keys
 	if err := loadJWTKeys(cfg); err != nil {
 		return nil, fmt.Errorf("error loading JWT keys: %w", err)
@@ -147,6 +151,7 @@ func setDefaults() {
 	viper.SetDefault("oauth.accesstokenlifespan", "1h")
 	viper.SetDefault("oauth.refreshtokenlifespan", "720h")
 	viper.SetDefault("oauth.idtokenlifespan", "1h")
+	viper.SetDefault("oauth.allowedorigins", []string{"http://localhost:3000"})
 
 	// Security defaults
 	viper.SetDefault("security.bcryptcost", 12)
@@ -163,7 +168,28 @@ func setDefaults() {
 }
 
 func loadJWTKeys(cfg *Config) error {
-	// TODO: Implementation will be in crypto package
+	// Try to load private key
+	privateKey, err := crypto.LoadPrivateKey(cfg.JWT.PrivateKeyPath)
+	if err != nil {
+		// If file doesn't exist, generate new keys
+		privateKey, err = crypto.GenerateRSAKeyPair(4096)
+		if err != nil {
+			return fmt.Errorf("failed to generate RSA key pair: %w", err)
+		}
+
+		// Save the generated keys
+		if err := crypto.SavePrivateKey(privateKey, cfg.JWT.PrivateKeyPath); err != nil {
+			return fmt.Errorf("failed to save private key: %w", err)
+		}
+
+		if err := crypto.SavePublicKey(&privateKey.PublicKey, cfg.JWT.PublicKeyPath); err != nil {
+			return fmt.Errorf("failed to save public key: %w", err)
+		}
+	}
+
+	cfg.JWT.PrivateKey = privateKey
+	cfg.JWT.PublicKey = &privateKey.PublicKey
+
 	return nil
 }
 

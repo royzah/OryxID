@@ -11,6 +11,7 @@ import (
 
 	"github.com/tiiuae/oryxid/internal/database"
 	"github.com/tiiuae/oryxid/internal/tokens"
+	"golang.org/x/crypto/bcrypt"
 	"gorm.io/gorm"
 )
 
@@ -50,6 +51,11 @@ func NewServer(db *gorm.DB, tm *tokens.TokenManager) *Server {
 		db:           db,
 		TokenManager: tm,
 	}
+}
+
+// GetDB returns the database instance
+func (s *Server) GetDB() *gorm.DB {
+	return s.db
 }
 
 // ValidateAuthorizationRequest validates the authorization request parameters
@@ -101,7 +107,10 @@ func (s *Server) ValidateAuthorizationRequest(req *AuthorizeRequest) (*database.
 
 // GenerateAuthorizationCode creates a new authorization code
 func (s *Server) GenerateAuthorizationCode(app *database.Application, user *database.User, req *AuthorizeRequest) (string, error) {
-	code := generateSecureToken(32)
+	code, err := generateSecureToken(32)
+	if err != nil {
+		return "", fmt.Errorf("failed to generate authorization code: %w", err)
+	}
 
 	authCode := &database.AuthorizationCode{
 		Code:                code,
@@ -131,7 +140,12 @@ func (s *Server) GenerateAuthorizationCode(app *database.Application, user *data
 func (s *Server) ExchangeAuthorizationCode(req *TokenRequest) (*tokens.TokenResponse, error) {
 	// Validate client credentials
 	var app database.Application
-	if err := s.db.Preload("Scopes").Where("client_id = ? AND client_secret = ?", req.ClientID, req.ClientSecret).First(&app).Error; err != nil {
+	if err := s.db.Preload("Scopes").Where("client_id = ?", req.ClientID).First(&app).Error; err != nil {
+		return nil, errors.New("invalid client")
+	}
+
+	// Verify client secret
+	if err := s.verifyClientSecret(&app, req.ClientSecret); err != nil {
 		return nil, errors.New("invalid client credentials")
 	}
 
@@ -205,7 +219,12 @@ func (s *Server) ExchangeAuthorizationCode(req *TokenRequest) (*tokens.TokenResp
 func (s *Server) ClientCredentialsGrant(req *TokenRequest) (*tokens.TokenResponse, error) {
 	// Validate client credentials
 	var app database.Application
-	if err := s.db.Preload("Scopes").Preload("Audiences").Where("client_id = ? AND client_secret = ?", req.ClientID, req.ClientSecret).First(&app).Error; err != nil {
+	if err := s.db.Preload("Scopes").Preload("Audiences").Where("client_id = ?", req.ClientID).First(&app).Error; err != nil {
+		return nil, errors.New("invalid client")
+	}
+
+	// Verify client secret
+	if err := s.verifyClientSecret(&app, req.ClientSecret); err != nil {
 		return nil, errors.New("invalid client credentials")
 	}
 
@@ -257,7 +276,12 @@ func (s *Server) ClientCredentialsGrant(req *TokenRequest) (*tokens.TokenRespons
 func (s *Server) RefreshTokenGrant(req *TokenRequest) (*tokens.TokenResponse, error) {
 	// Validate client credentials
 	var app database.Application
-	if err := s.db.Where("client_id = ? AND client_secret = ?", req.ClientID, req.ClientSecret).First(&app).Error; err != nil {
+	if err := s.db.Where("client_id = ?", req.ClientID).First(&app).Error; err != nil {
+		return nil, errors.New("invalid client")
+	}
+
+	// Verify client secret
+	if err := s.verifyClientSecret(&app, req.ClientSecret); err != nil {
 		return nil, errors.New("invalid client credentials")
 	}
 
@@ -270,6 +294,20 @@ func (s *Server) RefreshTokenGrant(req *TokenRequest) (*tokens.TokenResponse, er
 	// Check if token type is refresh
 	if claims.Type != "Refresh" {
 		return nil, errors.New("token is not a refresh token")
+	}
+
+	// Check if refresh token is revoked
+	hash := sha256.Sum256([]byte(req.RefreshToken))
+	tokenHash := base64.URLEncoding.EncodeToString(hash[:])
+
+	var storedToken database.Token
+	if err := s.db.Where("token_hash = ? AND token_type = ?", tokenHash, "refresh").First(&storedToken).Error; err == nil {
+		if storedToken.Revoked {
+			return nil, errors.New("refresh token has been revoked")
+		}
+		if time.Now().After(storedToken.ExpiresAt) {
+			return nil, errors.New("refresh token has expired")
+		}
 	}
 
 	// Get user if present
@@ -303,10 +341,12 @@ func (s *Server) RefreshTokenGrant(req *TokenRequest) (*tokens.TokenResponse, er
 
 // Helper functions
 
-func generateSecureToken(length int) string {
+func generateSecureToken(length int) (string, error) {
 	b := make([]byte, length)
-	rand.Read(b)
-	return base64.URLEncoding.EncodeToString(b)
+	if _, err := rand.Read(b); err != nil {
+		return "", fmt.Errorf("failed to generate random bytes: %w", err)
+	}
+	return base64.URLEncoding.EncodeToString(b), nil
 }
 
 func validatePKCE(challenge, method, verifier string) bool {
@@ -314,12 +354,35 @@ func validatePKCE(challenge, method, verifier string) bool {
 	case "S256":
 		h := sha256.Sum256([]byte(verifier))
 		computed := base64.URLEncoding.EncodeToString(h[:])
+		// Remove padding for comparison
+		computed = strings.TrimRight(computed, "=")
+		challenge = strings.TrimRight(challenge, "=")
 		return computed == challenge
 	case "plain":
 		return verifier == challenge
 	default:
 		return false
 	}
+}
+
+func (s *Server) verifyClientSecret(app *database.Application, providedSecret string) error {
+	// For public clients, don't check secret
+	if app.ClientType == "public" {
+		return nil
+	}
+
+	// Check if we have a hashed secret
+	if app.HashedClientSecret != "" {
+		// Use bcrypt to compare
+		return bcrypt.CompareHashAndPassword([]byte(app.HashedClientSecret), []byte(providedSecret))
+	}
+
+	// Fallback to plain text comparison (for legacy support)
+	if app.ClientSecret != providedSecret {
+		return errors.New("invalid client secret")
+	}
+
+	return nil
 }
 
 func (s *Server) storeTokens(app *database.Application, user *database.User, accessToken, refreshToken string) {

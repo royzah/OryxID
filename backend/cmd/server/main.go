@@ -17,6 +17,7 @@ import (
 	"github.com/tiiuae/oryxid/internal/handlers"
 	"github.com/tiiuae/oryxid/internal/middleware"
 	"github.com/tiiuae/oryxid/internal/oauth"
+	"github.com/tiiuae/oryxid/internal/redis"
 	"github.com/tiiuae/oryxid/internal/tokens"
 	"github.com/tiiuae/oryxid/pkg/crypto"
 )
@@ -52,6 +53,18 @@ func main() {
 		log.Fatalf("Failed to initialize default data: %v", err)
 	}
 
+	// Initialize Redis client (optional)
+	var redisClient *redis.Client
+	if cfg.Redis.Host != "" {
+		redisClient, err = redis.NewClient(cfg)
+		if err != nil {
+			log.Printf("Warning: Failed to connect to Redis: %v", err)
+			log.Println("Continuing without Redis (some features will be disabled)")
+		} else {
+			defer redisClient.Close()
+		}
+	}
+
 	// Initialize token manager
 	tokenManager, err := tokens.NewTokenManager(&cfg.JWT, cfg.OAuth.Issuer)
 	if err != nil {
@@ -60,13 +73,6 @@ func main() {
 
 	// Initialize OAuth server
 	oauthServer := oauth.NewServer(db, tokenManager)
-
-	// Initialize Redis (optional)
-	// redisClient := redis.NewClient(&redis.Options{
-	//     Addr:     fmt.Sprintf("%s:%d", cfg.Redis.Host, cfg.Redis.Port),
-	//     Password: cfg.Redis.Password,
-	//     DB:       cfg.Redis.DB,
-	// })
 
 	// Set Gin mode
 	gin.SetMode(cfg.Server.Mode)
@@ -81,13 +87,37 @@ func main() {
 	router.Use(middleware.Logger())
 	router.Use(middleware.Recovery())
 
-	// Rate limiting (optional with Redis)
-	// if cfg.Security.RateLimitEnabled {
-	//     router.Use(middleware.RateLimit(redisClient, cfg.Security.RateLimitRPS, cfg.Security.RateLimitBurst))
-	// }
+	// Rate limiting (with Redis if available)
+	if cfg.Security.RateLimitEnabled {
+		var limiter middleware.RateLimiter
+		if redisClient != nil {
+			limiter = middleware.NewRedisRateLimiter(redisClient, cfg.Security.RateLimitRPS)
+		} else {
+			limiter = middleware.NewInMemoryRateLimiter(cfg.Security.RateLimitRPS, cfg.Security.RateLimitBurst)
+		}
+		router.Use(middleware.RateLimit(limiter))
+	}
+
+	// CSRF protection for web endpoints
+	if cfg.Security.CSRFEnabled {
+		csrfConfig := middleware.DefaultCSRFConfig()
+		csrfConfig.RedisClient = redisClient
+		csrfConfig.SkipPaths = []string{
+			"/health",
+			"/oauth/token",
+			"/oauth/introspect",
+			"/oauth/revoke",
+			"/.well-known/openid-configuration",
+			"/.well-known/jwks.json",
+		}
+		router.Use(middleware.CSRF(csrfConfig))
+	}
 
 	// Health check
 	router.GET("/health", handlers.HealthHandler(db))
+
+	// CSRF token endpoint
+	router.GET("/csrf-token", middleware.CSRFToken())
 
 	// OAuth endpoints
 	oauthHandler := handlers.NewOAuthHandler(oauthServer)
@@ -95,9 +125,9 @@ func main() {
 	{
 		oauthGroup.GET("/authorize", oauthHandler.AuthorizeHandler)
 		oauthGroup.POST("/authorize", oauthHandler.AuthorizeHandler)
-		oauthGroup.POST("/token", oauthHandler.TokenHandler)
-		oauthGroup.POST("/introspect", oauthHandler.IntrospectHandler)
-		oauthGroup.POST("/revoke", oauthHandler.RevokeHandler)
+		oauthGroup.POST("/token", middleware.CSRFExempt(), oauthHandler.TokenHandler)
+		oauthGroup.POST("/introspect", middleware.CSRFExempt(), oauthHandler.IntrospectHandler)
+		oauthGroup.POST("/revoke", middleware.CSRFExempt(), oauthHandler.RevokeHandler)
 		oauthGroup.GET("/userinfo", oauthHandler.UserInfoHandler)
 		oauthGroup.POST("/userinfo", oauthHandler.UserInfoHandler)
 	}
@@ -134,15 +164,19 @@ func main() {
 		apiGroup.PUT("/audiences/:id", adminHandler.UpdateAudience)
 		apiGroup.DELETE("/audiences/:id", adminHandler.DeleteAudience)
 
-		// Users
-		apiGroup.GET("/users", adminHandler.ListUsers)
-		apiGroup.POST("/users", adminHandler.CreateUser)
-		apiGroup.GET("/users/:id", adminHandler.GetUser)
-		apiGroup.PUT("/users/:id", adminHandler.UpdateUser)
-		apiGroup.DELETE("/users/:id", adminHandler.DeleteUser)
+		// Users (require admin role)
+		userGroup := apiGroup.Group("/users")
+		userGroup.Use(authMiddleware.RequireAdmin())
+		{
+			userGroup.GET("", adminHandler.ListUsers)
+			userGroup.POST("", adminHandler.CreateUser)
+			userGroup.GET("/:id", adminHandler.GetUser)
+			userGroup.PUT("/:id", adminHandler.UpdateUser)
+			userGroup.DELETE("/:id", adminHandler.DeleteUser)
+		}
 
-		// Audit logs
-		apiGroup.GET("/audit-logs", adminHandler.ListAuditLogs)
+		// Audit logs (require admin role)
+		apiGroup.GET("/audit-logs", authMiddleware.RequireAdmin(), adminHandler.ListAuditLogs)
 
 		// Statistics
 		apiGroup.GET("/stats", adminHandler.GetStatistics)
@@ -150,12 +184,31 @@ func main() {
 
 	// Auth endpoints (login for admin panel)
 	authHandler := handlers.NewAuthHandler(db, tokenManager)
-	router.POST("/auth/login", authHandler.Login)
-	router.POST("/auth/logout", authMiddleware.RequireAuth(), authHandler.Logout)
-	router.GET("/auth/me", authMiddleware.RequireAuth(), authHandler.Me)
+	authGroup := router.Group("/auth")
+	{
+		authGroup.POST("/login", middleware.CSRFExempt(), authHandler.Login)
+		authGroup.POST("/logout", authMiddleware.RequireAuth(), authHandler.Logout)
+		authGroup.GET("/me", authMiddleware.RequireAuth(), authHandler.Me)
+		authGroup.POST("/refresh", middleware.CSRFExempt(), authHandler.RefreshToken)
+	}
+
+	// Session management endpoints (if Redis is available)
+	if redisClient != nil {
+		sessionHandler := handlers.NewSessionHandler(db, redisClient)
+		sessionGroup := router.Group("/sessions")
+		sessionGroup.Use(authMiddleware.RequireAuth())
+		{
+			sessionGroup.GET("", sessionHandler.ListSessions)
+			sessionGroup.DELETE("/:id", sessionHandler.RevokeSession)
+			sessionGroup.DELETE("", sessionHandler.RevokeAllSessions)
+		}
+	}
 
 	// Static files for admin UI (in production, serve from nginx/cdn)
 	router.Static("/admin", "./frontend/dist")
+	router.NoRoute(func(c *gin.Context) {
+		c.File("./frontend/dist/index.html")
+	})
 
 	// Create HTTP server
 	srv := &http.Server{
@@ -168,6 +221,10 @@ func main() {
 	// Start server in goroutine
 	go func() {
 		log.Printf("Starting OryxID server on %s", srv.Addr)
+		log.Printf("Admin panel: http://%s/admin", srv.Addr)
+		log.Printf("OAuth endpoints: http://%s/oauth", srv.Addr)
+		log.Printf("API endpoints: http://%s/api/v1", srv.Addr)
+
 		if err := srv.ListenAndServe(); err != nil && err != http.ErrServerClosed {
 			log.Fatalf("Failed to start server: %v", err)
 		}
