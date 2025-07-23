@@ -109,26 +109,26 @@ cd oryxid
 
 1. Generate RSA keys for JWT signing:
 
-```bash
-make generate-keys
-# or manually:
-mkdir -p docker/certs
-openssl genrsa -out docker/certs/private_key.pem 4096
-openssl rsa -in docker/certs/private_key.pem -pubout -out docker/certs/public_key.pem
-```
+   ```bash
+   make generate-keys
+   # or manually:
+   mkdir -p docker/certs
+   openssl genrsa -out docker/certs/private_key.pem 4096
+   openssl rsa -in docker/certs/private_key.pem -pubout -out docker/certs/public_key.pem
+   ```
 
 2. Create environment file:
 
-```bash
-cp .env.example .env
-# Edit .env with your configuration
-```
+   ```bash
+   cp .env.example .env
+   # Edit .env with your configuration
+   ```
 
 3. Start the services:
 
-```bash
-docker-compose -f docker/docker-compose.yml up -d
-```
+   ```bash
+   docker-compose -f docker/docker-compose.yml up -d
+   ```
 
 ### Manual Installation
 
@@ -364,15 +364,3 @@ kubectl apply -f k8s/
 4. **Network Policies**: Implement proper network segmentation
 5. **Rate Limiting**: Configure appropriate rate limits
 6. **CORS**: Configure CORS policies correctly
-
-## 🔒 Security
-
-### Security Features
-
-- PKCE support for public clients
-- Token rotation and revocation
-- Rate limiting and DDoS protection
-- Audit logging
-- Encrypted secrets at rest
-- CORS and CSP headers
-- SQL injection protection
