@@ -1,7 +1,9 @@
 package handlers
 
 import (
+	"fmt"
 	"net/http"
+	"strings"
 	"time"
 
 	"github.com/gin-gonic/gin"
@@ -29,8 +31,17 @@ type LoginRequest struct {
 }
 
 type LoginResponse struct {
-	Token string       `json:"token"`
-	User  UserResponse `json:"user"`
+	Token        string       `json:"token"`
+	RefreshToken string       `json:"refresh_token"`
+	User         UserResponse `json:"user"`
+}
+
+type RefreshTokenRequest struct {
+	RefreshToken string `json:"refresh_token" binding:"required"`
+}
+
+type RefreshTokenResponse struct {
+	Token string `json:"token"`
 }
 
 type UserResponse struct {
@@ -83,14 +94,22 @@ func (h *AuthHandler) Login(c *gin.Context) {
 	for i, role := range user.Roles {
 		roles[i] = role.Name
 	}
+	scope := strings.Join(roles, " ")
 
 	extra := map[string]interface{}{
 		"is_admin": user.IsAdmin,
 	}
 
-	token, err := h.tokenManager.GenerateAccessToken(adminApp, &user, "admin", "admin-panel", extra)
+	token, err := h.tokenManager.GenerateAccessToken(adminApp, &user, scope, "admin-panel", extra)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to generate token"})
+		return
+	}
+
+	// Generate refresh token
+	refreshToken, err := h.tokenManager.GenerateRefreshToken(adminApp, &user, scope)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to generate refresh token"})
 		return
 	}
 
@@ -98,7 +117,8 @@ func (h *AuthHandler) Login(c *gin.Context) {
 	h.logAudit(&user, nil, "user.login", "user", user.ID.String(), c)
 
 	response := LoginResponse{
-		Token: token,
+		Token:        token,
+		RefreshToken: refreshToken,
 		User: UserResponse{
 			ID:       user.ID.String(),
 			Username: user.Username,
@@ -115,8 +135,8 @@ func (h *AuthHandler) Login(c *gin.Context) {
 func (h *AuthHandler) Logout(c *gin.Context) {
 	userID := c.GetString("user_id")
 
-	// In a real implementation, you might want to:
-	// 1. Revoke the token
+	// TODO:
+	// 1. Revoke the token (if using a blacklist)
 	// 2. Clear any server-side sessions
 	// 3. Log the logout event
 
@@ -159,6 +179,78 @@ func (h *AuthHandler) Me(c *gin.Context) {
 	c.JSON(http.StatusOK, response)
 }
 
+// RefreshToken handles refreshing access tokens.
+func (h *AuthHandler) RefreshToken(c *gin.Context) {
+	var req RefreshTokenRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid request"})
+		return
+	}
+
+	// Validate the refresh token
+	claims, err := h.tokenManager.ValidateToken(req.RefreshToken)
+	if err != nil {
+		c.JSON(http.StatusUnauthorized, gin.H{"error": "Invalid refresh token", "details": err.Error()})
+		return
+	}
+
+	// Ensure it's a refresh token
+	if claims.Type != "Refresh" {
+		c.JSON(http.StatusUnauthorized, gin.H{"error": "Invalid token type"})
+		return
+	}
+
+	// Get user ID from claims
+	userID := claims.Subject
+	if userID == "" {
+		c.JSON(http.StatusUnauthorized, gin.H{"error": "Invalid token claims: missing subject"})
+		return
+	}
+
+	// Get client ID from claims
+	clientID := claims.ClientID
+	if clientID == "" {
+		c.JSON(http.StatusUnauthorized, gin.H{"error": "Invalid token claims: missing client_id"})
+		return
+	}
+
+	// Find user
+	var user database.User
+	if err := h.db.Preload("Roles").Where("id = ?", userID).First(&user).Error; err != nil {
+		c.JSON(http.StatusUnauthorized, gin.H{"error": "User not found"})
+		return
+	}
+
+	// Check if user is active
+	if !user.IsActive {
+		c.JSON(http.StatusUnauthorized, gin.H{"error": "Account is disabled"})
+		return
+	}
+
+	// Find application
+	var app database.Application
+	if err := h.db.Where("client_id = ?", clientID).First(&app).Error; err != nil {
+		c.JSON(http.StatusUnauthorized, gin.H{"error": "Application not found"})
+		return
+	}
+
+	// Generate new access token
+	extra := map[string]interface{}{
+		"is_admin": user.IsAdmin,
+	}
+
+	newAccessToken, err := h.tokenManager.GenerateAccessToken(&app, &user, claims.Scope, clientID, extra)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to generate new token"})
+		return
+	}
+
+	// Log the token refresh
+	h.logAudit(&user, &app, "token.refresh", "user", user.ID.String(), c)
+
+	c.JSON(http.StatusOK, RefreshTokenResponse{Token: newAccessToken})
+}
+
 // Helper function to log audit events
 func (h *AuthHandler) logAudit(user *database.User, app *database.Application, action, resource, resourceID string, c *gin.Context) {
 	audit := database.AuditLog{
@@ -176,7 +268,10 @@ func (h *AuthHandler) logAudit(user *database.User, app *database.Application, a
 		audit.ApplicationID = &app.ID
 	}
 
-	h.db.Create(&audit)
+	if err := h.db.Create(&audit).Error; err != nil {
+		// Log the error, but don't block the request
+		fmt.Printf("Failed to log audit event: %v\n", err)
+	}
 }
 
 // HealthHandler returns the health status of the service

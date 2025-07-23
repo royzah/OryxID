@@ -3,6 +3,7 @@ package middleware
 import (
 	"crypto/rand"
 	"encoding/base64"
+	"fmt"
 	"net/http"
 	"time"
 
@@ -217,12 +218,10 @@ func validateCSRFTokens(cookieToken, requestToken string) bool {
 func validateTokenNotUsed(client *redis.Client, token string) error {
 	// Check if token has been used
 	key := "csrf:used:" + token
-	exists, err := client.GetCache(key, nil)
-	if err == nil && exists == nil {
-		return gin.Error{
-			Err:  err,
+	if err := client.GetCache(key, nil); err == nil {
+		return &gin.Error{
+			Err:  fmt.Errorf("CSRF token has already been used"),
 			Type: gin.ErrorTypePublic,
-			Meta: "CSRF token has already been used",
 		}
 	}
 
