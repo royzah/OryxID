@@ -1,0 +1,176 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: oryxid-frontend
+  namespace: oryxid
+  labels:
+    app: oryxid-frontend
+    component: frontend
+spec:
+  replicas: 2
+  selector:
+    matchLabels:
+      app: oryxid-frontend
+  template:
+    metadata:
+      labels:
+        app: oryxid-frontend
+        component: frontend
+    spec:
+      containers:
+        - name: nginx
+          image: ghcr.io/yourusername/oryxid-frontend:latest
+          imagePullPolicy: Always
+          ports:
+            - containerPort: 80
+              name: http
+          volumeMounts:
+            - name: nginx-config
+              mountPath: /etc/nginx/nginx.conf
+              subPath: nginx.conf
+              readOnly: true
+            - name: tls-certificate
+              mountPath: /etc/nginx/certs
+              readOnly: true
+          resources:
+            requests:
+              memory: "64Mi"
+              cpu: "50m"
+            limits:
+              memory: "128Mi"
+              cpu: "100m"
+          livenessProbe:
+            httpGet:
+              path: /
+              port: 80
+            initialDelaySeconds: 10
+            periodSeconds: 10
+          readinessProbe:
+            httpGet:
+              path: /
+              port: 80
+            initialDelaySeconds: 5
+            periodSeconds: 5
+          securityContext:
+            runAsNonRoot: true
+            runAsUser: 101
+            readOnlyRootFilesystem: true
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop:
+                - ALL
+              add:
+                - NET_BIND_SERVICE
+      volumes:
+        - name: nginx-config
+          configMap:
+            name: nginx-config
+        - name: tls-certificate
+          secret:
+            secretName: tls-certificate
+
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: oryxid-frontend-service
+  namespace: oryxid
+  labels:
+    app: oryxid-frontend
+spec:
+  type: ClusterIP
+  ports:
+    - port: 80
+      targetPort: 80
+      protocol: TCP
+      name: http
+    - port: 443
+      targetPort: 443
+      protocol: TCP
+      name: https
+  selector:
+    app: oryxid-frontend
+
+---
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: oryxid-ingress
+  namespace: oryxid
+  annotations:
+    cert-manager.io/cluster-issuer: "letsencrypt-prod"
+    nginx.ingress.kubernetes.io/proxy-body-size: "20m"
+    nginx.ingress.kubernetes.io/proxy-read-timeout: "600"
+    nginx.ingress.kubernetes.io/proxy-send-timeout: "600"
+    nginx.ingress.kubernetes.io/rate-limit: "100"
+spec:
+  ingressClassName: nginx
+  tls:
+    - hosts:
+        - auth.yourdomain.com
+      secretName: oryxid-tls
+  rules:
+    - host: auth.yourdomain.com
+      http:
+        paths:
+          # Backend API and OAuth endpoints
+          - path: /oauth
+            pathType: Prefix
+            backend:
+              service:
+                name: oryxid-backend-service
+                port:
+                  number: 9000
+          - path: /api
+            pathType: Prefix
+            backend:
+              service:
+                name: oryxid-backend-service
+                port:
+                  number: 9000
+          - path: /.well-known
+            pathType: Prefix
+            backend:
+              service:
+                name: oryxid-backend-service
+                port:
+                  number: 9000
+          - path: /health
+            pathType: Exact
+            backend:
+              service:
+                name: oryxid-backend-service
+                port:
+                  number: 9000
+          # Frontend
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: oryxid-frontend-service
+                port:
+                  number: 80
+
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: oryxid-nodeport
+  namespace: oryxid
+  labels:
+    app: oryxid
+spec:
+  type: NodePort
+  ports:
+    - port: 80
+      targetPort: 80
+      nodePort: 30080
+      protocol: TCP
+      name: http
+    - port: 443
+      targetPort: 443
+      nodePort: 30443
+      protocol: TCP
+      name: https
+  selector:
+    app: oryxid-frontend

@@ -1,0 +1,219 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: oryxid-backend
+  namespace: oryxid
+  labels:
+    app: oryxid-backend
+    component: backend
+spec:
+  replicas: 3
+  selector:
+    matchLabels:
+      app: oryxid-backend
+  template:
+    metadata:
+      labels:
+        app: oryxid-backend
+        component: backend
+    spec:
+      serviceAccountName: oryxid-backend
+      initContainers:
+        - name: wait-for-postgres
+          image: busybox:latest
+          command:
+            - sh
+            - -c
+            - |
+              until nc -z postgres-service 5432; do
+                echo "Waiting for PostgreSQL..."
+                sleep 2
+              done
+      containers:
+        - name: oryxid-backend
+          image: ghcr.io/yourusername/oryxid-backend:latest
+          imagePullPolicy: Always
+          ports:
+            - containerPort: 9000
+              name: http
+          env:
+            # Server configuration
+            - name: ORYXID_SERVER_MODE
+              value: "release"
+            - name: ORYXID_SERVER_HOST
+              value: "0.0.0.0"
+            - name: ORYXID_SERVER_PORT
+              value: "9000"
+
+            # Database configuration
+            - name: ORYXID_DATABASE_HOST
+              value: "postgres-service"
+            - name: ORYXID_DATABASE_PORT
+              value: "5432"
+            - name: ORYXID_DATABASE_USER
+              valueFrom:
+                secretKeyRef:
+                  name: oryxid-secrets
+                  key: db-user
+            - name: ORYXID_DATABASE_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: oryxid-secrets
+                  key: db-password
+            - name: ORYXID_DATABASE_NAME
+              valueFrom:
+                secretKeyRef:
+                  name: oryxid-secrets
+                  key: db-name
+            - name: ORYXID_DATABASE_SSLMODE
+              value: "require"
+
+            # Redis configuration
+            - name: ORYXID_REDIS_HOST
+              value: "redis-service"
+            - name: ORYXID_REDIS_PORT
+              value: "6379"
+            - name: ORYXID_REDIS_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: oryxid-secrets
+                  key: redis-password
+
+            # OAuth configuration
+            - name: ORYXID_OAUTH_ISSUER
+              value: "https://auth.yourdomain.com"
+
+            # Admin configuration
+            - name: ORYXID_ADMIN_USERNAME
+              valueFrom:
+                secretKeyRef:
+                  name: oryxid-secrets
+                  key: admin-username
+            - name: ORYXID_ADMIN_EMAIL
+              valueFrom:
+                secretKeyRef:
+                  name: oryxid-secrets
+                  key: admin-email
+            - name: ORYXID_ADMIN_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: oryxid-secrets
+                  key: admin-password
+
+          volumeMounts:
+            - name: config
+              mountPath: /app/config
+              readOnly: true
+            - name: jwt-keys
+              mountPath: /app/secrets/jwt
+              readOnly: true
+
+          resources:
+            requests:
+              memory: "128Mi"
+              cpu: "100m"
+            limits:
+              memory: "256Mi"
+              cpu: "200m"
+
+          livenessProbe:
+            httpGet:
+              path: /health
+              port: 9000
+            initialDelaySeconds: 30
+            periodSeconds: 10
+            timeoutSeconds: 5
+            failureThreshold: 3
+
+          readinessProbe:
+            httpGet:
+              path: /health
+              port: 9000
+            initialDelaySeconds: 10
+            periodSeconds: 5
+            timeoutSeconds: 3
+            failureThreshold: 3
+
+          securityContext:
+            runAsNonRoot: true
+            runAsUser: 10001
+            readOnlyRootFilesystem: true
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop:
+                - ALL
+
+      volumes:
+        - name: config
+          configMap:
+            name: oryxid-config
+        - name: jwt-keys
+          secret:
+            secretName: jwt-keys
+            defaultMode: 0400
+
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: oryxid-backend-service
+  namespace: oryxid
+  labels:
+    app: oryxid-backend
+spec:
+  type: ClusterIP
+  ports:
+    - port: 9000
+      targetPort: 9000
+      protocol: TCP
+      name: http
+  selector:
+    app: oryxid-backend
+
+---
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: oryxid-backend
+  namespace: oryxid
+  labels:
+    app: oryxid-backend
+
+---
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: oryxid-backend-pdb
+  namespace: oryxid
+spec:
+  minAvailable: 2
+  selector:
+    matchLabels:
+      app: oryxid-backend
+
+---
+apiVersion: autoscaling/v2
+kind: HorizontalPodAutoscaler
+metadata:
+  name: oryxid-backend-hpa
+  namespace: oryxid
+spec:
+  scaleTargetRef:
+    apiVersion: apps/v1
+    kind: Deployment
+    name: oryxid-backend
+  minReplicas: 3
+  maxReplicas: 10
+  metrics:
+    - type: Resource
+      resource:
+        name: cpu
+        target:
+          type: Utilization
+          averageUtilization: 70
+    - type: Resource
+      resource:
+        name: memory
+        target:
+          type: Utilization
+          averageUtilization: 80

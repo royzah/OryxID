@@ -1,0 +1,8 @@
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: oryxid
+  labels:
+    name: oryxid
+    app.kubernetes.io/name: oryxid
+    app.kubernetes.io/part-of: oryxid
