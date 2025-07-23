@@ -130,8 +130,12 @@ func InitializeDefaultData(db *gorm.DB, cfg *config.Config) error {
 	var adminRole Role
 	if err := db.Where("name = ?", "admin").First(&adminRole).Error; err == nil {
 		var allPerms []Permission
-		db.Find(&allPerms)
-		db.Model(&adminRole).Association("Permissions").Replace(allPerms)
+		if err := db.Find(&allPerms).Error; err != nil {
+			return fmt.Errorf("failed to find permissions: %w", err)
+		}
+		if err := db.Model(&adminRole).Association("Permissions").Replace(allPerms); err != nil {
+			log.Printf("Failed to assign permissions to admin role: %v", err)
+		}
 		log.Println("Assigned all permissions to admin role")
 	}
 
@@ -157,7 +161,9 @@ func InitializeDefaultData(db *gorm.DB, cfg *config.Config) error {
 			}
 
 			// Assign admin role
-			db.Model(&adminUser).Association("Roles").Append(&adminRole)
+			if err := db.Model(&adminUser).Association("Roles").Append(&adminRole); err != nil {
+				return fmt.Errorf("failed to assign admin role to user: %w", err)
+			}
 			log.Printf("Created default admin user: %s", cfg.Admin.Username)
 		}
 	}
@@ -205,8 +211,12 @@ func InitializeDefaultData(db *gorm.DB, cfg *config.Config) error {
 
 			// Assign default scopes
 			var scopes []Scope
-			db.Find(&scopes)
-			db.Model(&testApp).Association("Scopes").Replace(scopes)
+			if err := db.Find(&scopes).Error; err != nil {
+				return fmt.Errorf("failed to find scopes: %w", err)
+			}
+			if err := db.Model(&testApp).Association("Scopes").Replace(scopes); err != nil {
+				log.Printf("Failed to assign scopes to test application: %v", err)
+			}
 
 			log.Printf("Created test application - Client ID: %s, Client Secret: %s", clientID, clientSecret)
 		}

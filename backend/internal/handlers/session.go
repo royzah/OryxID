@@ -1,6 +1,7 @@
 package handlers
 
 import (
+	"log"
 	"net/http"
 	"time"
 
@@ -107,7 +108,7 @@ func (h *SessionHandler) RevokeSession(c *gin.Context) {
 	if h.redis != nil {
 		if err := h.redis.DeleteSession(session.SessionID); err != nil {
 			// Log error but don't fail the request
-			c.Error(err)
+			_ = c.Error(err)
 		}
 	}
 
@@ -149,7 +150,7 @@ func (h *SessionHandler) RevokeAllSessions(c *gin.Context) {
 		for _, session := range sessions {
 			if err := h.redis.DeleteSession(session.SessionID); err != nil {
 				// Log error but don't fail the request
-				c.Error(err)
+				_ = c.Error(err)
 			}
 		}
 	}
@@ -188,7 +189,9 @@ func (h *SessionHandler) CleanupExpiredSessions() error {
 				"deleted_count": result.RowsAffected,
 			},
 		}
-		h.db.Create(&audit)
+		if err := h.db.Create(&audit).Error; err != nil {
+			log.Printf("failed to create audit log for session cleanup: %v", err)
+		}
 	}
 
 	return nil
@@ -230,7 +233,7 @@ func (h *SessionHandler) CreateSession(userID uuid.UUID, ipAddress, userAgent st
 		if err := h.redis.SetSession(sessionID, sessionData, duration); err != nil {
 			// Log error but don't fail session creation
 			// Redis is optional for session storage
-			_ = err
+			log.Printf("failed to set session in redis: %v", err)
 		}
 	}
 
@@ -248,7 +251,11 @@ func (h *SessionHandler) ValidateSession(sessionID string) (*database.Session, e
 			if err := h.db.Where("session_id = ? AND expires_at > ?", sessionID, time.Now()).
 				First(&session).Error; err == nil {
 				// Update last used
-				go h.UpdateSessionActivity(sessionID)
+				go func() {
+					if err := h.UpdateSessionActivity(sessionID); err != nil {
+						log.Printf("error updating session activity: %v", err)
+					}
+				}()
 				return &session, nil
 			}
 		}
@@ -262,7 +269,11 @@ func (h *SessionHandler) ValidateSession(sessionID string) (*database.Session, e
 	}
 
 	// Update last used
-	go h.UpdateSessionActivity(sessionID)
+	go func() {
+		if err := h.UpdateSessionActivity(sessionID); err != nil {
+			log.Printf("error updating session activity: %v", err)
+		}
+	}()
 
 	return &session, nil
 }
@@ -289,5 +300,7 @@ func (h *SessionHandler) logAudit(c *gin.Context, action, resource, resourceID s
 		}
 	}
 
-	h.db.Create(&audit)
+	if err := h.db.Create(&audit).Error; err != nil {
+		log.Printf("failed to create audit log: %v", err)
+	}
 }

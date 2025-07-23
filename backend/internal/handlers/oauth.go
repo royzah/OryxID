@@ -3,6 +3,7 @@ package handlers
 import (
 	"crypto/sha256"
 	"encoding/base64"
+	"log"
 	"net/http"
 	"strings"
 	"time"
@@ -354,7 +355,7 @@ func (h *OAuthHandler) UserInfoHandler(c *gin.Context) {
 	}
 
 	// Add custom claims
-	if claims.Roles != nil && len(claims.Roles) > 0 {
+	if len(claims.Roles) > 0 {
 		userInfo["roles"] = claims.Roles
 	}
 
@@ -448,7 +449,9 @@ func (h *OAuthHandler) logAudit(c *gin.Context, app *database.Application, actio
 		}
 	}
 
-	h.db.Create(&audit)
+	if err := h.db.Create(&audit).Error; err != nil {
+		log.Printf("failed to create audit log: %v", err)
+	}
 }
 
 func getBaseURL(c *gin.Context) string {
