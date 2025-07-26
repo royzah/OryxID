@@ -4,7 +4,9 @@ export interface User {
   email: string;
   is_active: boolean;
   is_admin: boolean;
-  roles?: string[];
+  roles?: Array<{ id: string; name: string }>;
+  created_at: string;
+  updated_at?: string;
 }
 
 export interface Scope {
@@ -12,6 +14,8 @@ export interface Scope {
   name: string;
   description?: string;
   is_default?: boolean;
+  created_at: string;
+  updated_at?: string;
 }
 
 export interface Audience {
@@ -20,6 +24,8 @@ export interface Audience {
   name: string;
   description?: string;
   scopes?: Scope[];
+  created_at: string;
+  updated_at?: string;
 }
 
 export interface Application {

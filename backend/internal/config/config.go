@@ -3,6 +3,7 @@ package config
 import (
 	"crypto/rsa"
 	"fmt"
+	"strings"
 	"time"
 
 	"github.com/golang-jwt/jwt/v5"
@@ -95,8 +96,27 @@ func Load() (*Config, error) {
 	setDefaults()
 
 	// Read environment variables
+	viper.SetEnvPrefix("ORYXID") // look for ORYXID_DATABASE_HOST, etc.
+	viper.SetEnvKeyReplacer(strings.NewReplacer(".", "_"))
 	viper.AutomaticEnv()
-	viper.SetEnvPrefix("ORYXID")
+
+	// Server env → cfg.Server
+	viper.BindEnv("database.host")
+	viper.BindEnv("database.port")
+	viper.BindEnv("database.user")
+	viper.BindEnv("database.password")
+	viper.BindEnv("database.name")
+
+	// Redis env → cfg.Redis
+	viper.BindEnv("redis.host")
+	viper.BindEnv("redis.port")
+	viper.BindEnv("redis.password")
+	viper.BindEnv("redis.db")
+
+	// Admin env → cfg.Admin
+	viper.BindEnv("admin.username")
+	viper.BindEnv("admin.email")
+	viper.BindEnv("admin.password")
 
 	// Read config file
 	if err := viper.ReadInConfig(); err != nil {
@@ -131,7 +151,6 @@ func setDefaults() {
 	viper.SetDefault("server.writetimeout", "10s")
 
 	// Database defaults
-	viper.SetDefault("database.host", "localhost")
 	viper.SetDefault("database.port", 5432)
 	viper.SetDefault("database.sslmode", "disable")
 	viper.SetDefault("database.maxopenconns", 25)
@@ -168,23 +187,10 @@ func setDefaults() {
 }
 
 func loadJWTKeys(cfg *Config) error {
-	// Try to load private key
+	// Load the private key from the path specified in the config.
 	privateKey, err := crypto.LoadPrivateKey(cfg.JWT.PrivateKeyPath)
 	if err != nil {
-		// If file doesn't exist, generate new keys
-		privateKey, err = crypto.GenerateRSAKeyPair(4096)
-		if err != nil {
-			return fmt.Errorf("failed to generate RSA key pair: %w", err)
-		}
-
-		// Save the generated keys
-		if err := crypto.SavePrivateKey(privateKey, cfg.JWT.PrivateKeyPath); err != nil {
-			return fmt.Errorf("failed to save private key: %w", err)
-		}
-
-		if err := crypto.SavePublicKey(&privateKey.PublicKey, cfg.JWT.PublicKeyPath); err != nil {
-			return fmt.Errorf("failed to save public key: %w", err)
-		}
+		return fmt.Errorf("failed to load private key from %s: %w", cfg.JWT.PrivateKeyPath, err)
 	}
 
 	cfg.JWT.PrivateKey = privateKey

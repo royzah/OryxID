@@ -13,6 +13,7 @@ const API_URL = import.meta.env.VITE_API_URL || "http://localhost:9000";
 
 const api: AxiosInstance = axios.create({
   baseURL: API_URL,
+  withCredentials: true,
   headers: {
     "Content-Type": "application/json",
   },
@@ -169,3 +170,5 @@ export const auditService = {
 export const statsService = {
   get: () => api.get("/api/v1/stats"),
 };
+
+export const getCsrfToken = () => api.get<{ token: string }>("/csrf-token");

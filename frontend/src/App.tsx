@@ -1,8 +1,7 @@
 import { useEffect } from "react";
 import {
-  BrowserRouter as Router,
-  Routes,
-  Route,
+  createBrowserRouter,
+  RouterProvider,
   Navigate,
 } from "react-router-dom";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
@@ -32,6 +31,59 @@ const queryClient = new QueryClient({
   },
 });
 
+// Create router with future flags
+const router = createBrowserRouter(
+  [
+    {
+      path: "/login",
+      element: <Login />,
+    },
+    {
+      path: "/",
+      element: (
+        <ProtectedRoute>
+          <Layout />
+        </ProtectedRoute>
+      ),
+      children: [
+        {
+          index: true,
+          element: <Navigate to="/dashboard" replace />,
+        },
+        {
+          path: "dashboard",
+          element: <Dashboard />,
+        },
+        {
+          path: "applications",
+          element: <Applications />,
+        },
+        {
+          path: "scopes",
+          element: <Scopes />,
+        },
+        {
+          path: "audiences",
+          element: <Audiences />,
+        },
+        {
+          path: "users",
+          element: <Users />,
+        },
+        {
+          path: "audit-logs",
+          element: <AuditLogs />,
+        },
+      ],
+    },
+  ],
+  {
+    future: {
+      v7_relativeSplatPath: true,
+    },
+  }
+);
+
 function App() {
   const checkAuth = useAuthStore((state) => state.checkAuth);
 
@@ -41,27 +93,7 @@ function App() {
 
   return (
     <QueryClientProvider client={queryClient}>
-      <Router>
-        <Routes>
-          <Route path="/login" element={<Login />} />
-          <Route
-            path="/"
-            element={
-              <ProtectedRoute>
-                <Layout />
-              </ProtectedRoute>
-            }
-          >
-            <Route index element={<Navigate to="/dashboard" replace />} />
-            <Route path="dashboard" element={<Dashboard />} />
-            <Route path="applications" element={<Applications />} />
-            <Route path="scopes" element={<Scopes />} />
-            <Route path="audiences" element={<Audiences />} />
-            <Route path="users" element={<Users />} />
-            <Route path="audit-logs" element={<AuditLogs />} />
-          </Route>
-        </Routes>
-      </Router>
+      <RouterProvider router={router} />
       <Toaster />
     </QueryClientProvider>
   );

@@ -1,6 +1,6 @@
 import { create } from "zustand";
 import { persist } from "zustand/middleware";
-import api from "../services/api";
+import api, { getCsrfToken } from "../services/api";
 import type { User } from "../types";
 
 interface AuthState {
@@ -30,6 +30,13 @@ const useAuthStore = create<AuthState>()(
       login: async (username: string, password: string) => {
         set({ isLoading: true });
         try {
+          // 1) fetch a fresh CSRF token (and set its cookie)
+          const {
+            data: { token: csrfToken },
+          } = await getCsrfToken();
+          // 2) include it on the next request
+          api.defaults.headers.common["X-CSRF-Token"] = csrfToken;
+          // 3) now do the login
           const response = await api.post("/auth/login", {
             username,
             password,

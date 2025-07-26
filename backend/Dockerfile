@@ -22,27 +22,25 @@ RUN CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build \
     -o oryxid ./cmd/server
 
 # Runtime stage
-FROM scratch
+FROM alpine:latest
 
-# Copy timezone data and certificates
-COPY --from=builder /usr/share/zoneinfo /usr/share/zoneinfo
+# Copy certificates from the builder stage
 COPY --from=builder /etc/ssl/certs/ca-certificates.crt /etc/ssl/certs/
 
-# Copy the binary
-COPY --from=builder /build/oryxid /oryxid
+# Create a non-root user and group
+RUN addgroup -S appgroup && adduser -S appuser -G appgroup
 
-# Copy default config (optional)
-# COPY --from=builder /build/config/config.yaml /config/config.yaml
+# Copy the binary from the builder stage to a system path
+COPY --from=builder /build/oryxid /usr/local/bin/oryxid
 
-# Create non-root user
-USER 10001:10001
+# Switch to the non-root user
+USER appuser
 
-# Expose port
+# Set the working directory (still useful for relative paths if any)
+WORKDIR /app
+
+# Expose the application port
 EXPOSE 9000
 
-# Health check
-HEALTHCHECK --interval=30s --timeout=3s --start-period=5s --retries=3 \
-    CMD ["/oryxid", "health"] || exit 1
-
-# Run the application
-ENTRYPOINT ["/oryxid"]
+# Run the application from its new location
+ENTRYPOINT ["oryxid"]

@@ -104,6 +104,9 @@ func main() {
 		csrfConfig.RedisClient = redisClient
 		csrfConfig.SkipPaths = []string{
 			"/health",
+			"/csrf-token",
+			"/auth/login",
+			"/auth/refresh",
 			"/oauth/token",
 			"/oauth/introspect",
 			"/oauth/revoke",

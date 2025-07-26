@@ -23,7 +23,7 @@ import type { ApiError } from "../types";
 interface UserDialogProps {
   open: boolean;
   onOpenChange: (open: boolean) => void;
-  user?: User;
+  user?: User | null;
   onSuccess: () => void;
 }
 

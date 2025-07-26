@@ -22,7 +22,7 @@ import type { Audience } from "../types";
 interface AudienceDialogProps {
   open: boolean;
   onOpenChange: (open: boolean) => void;
-  audience?: Audience;
+  audience?: Audience | null;
   onSuccess: () => void;
 }
 

@@ -22,7 +22,7 @@ import type { Scope } from "../types";
 interface ScopeDialogProps {
   open: boolean;
   onOpenChange: (open: boolean) => void;
-  scope?: Scope;
+  scope?: Scope | null;
   onSuccess: () => void;
 }
 
