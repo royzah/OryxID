@@ -40,7 +40,7 @@ const applicationSchema = z.object({
   name: z.string().min(1, 'Name is required').max(100),
   type: z.enum(['public', 'confidential']),
   redirectUris: z
-    .array(z.url('Must be a valid URL')) // Fixed: use z.url() instead of z.string().url()
+    .array(z.url('Must be a valid URL'))
     .min(1, 'At least one redirect URI is required'),
   scopes: z.array(z.string()).default([]),
 });
