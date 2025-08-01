@@ -49,7 +49,7 @@ type ApplicationFormData = z.infer<typeof applicationSchema>;
 
 interface CreateApplicationDialogProps {
   open: boolean;
-  onOpenChange: () => void;
+  onOpenChange: (open: boolean) => void;
 }
 
 export const CreateApplicationDialog = (
@@ -78,7 +78,7 @@ export const CreateApplicationDialog = (
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['applications'] });
       toast.success('Application created successfully');
-      props.onOpenChange();
+      props.onOpenChange(false);
       form.reset();
     },
     onError: () => {
@@ -237,23 +237,26 @@ export const CreateApplicationDialog = (
                               key={scope.id}
                               className="flex flex-row items-start space-y-0 space-x-3"
                             >
-                                <FormControl>
+                              <FormControl>
                                 <Checkbox
                                   checked={field.value?.includes(scope.name)}
-                                  onCheckedChange={(checked: boolean | "indeterminate") => {
-                                  return checked
-                                    ? field.onChange([
-                                      ...(field.value || []),
-                                      scope.name,
-                                    ])
-                                    : field.onChange(
-                                      field.value?.filter(
-                                      (value: string) => value !== scope.name,
-                                      ),
-                                    );
+                                  onCheckedChange={(
+                                    checked: boolean | 'indeterminate',
+                                  ) => {
+                                    return checked
+                                      ? field.onChange([
+                                          ...(field.value || []),
+                                          scope.name,
+                                        ])
+                                      : field.onChange(
+                                          field.value?.filter(
+                                            (value: string) =>
+                                              value !== scope.name,
+                                          ),
+                                        );
                                   }}
                                 />
-                                </FormControl>
+                              </FormControl>
                               <FormLabel className="cursor-pointer text-sm font-normal">
                                 {scope.name}
                               </FormLabel>
@@ -272,7 +275,7 @@ export const CreateApplicationDialog = (
               <Button
                 type="button"
                 variant="outline"
-                onClick={() => props.onOpenChange()}
+                onClick={() => props.onOpenChange(false)}
               >
                 Cancel
               </Button>

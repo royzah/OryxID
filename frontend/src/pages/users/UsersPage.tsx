@@ -180,7 +180,7 @@ export const UsersPage = () => {
                   <TableCell>
                     <Switch
                       checked={user.status === 'active'}
-                      onCheckedChange={(checked) =>
+                      onCheckedChange={(checked: boolean) =>
                         handleStatusChange(user, checked)
                       }
                       disabled={updateStatusMutation.isPending}
@@ -214,15 +214,15 @@ export const UsersPage = () => {
 
       <CreateUserDialog
         open={isCreateOpen}
-        onOpenChange={(open) => setIsCreateOpen(open)}
+        onOpenChange={() => setIsCreateOpen(false)}
       />
 
       {editingUser && (
         <EditUserDialog
           user={editingUser}
           open={!!editingUser}
-          onOpenChange={(open: boolean) => {
-            if (!open) setEditingUser(null);
+          onOpenChange={() => {
+            setEditingUser(null);
           }}
         />
       )}

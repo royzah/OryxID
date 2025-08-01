@@ -154,16 +154,14 @@ export const ScopesPage = () => {
 
       <CreateScopeDialog
         open={isCreateOpen}
-        onOpenChange={(open) => setIsCreateOpen(open)}
+        onOpenChange={() => setIsCreateOpen(!isCreateOpen)}
       />
 
       {editingScope && (
         <EditScopeDialog
           scope={editingScope}
           open={!!editingScope}
-          onOpenChange={(open: boolean) => {
-            if (!open) setEditingScope(null);
-          }}
+          onOpenChange={() => setEditingScope(null)}
         />
       )}
     </div>
