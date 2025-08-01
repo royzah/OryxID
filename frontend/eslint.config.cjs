@@ -6,9 +6,8 @@ const tseslint = require('typescript-eslint');
 const { globalIgnores } = require('eslint/config');
 
 module.exports = tseslint.config([
-  // ignore dist & node_modules
-  globalIgnores(['dist', 'node_modules']),
-  // your existing rules
+  globalIgnores(['dist', 'node_modules', 'src/components/ui']),
+
   {
     files: ['**/*.{ts,tsx}'],
     extends: [
@@ -20,6 +19,13 @@ module.exports = tseslint.config([
     languageOptions: {
       ecmaVersion: 2020,
       globals: globals.browser,
+    },
+    rules: {
+      'react-refresh/only-export-components': 'off',
+
+      // ← We can drop in any other rules,
+      //    e.g. to globally mute unused-vars in ui components:
+      // 'no-unused-vars': ['error', { varsIgnorePattern: '^cva' }],
     },
   },
 ]);
