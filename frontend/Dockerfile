@@ -6,7 +6,8 @@ WORKDIR /app
 
 # Install dependencies
 COPY package*.json ./
-RUN npm ci
+# Use legacy peer deps to handle ESLint version conflicts
+RUN npm ci --legacy-peer-deps
 
 # Copy source code
 COPY . .
@@ -23,7 +24,8 @@ WORKDIR /app
 
 # Install dependencies
 COPY package*.json ./
-RUN npm ci
+# Use legacy peer deps to handle ESLint version conflicts
+RUN npm ci --legacy-peer-deps
 
 # Copy source and build
 COPY . .
