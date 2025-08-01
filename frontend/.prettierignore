@@ -1,0 +1,6 @@
+node_modules
+dist
+.eslintignore
+.eslintrc.cjs
+eslint.config.cjs
+.gitignore

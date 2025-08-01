@@ -1,101 +1,32 @@
-import { useEffect } from "react";
-import {
-  createBrowserRouter,
-  RouterProvider,
-  Navigate,
-} from "react-router-dom";
-import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { Toaster } from "./components/ui/toaster";
-import useAuthStore from "./stores/authStore";
-
-// Pages
-import Login from "./pages/Login";
-import Dashboard from "./pages/Dashboard";
-import Applications from "./pages/Applications";
-import Scopes from "./pages/Scopes";
-import Audiences from "./pages/Audiences";
-import Users from "./pages/Users";
-import AuditLogs from "./pages/AuditLogs";
-
-// Layout
-import Layout from "./components/Layout";
-import ProtectedRoute from "./components/ProtectedRoute";
-
-const queryClient = new QueryClient({
-  defaultOptions: {
-    queries: {
-      refetchOnWindowFocus: false,
-      retry: 1,
-      staleTime: 5 * 60 * 1000, // 5 minutes
-    },
-  },
-});
-
-// Create router with future flags
-const router = createBrowserRouter(
-  [
-    {
-      path: "/login",
-      element: <Login />,
-    },
-    {
-      path: "/",
-      element: (
-        <ProtectedRoute>
-          <Layout />
-        </ProtectedRoute>
-      ),
-      children: [
-        {
-          index: true,
-          element: <Navigate to="/dashboard" replace />,
-        },
-        {
-          path: "dashboard",
-          element: <Dashboard />,
-        },
-        {
-          path: "applications",
-          element: <Applications />,
-        },
-        {
-          path: "scopes",
-          element: <Scopes />,
-        },
-        {
-          path: "audiences",
-          element: <Audiences />,
-        },
-        {
-          path: "users",
-          element: <Users />,
-        },
-        {
-          path: "audit-logs",
-          element: <AuditLogs />,
-        },
-      ],
-    },
-  ],
-  {
-    future: {
-      v7_relativeSplatPath: true,
-    },
-  }
-);
+import { useState } from 'react';
+import './App.css';
 
 function App() {
-  const checkAuth = useAuthStore((state) => state.checkAuth);
-
-  useEffect(() => {
-    checkAuth();
-  }, [checkAuth]);
+  const [count, setCount] = useState(0);
 
   return (
-    <QueryClientProvider client={queryClient}>
-      <RouterProvider router={router} />
-      <Toaster />
-    </QueryClientProvider>
+    <>
+      <div>
+        <a href="/" target="_self">
+          <img src="/favicon.svg" className="logo" alt="App logo" />
+        </a>
+        <a href="/" target="_self">
+          <img
+            src="/favicon-96x96.png"
+            className="logo react"
+            alt="App secondary logo"
+          />
+        </a>
+      </div>
+      <h1>Vite + React</h1>
+      <div className="card">
+        <button onClick={() => setCount((c) => c + 1)}>count is {count}</button>
+        <p>
+          Edit <code>src/App.tsx</code> and save to test HMR
+        </p>
+      </div>
+      <p className="read-the-docs">Click on the logos above to go home</p>
+    </>
   );
 }
 
