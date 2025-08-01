@@ -10,6 +10,8 @@ export const apiClient = axios.create({
     'Content-Type': 'application/json',
   },
   withCredentials: true, // Important for CSRF cookies
+  xsrfCookieName: 'csrf_token', // Tell axios which cookie contains the CSRF token
+  xsrfHeaderName: 'X-CSRF-Token', // Tell axios which header to use for CSRF
 });
 
 // Request interceptor for auth

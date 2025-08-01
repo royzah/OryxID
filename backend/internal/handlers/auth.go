@@ -34,6 +34,7 @@ type LoginResponse struct {
 	Token        string       `json:"token"`
 	RefreshToken string       `json:"refresh_token"`
 	User         UserResponse `json:"user"`
+	ExpiresIn    int          `json:"expiresIn"`
 }
 
 type RefreshTokenRequest struct {
@@ -41,7 +42,9 @@ type RefreshTokenRequest struct {
 }
 
 type RefreshTokenResponse struct {
-	Token string `json:"token"`
+	Token        string `json:"token"`
+	RefreshToken string `json:"refresh_token"`
+	ExpiresIn    int    `json:"expiresIn"`
 }
 
 type UserResponse struct {
@@ -126,6 +129,7 @@ func (h *AuthHandler) Login(c *gin.Context) {
 			Roles:    roles,
 			IsAdmin:  user.IsAdmin,
 		},
+		ExpiresIn: 3600, // 1 hour
 	}
 
 	c.JSON(http.StatusOK, response)
@@ -248,7 +252,11 @@ func (h *AuthHandler) RefreshToken(c *gin.Context) {
 	// Log the token refresh
 	h.logAudit(&user, &app, "token.refresh", "user", user.ID.String(), c)
 
-	c.JSON(http.StatusOK, RefreshTokenResponse{Token: newAccessToken})
+	c.JSON(http.StatusOK, RefreshTokenResponse{
+		Token:        newAccessToken,
+		RefreshToken: req.RefreshToken,
+		ExpiresIn:    3600,
+	})
 }
 
 // Helper function to log audit events

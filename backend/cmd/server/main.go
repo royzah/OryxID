@@ -120,12 +120,13 @@ func main() {
 	if cfg.Security.CSRFEnabled {
 		csrfConfig := middleware.DefaultCSRFConfig()
 		csrfConfig.RedisClient = redisClient
+		csrfConfig.CookieSecure = cfg.Server.Mode == "release" // Only secure in production
+		csrfConfig.CookieHTTPOnly = false                      // Allow JavaScript to read the cookie
 		csrfConfig.SkipPaths = []string{
 			"/health",
 			"/metrics",
-			"/csrf-token",
-			"/auth/login",
-			"/auth/refresh",
+			"/auth/login",   // Login must be exempt - it's the entry point
+			"/auth/refresh", // Token refresh should be exempt
 			"/oauth/token",
 			"/oauth/introspect",
 			"/oauth/revoke",
@@ -151,9 +152,9 @@ func main() {
 		// Public endpoints
 		oauthGroup.GET("/authorize", oauthHandler.AuthorizeHandler)
 		oauthGroup.POST("/authorize", oauthHandler.AuthorizeHandler)
-		oauthGroup.POST("/token", middleware.CSRFExempt(), oauthHandler.TokenHandler)
-		oauthGroup.POST("/introspect", middleware.CSRFExempt(), oauthHandler.IntrospectHandler)
-		oauthGroup.POST("/revoke", middleware.CSRFExempt(), oauthHandler.RevokeHandler)
+		oauthGroup.POST("/token", oauthHandler.TokenHandler)
+		oauthGroup.POST("/introspect", oauthHandler.IntrospectHandler)
+		oauthGroup.POST("/revoke", oauthHandler.RevokeHandler)
 
 		// Protected endpoints
 		authMiddleware := auth.NewAuthMiddleware(tokenManager)
@@ -215,10 +216,10 @@ func main() {
 	authHandler := handlers.NewAuthHandler(db, tokenManager)
 	authGroup := router.Group("/auth")
 	{
-		authGroup.POST("/login", middleware.CSRFExempt(), authHandler.Login)
+		authGroup.POST("/login", authHandler.Login)
 		authGroup.POST("/logout", authMiddleware.RequireAuth(), authHandler.Logout)
 		authGroup.GET("/me", authMiddleware.RequireAuth(), authHandler.Me)
-		authGroup.POST("/refresh", middleware.CSRFExempt(), authHandler.RefreshToken)
+		authGroup.POST("/refresh", authHandler.RefreshToken)
 	}
 
 	// Session management endpoints (if Redis is available)

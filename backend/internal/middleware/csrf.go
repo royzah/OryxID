@@ -3,9 +3,7 @@ package middleware
 import (
 	"crypto/rand"
 	"encoding/base64"
-	"fmt"
 	"net/http"
-	"time"
 
 	"github.com/gin-gonic/gin"
 	"github.com/tiiuae/oryxid/internal/redis"
@@ -40,8 +38,8 @@ func DefaultCSRFConfig() CSRFConfig {
 		TokenLength:    csrfTokenLength,
 		CookieName:     csrfCookieName,
 		CookiePath:     "/",
-		CookieSecure:   true,
-		CookieHTTPOnly: true,
+		CookieSecure:   false, // Set to false for development; true in production
+		CookieHTTPOnly: false, // IMPORTANT: Set to false so JavaScript can read it
 		Header:         csrfHeader,
 		FormField:      csrfFormField,
 		SkipPaths:      []string{"/health", "/metrics"},
@@ -55,6 +53,12 @@ func CSRF(config CSRFConfig) gin.HandlerFunc {
 	}
 
 	return func(c *gin.Context) {
+		// Check if this route is marked as CSRF exempt
+		if exempt, exists := c.Get("csrf_exempt"); exists && exempt.(bool) {
+			c.Next()
+			return
+		}
+
 		// Skip CSRF check for certain paths
 		for _, path := range config.SkipPaths {
 			if c.Request.URL.Path == path {
@@ -63,16 +67,23 @@ func CSRF(config CSRFConfig) gin.HandlerFunc {
 			}
 		}
 
-		// Skip CSRF check for safe methods
+		// For safe methods, ensure a token exists
 		if isSafeMethod(c.Request.Method) {
-			// Generate and set token for safe methods
-			token := generateCSRFToken(config.TokenLength)
-			setCSRFCookie(c, config, token)
-			c.Set("csrf_token", token)
+			// Check if token already exists in cookie
+			if token, err := c.Cookie(config.CookieName); err != nil || token == "" {
+				// Generate new token
+				token = generateCSRFToken(config.TokenLength)
+				setCSRFCookie(c, config, token)
+				c.Set("csrf_token", token)
+			} else {
+				// Use existing token
+				c.Set("csrf_token", token)
+			}
 			c.Next()
 			return
 		}
 
+		// For unsafe methods, validate the token
 		// Get token from cookie
 		cookieToken, err := c.Cookie(config.CookieName)
 		if err != nil || cookieToken == "" {
@@ -93,18 +104,8 @@ func CSRF(config CSRFConfig) gin.HandlerFunc {
 			return
 		}
 
-		// Validate token hasn't been used (if Redis is configured)
-		if config.RedisClient != nil {
-			if err := validateTokenNotUsed(config.RedisClient, requestToken); err != nil {
-				config.ErrorHandler(c)
-				return
-			}
-		}
-
-		// Generate new token for next request
-		newToken := generateCSRFToken(config.TokenLength)
-		setCSRFCookie(c, config, newToken)
-		c.Set("csrf_token", newToken)
+		// Set the token in context for use by handlers
+		c.Set("csrf_token", cookieToken)
 
 		c.Next()
 	}
@@ -176,6 +177,9 @@ func generateCSRFToken(length int) string {
 }
 
 func setCSRFCookie(c *gin.Context, config CSRFConfig, token string) {
+	// Set SameSite to Lax for CSRF protection
+	c.SetSameSite(http.SameSiteLaxMode)
+
 	c.SetCookie(
 		config.CookieName,
 		token,
@@ -200,11 +204,16 @@ func getCSRFTokenFromRequest(c *gin.Context, config CSRFConfig) string {
 		return token
 	}
 
-	// Try JSON body
-	var body map[string]interface{}
-	if err := c.ShouldBindJSON(&body); err == nil {
-		if val, ok := body[config.FormField].(string); ok {
-			return val
+	// Try JSON body (but be careful not to consume the body)
+	// This is handled by binding the request to a temporary struct
+	var body struct {
+		CSRFToken string `json:"csrf_token"`
+	}
+
+	// Save the current request body
+	if c.Request.Body != nil {
+		if err := c.ShouldBindJSON(&body); err == nil && body.CSRFToken != "" {
+			return body.CSRFToken
 		}
 	}
 
@@ -213,20 +222,6 @@ func getCSRFTokenFromRequest(c *gin.Context, config CSRFConfig) string {
 
 func validateCSRFTokens(cookieToken, requestToken string) bool {
 	return cookieToken == requestToken && cookieToken != ""
-}
-
-func validateTokenNotUsed(client *redis.Client, token string) error {
-	// Check if token has been used
-	key := "csrf:used:" + token
-	if err := client.GetCache(key, nil); err == nil {
-		return &gin.Error{
-			Err:  fmt.Errorf("CSRF token has already been used"),
-			Type: gin.ErrorTypePublic,
-		}
-	}
-
-	// Mark token as used (with 1 hour expiration)
-	return client.SetCache(key, true, time.Hour)
 }
 
 func defaultCSRFErrorHandler(c *gin.Context) {
@@ -240,10 +235,27 @@ func defaultCSRFErrorHandler(c *gin.Context) {
 // CSRFToken returns a handler that provides CSRF token
 func CSRFToken() gin.HandlerFunc {
 	return func(c *gin.Context) {
-		token := c.GetString("csrf_token")
-		if token == "" {
-			token = generateCSRFToken(csrfTokenLength)
-			c.Set("csrf_token", token)
+		// Get the token from context (set by CSRF middleware)
+		token, exists := c.Get("csrf_token")
+		if !exists || token == "" {
+			// If no token exists, check cookie
+			if cookieToken, err := c.Cookie(csrfCookieName); err == nil && cookieToken != "" {
+				token = cookieToken
+			} else {
+				// Generate new token
+				token = generateCSRFToken(csrfTokenLength)
+				// Set cookie with same config as CSRF middleware
+				c.SetSameSite(http.SameSiteLaxMode)
+				c.SetCookie(
+					csrfCookieName,
+					token.(string),
+					3600, // 1 hour
+					"/",
+					"",
+					false, // Not secure for development
+					false, // Not HTTPOnly so JS can read it
+				)
+			}
 		}
 
 		c.JSON(http.StatusOK, gin.H{

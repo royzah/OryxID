@@ -4,29 +4,17 @@ import type { AuthResponse, LoginCredentials, User } from '@/types';
 export const authService = {
   login: async (credentials: LoginCredentials): Promise<AuthResponse> => {
     const { data } = await apiClient.post('/auth/login', credentials);
-    return data;
+
+    return {
+      token: data.token,
+      refreshToken: data.refresh_token || data.refreshToken,
+      user: data.user,
+      expiresIn: data.expiresIn || 3600 // Default to 1 hour if not provided
+    };
   },
 
   logout: async (): Promise<void> => {
-    try {
-      // First get CSRF token if CSRF is enabled
-      const { data: csrfData } = await apiClient.get('/csrf-token');
-
-      // Then call logout with CSRF token
-      await apiClient.post('/auth/logout', {}, {
-        headers: {
-          'X-CSRF-Token': csrfData.csrf_token
-        }
-      });
-    } catch (_error) {
-      // If CSRF endpoint fails, try logout without token
-      // This handles cases where CSRF might be disabled
-      try {
-        await apiClient.post('/auth/logout');
-      } catch {
-        // Ignore errors - we're logging out anyway
-      }
-    }
+    await apiClient.post('/auth/logout');
   },
 
   getMe: async (): Promise<User> => {
@@ -35,7 +23,15 @@ export const authService = {
   },
 
   refreshToken: async (refreshToken: string): Promise<AuthResponse> => {
-    const { data } = await apiClient.post('/auth/refresh', { refreshToken });
-    return data;
+    const { data } = await apiClient.post('/auth/refresh', {
+      refresh_token: refreshToken // Backend expects refresh_token, not refreshToken
+    });
+
+    return {
+      token: data.token,
+      refreshToken: data.refresh_token || data.refreshToken,
+      user: data.user,
+      expiresIn: data.expiresIn || 3600
+    };
   },
 };
