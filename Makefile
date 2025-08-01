@@ -1,4 +1,5 @@
 # OryxID Makefile
+# Enhanced with Docker integration and streamlined commands
 
 # Default shell
 SHELL := /bin/bash
@@ -23,8 +24,11 @@ help: ## Show this help message
 	@echo '  ${YELLOW}make up${RESET}        # Start all services'
 	@echo '  ${YELLOW}make down${RESET}      # Stop all services'
 	@echo ''
+	@echo '${RED}Common Issues:${RESET}'
+	@echo '  ${YELLOW}make fix-deps${RESET}  # Fix npm dependency errors (run if build fails)'
+	@echo ''
 	@echo 'Targets:'
-	@awk 'BEGIN {FS = ":.*?## "} /^[a-zA-Z_-]+:.*?## / {printf "  ${YELLOW}%-15s${RESET} %s\n", $$1, $$2}' $(MAKEFILE_LIST)
+	@awk 'BEGIN {FS = ":.*?## "} /^[a-zA-Z_-]+:.*?## / {printf "  ${YELLOW}%-15s${RESET} %s\n", $1, $2}' $(MAKEFILE_LIST)
 
 # ==================== QUICK COMMANDS ====================
 
@@ -32,6 +36,13 @@ help: ## Show this help message
 up: ## Start all services (frontend + backend + database)
 	@echo "${GREEN}Starting OryxID...${RESET}"
 	@docker-compose up -d
+	@if [ $? -ne 0 ]; then \
+		echo ""; \
+		echo "${YELLOW}⚠️  Build failed. This might be due to npm dependency issues.${RESET}"; \
+		echo "${YELLOW}   Try running: ${CYAN}make fix-deps${YELLOW} then ${CYAN}make up${RESET}"; \
+		echo ""; \
+		exit 1; \
+	fi
 	@echo ""
 	@echo "${GREEN}✅ OryxID is running!${RESET}"
 	@echo ""

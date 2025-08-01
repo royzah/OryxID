@@ -64,6 +64,16 @@ else
 fi
 
 echo
+echo -e "${YELLOW}Checking frontend dependencies...${NC}"
+if [ -f frontend/package.json ] && [ ! -f frontend/package-lock.json ]; then
+    echo -e "${YELLOW}Installing frontend dependencies with legacy peer deps...${NC}"
+    cd frontend
+    npm install --legacy-peer-deps
+    cd ..
+    echo -e "${GREEN}✓ Frontend dependencies installed${NC}"
+fi
+
+echo
 echo -e "${GREEN}========================================${NC}"
 echo -e "${GREEN}       Setup Complete!${NC}"
 echo -e "${GREEN}========================================${NC}"
