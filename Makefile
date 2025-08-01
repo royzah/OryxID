@@ -1,318 +1,304 @@
 # OryxID Makefile
-# Provides convenient commands for development and deployment
+
+# Default shell
+SHELL := /bin/bash
+
+# Colors for pretty output
+GREEN  := $(shell tput -Txterm setaf 2)
+YELLOW := $(shell tput -Txterm setaf 3)
+WHITE  := $(shell tput -Txterm setaf 7)
+CYAN   := $(shell tput -Txterm setaf 6)
+RESET  := $(shell tput -Txterm sgr0)
 
 .PHONY: help
 help: ## Show this help message
-	@echo 'Usage: make [target]'
+	@echo ''
+	@echo '${CYAN}OryxID${RESET} - ${WHITE}OAuth2/OpenID Connect Server${RESET}'
+	@echo ''
+	@echo 'Usage:'
+	@echo '  ${YELLOW}make${RESET} ${GREEN}<target>${RESET}'
+	@echo ''
+	@echo 'Quick Start:'
+	@echo '  ${YELLOW}make setup${RESET}     # First time setup (generates keys)'
+	@echo '  ${YELLOW}make up${RESET}        # Start all services'
+	@echo '  ${YELLOW}make down${RESET}      # Stop all services'
 	@echo ''
 	@echo 'Targets:'
-	@awk 'BEGIN {FS = ":.*?## "} /^[a-zA-Z_-]+:.*?## / {printf "  %-20s %s\n", $$1, $$2}' $(MAKEFILE_LIST)
+	@awk 'BEGIN {FS = ":.*?## "} /^[a-zA-Z_-]+:.*?## / {printf "  ${YELLOW}%-15s${RESET} %s\n", $$1, $$2}' $(MAKEFILE_LIST)
 
-# ==================== SETUP ====================
+# ==================== QUICK COMMANDS ====================
+
+.PHONY: up
+up: ## Start all services (frontend + backend + database)
+	@echo "${GREEN}Starting OryxID...${RESET}"
+	@docker-compose up -d
+	@echo ""
+	@echo "${GREEN}✅ OryxID is running!${RESET}"
+	@echo ""
+	@echo "  ${CYAN}Admin Panel:${RESET} http://localhost:3000"
+	@echo "  ${CYAN}API Server:${RESET}  http://localhost:9000"
+	@echo ""
+	@echo "  ${YELLOW}Login:${RESET} Check ADMIN_USERNAME and ADMIN_PASSWORD in .env"
+	@echo ""
+
+.PHONY: down
+down: ## Stop all services
+	@echo "${YELLOW}Stopping OryxID...${RESET}"
+	@docker-compose down
+	@echo "${GREEN}✅ All services stopped${RESET}"
+
+.PHONY: restart
+restart: down up ## Restart all services
+
+.PHONY: logs
+logs: ## Show logs from all services
+	@docker-compose logs -f
+
+.PHONY: logs-backend
+logs-backend: ## Show backend logs only
+	@docker-compose logs -f backend
+
+.PHONY: logs-frontend
+logs-frontend: ## Show frontend logs only
+	@docker-compose logs -f frontend
+
+.PHONY: status
+status: ## Show status of all services
+	@docker-compose ps
+
+# ==================== SETUP & INITIALIZATION ====================
 
 .PHONY: setup
-setup: generate-keys install-deps ## Initial setup - generate keys and install dependencies
-	@echo "✅ Setup complete! Run 'make dev' to start development environment"
+setup: env-check generate-keys ## Complete initial setup
+	@echo "${GREEN}✅ Setup complete!${RESET}"
+	@echo ""
+	@echo "Next steps:"
+	@echo "  1. Review and update ${CYAN}.env${RESET} file"
+	@echo "  2. Run ${YELLOW}make up${RESET} to start services"
+
+.PHONY: env-check
+env-check: ## Check and create .env file if needed
+	@if [ ! -f .env ]; then \
+		echo "${YELLOW}Creating .env file from example...${RESET}"; \
+		cp .env.example .env; \
+		echo "${GREEN}✅ Created .env file${RESET}"; \
+		echo "${YELLOW}⚠️  Please update the default passwords in .env${RESET}"; \
+	else \
+		echo "${GREEN}✅ .env file exists${RESET}"; \
+	fi
 
 .PHONY: generate-keys
 generate-keys: ## Generate RSA keys for JWT signing
-	@echo "🔐 Generating RSA keys..."
-	@mkdir -p docker/certs backend/certs
-	@openssl genrsa -out docker/certs/private_key.pem 4096
-	@openssl rsa -in docker/certs/private_key.pem -pubout -out docker/certs/public_key.pem
-	@cp docker/certs/*.pem backend/certs/
-	@echo "✅ RSA keys generated"
+	@echo "${CYAN}Generating RSA keys...${RESET}"
+	@mkdir -p certs
+	@if [ ! -f certs/private_key.pem ]; then \
+		openssl genrsa -out certs/private_key.pem 4096 2>/dev/null && \
+		echo "${GREEN}✅ Generated private key${RESET}"; \
+	else \
+		echo "${YELLOW}⚠️  Private key already exists${RESET}"; \
+	fi
+	@if [ ! -f certs/public_key.pem ]; then \
+		openssl rsa -in certs/private_key.pem -pubout -out certs/public_key.pem 2>/dev/null && \
+		echo "${GREEN}✅ Generated public key${RESET}"; \
+	else \
+		echo "${YELLOW}⚠️  Public key already exists${RESET}"; \
+	fi
 
-.PHONY: install-deps
-install-deps: ## Install all dependencies
-	@echo "📦 Installing backend dependencies..."
-	@cd backend && go mod download
-	@echo "📦 Installing frontend dependencies..."
-	@cd frontend && npm install
-	@echo "✅ Dependencies installed"
+# ==================== DOCKER MANAGEMENT ====================
 
-# ==================== DEVELOPMENT ====================
+.PHONY: build
+build: ## Build all Docker images
+	@echo "${CYAN}Building Docker images...${RESET}"
+	@docker-compose build
+	@echo "${GREEN}✅ Build complete${RESET}"
 
-.PHONY: dev
-dev: ## Start development environment with Docker Compose
-	@echo "🚀 Starting development environment..."
-	@docker-compose --env-file .env -f docker/docker-compose.yml up -d
-	@echo "✅ Development environment started"
-	@echo "   Admin Panel: http://localhost:3000"
-	@echo "   API Server:  http://localhost:9000"
-	@echo "   Default login: admin / admin123"
+.PHONY: build-no-cache
+build-no-cache: ## Build all Docker images without cache
+	@echo "${CYAN}Building Docker images (no cache)...${RESET}"
+	@docker-compose build --no-cache
+	@echo "${GREEN}✅ Build complete${RESET}"
 
-.PHONY: dev-logs
-dev-logs: ## Show development container logs
-	@docker-compose --env-file .env -f docker/docker-compose.yml logs -f
+.PHONY: pull
+pull: ## Pull all Docker images
+	@echo "${CYAN}Pulling Docker images...${RESET}"
+	@docker-compose pull
+	@echo "${GREEN}✅ Pull complete${RESET}"
 
-.PHONY: dev-stop
-dev-stop: ## Stop development environment
-	@docker-compose --env-file .env -f docker/docker-compose.yml down
-	@echo "✅ Development environment stopped"
+.PHONY: ps
+ps: ## Show running containers
+	@docker-compose ps
 
-.PHONY: dev-clean
-dev-clean: ## Stop and remove all containers, volumes
-	@docker-compose --env-file .env -f docker/docker-compose.yml down -v
-	@echo "✅ Development environment cleaned"
+# ==================== CLEANUP & MAINTENANCE ====================
 
-# ==================== BACKEND ====================
+.PHONY: clean
+clean: ## Stop services and remove containers
+	@echo "${YELLOW}Cleaning up containers...${RESET}"
+	@docker-compose down --remove-orphans
+	@echo "${GREEN}✅ Containers removed${RESET}"
 
-.PHONY: backend-run
-backend-run: ## Run backend server locally
-	@cd backend && go run cmd/server/main.go
+.PHONY: clean-volumes
+clean-volumes: ## Stop services and remove containers AND volumes (WARNING: Deletes data!)
+	@echo "${YELLOW}⚠️  WARNING: This will delete all data!${RESET}"
+	@read -p "Are you sure? [y/N] " -n 1 -r; \
+	echo; \
+	if [[ $$REPLY =~ ^[Yy]$$ ]]; then \
+		docker-compose down -v --remove-orphans && \
+		echo "${GREEN}✅ Containers and volumes removed${RESET}"; \
+	else \
+		echo "${YELLOW}Cancelled${RESET}"; \
+	fi
 
-.PHONY: backend-build
-backend-build: ## Build backend binary
-	@echo "🔨 Building backend..."
-	@cd backend && CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build \
-		-ldflags="-w -s -X main.Version=$$(git describe --tags --always)" \
-		-o bin/oryxid cmd/server/main.go
-	@echo "✅ Backend built: backend/bin/oryxid"
+.PHONY: clean-all
+clean-all: clean-volumes ## Remove everything including images
+	@echo "${YELLOW}Removing Docker images...${RESET}"
+	@docker-compose down --rmi all
+	@echo "${GREEN}✅ All images removed${RESET}"
 
-.PHONY: backend-test
-backend-test: ## Run backend tests
-	@echo "🧪 Running backend tests..."
-	@cd backend && go test -v -race -coverprofile=coverage.out ./...
+.PHONY: prune
+prune: ## Prune Docker system (remove unused data)
+	@echo "${YELLOW}Pruning Docker system...${RESET}"
+	@docker system prune -f
+	@echo "${GREEN}✅ System pruned${RESET}"
 
-.PHONY: backend-coverage
-backend-coverage: backend-test ## Run tests and show coverage report
-	@cd backend && go tool cover -html=coverage.out -o coverage.html
-	@echo "📊 Coverage report: backend/coverage.html"
+.PHONY: prune-all
+prune-all: ## Prune everything including volumes (WARNING: Aggressive cleanup!)
+	@echo "${YELLOW}⚠️  WARNING: This will remove ALL unused Docker data!${RESET}"
+	@read -p "Are you sure? [y/N] " -n 1 -r; \
+	echo; \
+	if [[ $$REPLY =~ ^[Yy]$$ ]]; then \
+		docker system prune -a --volumes -f && \
+		echo "${GREEN}✅ Complete prune finished${RESET}"; \
+	else \
+		echo "${YELLOW}Cancelled${RESET}"; \
+	fi
 
-.PHONY: backend-lint
-backend-lint: ## Run backend linter
-	@echo "🔍 Linting backend code..."
-	@cd backend && golangci-lint run
+# ==================== DATABASE OPERATIONS ====================
 
-.PHONY: backend-fmt
-backend-fmt: ## Format backend code
-	@echo "✨ Formatting backend code..."
-	@cd backend && go fmt ./...
-
-# ==================== FRONTEND ====================
-
-.PHONY: frontend-run
-frontend-run: ## Run frontend development server
-	@cd frontend && npm run dev
-
-.PHONY: frontend-build
-frontend-build: ## Build frontend for production
-	@echo "🔨 Building frontend..."
-	@cd frontend && npm run build
-	@echo "✅ Frontend built: frontend/dist/"
-
-.PHONY: frontend-test
-frontend-test: ## Run frontend tests
-	@echo "🧪 Running frontend tests..."
-	@cd frontend && npm test
-
-.PHONY: frontend-test-watch
-frontend-test-watch: ## Run frontend tests in watch mode
-	@cd frontend && npm run test:watch
-
-.PHONY: frontend-lint
-frontend-lint: ## Run frontend linter
-	@echo "🔍 Linting frontend code..."
-	@cd frontend && npm run lint
-
-.PHONY: frontend-format
-frontend-format: ## Format frontend code
-	@echo "✨ Formatting frontend code..."
-	@cd frontend && npm run format
-
-.PHONY: frontend-type-check
-frontend-type-check: ## Run TypeScript type checking
-	@echo "🔍 Checking TypeScript types..."
-	@cd frontend && npm run type-check
-
-# ==================== DATABASE ====================
-
-.PHONY: db-migrate
-db-migrate: ## Run database migrations
-	@echo "🗄️  Running migrations..."
-	@cd backend && go run cmd/migrate/main.go up
-
-.PHONY: db-rollback
-db-rollback: ## Rollback last migration
-	@echo "🗄️  Rolling back migration..."
-	@cd backend && go run cmd/migrate/main.go down
-
-.PHONY: db-reset
-db-reset: ## Reset database (drop all tables)
-	@echo "⚠️  Resetting database..."
-	@cd backend && go run cmd/migrate/main.go reset
-
-.PHONY: db-seed
-db-seed: ## Seed database with test data
-	@echo "🌱 Seeding database..."
-	@cd backend && go run cmd/seed/main.go
+.PHONY: db-shell
+db-shell: ## Open PostgreSQL shell
+	@docker-compose exec postgres psql -U $$(grep DB_USER .env | cut -d '=' -f2) $$(grep DB_NAME .env | cut -d '=' -f2)
 
 .PHONY: db-backup
 db-backup: ## Backup database
-	@echo "💾 Backing up database..."
-	@docker exec oryxid-postgres pg_dump -U oryxid oryxid > backup-$$(date +%Y%m%d-%H%M%S).sql
-	@echo "✅ Database backed up"
+	@echo "${CYAN}Backing up database...${RESET}"
+	@mkdir -p backups
+	@docker-compose exec postgres pg_dump -U $$(grep DB_USER .env | cut -d '=' -f2) $$(grep DB_NAME .env | cut -d '=' -f2) > backups/oryxid-backup-$$(date +%Y%m%d-%H%M%S).sql
+	@echo "${GREEN}✅ Database backed up to backups/${RESET}"
 
-# ==================== DOCKER ====================
+.PHONY: db-restore
+db-restore: ## Restore database from latest backup
+	@echo "${CYAN}Restoring database from latest backup...${RESET}"
+	@if [ -z "$$(ls -A backups/*.sql 2>/dev/null)" ]; then \
+		echo "${YELLOW}No backup files found${RESET}"; \
+	else \
+		LATEST_BACKUP=$$(ls -t backups/*.sql | head -1); \
+		echo "Restoring from: $$LATEST_BACKUP"; \
+		docker-compose exec -T postgres psql -U $$(grep DB_USER .env | cut -d '=' -f2) $$(grep DB_NAME .env | cut -d '=' -f2) < $$LATEST_BACKUP && \
+		echo "${GREEN}✅ Database restored${RESET}"; \
+	fi
 
-.PHONY: docker-build
-docker-build: ## Build all Docker images
-	@echo "🐳 Building Docker images..."
-	@docker build -t oryxid-backend:latest ./backend
-	@docker build -t oryxid-frontend:latest ./frontend
-	@echo "✅ Docker images built"
+.PHONY: redis-shell
+redis-shell: ## Open Redis CLI
+	@docker-compose exec redis redis-cli -a $$(grep REDIS_PASSWORD .env | cut -d '=' -f2)
 
-.PHONY: docker-push
-docker-push: ## Push Docker images to registry
-	@echo "📤 Pushing Docker images..."
-	@docker push oryxid-backend:latest
-	@docker push oryxid-frontend:latest
+# ==================== DEVELOPMENT COMMANDS ====================
 
-.PHONY: docker-up
-docker-up: ## Start all containers
-	@docker-compose -f docker/docker-compose.yml up -d
+.PHONY: dev
+dev: ## Start in development mode with hot-reload
+	@echo "${GREEN}Starting in development mode...${RESET}"
+	@FRONTEND_BUILD_TARGET=development docker-compose up -d
+	@echo "${GREEN}✅ Development mode active${RESET}"
 
-.PHONY: docker-down
-docker-down: ## Stop all containers
-	@docker-compose -f docker/docker-compose.yml down
+.PHONY: dev-backend
+dev-backend: ## Run only backend in development
+	@docker-compose up -d postgres redis
+	@cd backend && go run cmd/server/main.go
 
-.PHONY: docker-logs
-docker-logs: ## Show container logs
-	@docker-compose -f docker/docker-compose.yml logs -f
+.PHONY: dev-frontend
+dev-frontend: ## Run only frontend in development
+	@cd frontend && npm run dev
 
-.PHONY: docker-ps
-docker-ps: ## Show running containers
-	@docker-compose -f docker/docker-compose.yml ps
+.PHONY: test
+test: test-backend test-frontend ## Run all tests
 
-.PHONY: docker-setup
-docker-setup: ## Complete Docker setup with keys
-	@echo "🔐 Generating RSA keys..."
-	@mkdir -p docker/certs
-	@openssl genrsa -out docker/certs/private_key.pem 4096
-	@openssl rsa -in docker/certs/private_key.pem -pubout -out docker/certs/public_key.pem
-	@echo "✅ Keys generated"
+.PHONY: test-backend
+test-backend: ## Run backend tests
+	@echo "${CYAN}Running backend tests...${RESET}"
+	@cd backend && go test -v ./...
 
-.PHONY: docker-fresh
-docker-fresh: docker-clean docker-setup ## Fresh start with new database
-	@echo "🚀 Starting fresh environment..."
-	@docker-compose -f docker/docker-compose.yml up -d
-	@echo "✅ Fresh environment started"
-	@echo "   Wait a few seconds for services to initialize..."
-	@echo "   Admin Panel: http://localhost:3000"
-	@echo "   API Server:  http://localhost:9000"
-	@echo "   Default login: admin / admin123"
+.PHONY: test-frontend
+test-frontend: ## Run frontend tests
+	@echo "${CYAN}Running frontend tests...${RESET}"
+	@cd frontend && npm test
 
-# ==================== PRODUCTION ====================
+.PHONY: lint
+lint: lint-backend lint-frontend ## Run all linters
+
+.PHONY: lint-backend
+lint-backend: ## Lint backend code
+	@echo "${CYAN}Linting backend...${RESET}"
+	@cd backend && golangci-lint run || echo "${YELLOW}Install golangci-lint: https://golangci-lint.run/usage/install/${RESET}"
+
+.PHONY: lint-frontend
+lint-frontend: ## Lint frontend code
+	@echo "${CYAN}Linting frontend...${RESET}"
+	@cd frontend && npm run lint
+
+# ==================== MONITORING & DEBUGGING ====================
+
+.PHONY: health
+health: ## Check health of all services
+	@echo "${CYAN}Checking service health...${RESET}"
+	@echo ""
+	@echo "Backend:  $$(curl -s http://localhost:9000/health 2>/dev/null && echo '${GREEN}✅ Healthy${RESET}' || echo '${YELLOW}❌ Unhealthy${RESET}')"
+	@echo "Frontend: $$(curl -s http://localhost:3000/health 2>/dev/null && echo '${GREEN}✅ Healthy${RESET}' || echo '${YELLOW}❌ Unhealthy${RESET}')"
+	@echo ""
+
+.PHONY: metrics
+metrics: ## Show backend metrics
+	@curl -s http://localhost:9000/metrics | head -20
+
+.PHONY: shell-backend
+shell-backend: ## Open shell in backend container
+	@docker-compose exec backend /bin/sh
+
+.PHONY: shell-frontend
+shell-frontend: ## Open shell in frontend container
+	@docker-compose exec frontend /bin/sh
+
+# ==================== PRODUCTION COMMANDS ====================
 
 .PHONY: prod-build
 prod-build: ## Build for production
-	@echo "🏗️  Building for production..."
-	@make backend-build
-	@make frontend-build
-	@make docker-build
-	@echo "✅ Production build complete"
+	@echo "${CYAN}Building for production...${RESET}"
+	@SERVER_MODE=release docker-compose build
+	@echo "${GREEN}✅ Production build complete${RESET}"
 
-.PHONY: prod-deploy
-prod-deploy: prod-build ## Deploy to production (customize this)
-	@echo "🚀 Deploying to production..."
-	# Add your deployment commands here
-	# Examples:
-	# - kubectl apply -f k8s/
-	# - docker-compose -f docker-compose.prod.yml up -d
-	# - aws ecs update-service ...
-	@echo "✅ Deployment complete"
+.PHONY: prod-up
+prod-up: ## Start in production mode
+	@echo "${GREEN}Starting in production mode...${RESET}"
+	@SERVER_MODE=release docker-compose up -d
+	@echo "${GREEN}✅ Production mode active${RESET}"
 
-# ==================== KUBERNETES ====================
-
-.PHONY: k8s-deploy
-k8s-deploy: ## Deploy to Kubernetes
-	@echo "☸️  Deploying to Kubernetes..."
-	@kubectl apply -f k8s/
-
-.PHONY: k8s-delete
-k8s-delete: ## Delete from Kubernetes
-	@echo "☸️  Deleting from Kubernetes..."
-	@kubectl delete -f k8s/
-
-.PHONY: k8s-logs
-k8s-logs: ## Show Kubernetes pod logs
-	@kubectl logs -f -l app=oryxid-backend
-
-.PHONY: k8s-status
-k8s-status: ## Show Kubernetes deployment status
-	@kubectl get all -l app=oryxid
-
-# ==================== TESTING ====================
-
-.PHONY: test
-test: backend-test frontend-test ## Run all tests
-
-.PHONY: test-integration
-test-integration: ## Run integration tests
-	@echo "🧪 Running integration tests..."
-	@cd backend && go test -v -tags=integration ./tests/integration/...
-
-.PHONY: test-e2e
-test-e2e: ## Run end-to-end tests
-	@echo "🧪 Running e2e tests..."
-	@cd frontend && npm run test:e2e
-
-.PHONY: test-oauth
-test-oauth: ## Test OAuth flow
-	@echo "🔐 Testing OAuth flow..."
-	@./scripts/test-oauth.sh
-
-# ==================== UTILITIES ====================
-
-.PHONY: clean
-clean: ## Clean build artifacts
-	@echo "🧹 Cleaning build artifacts..."
-	@rm -rf backend/bin backend/coverage.* backend/vendor
-	@rm -rf frontend/dist frontend/coverage
-	@rm -rf docker/certs/*.pem backend/certs/*.pem
-	@echo "✅ Clean complete"
-
-.PHONY: check
-check: backend-lint backend-test frontend-lint frontend-type-check frontend-test ## Run all checks
-
-.PHONY: fmt
-fmt: backend-fmt frontend-format ## Format all code
-
-.PHONY: update-deps
-update-deps: ## Update all dependencies
-	@echo "📦 Updating backend dependencies..."
-	@cd backend && go get -u ./... && go mod tidy
-	@echo "📦 Updating frontend dependencies..."
-	@cd frontend && npm update
-	@echo "✅ Dependencies updated"
+# ==================== UTILITY COMMANDS ====================
 
 .PHONY: version
 version: ## Show version information
-	@echo "OryxID Version Information:"
-	@echo "  Git commit: $$(git rev-parse --short HEAD)"
-	@echo "  Git branch: $$(git rev-parse --abbrev-ref HEAD)"
-	@echo "  Go version: $$(go version)"
-	@echo "  Node version: $$(node --version)"
-	@echo "  NPM version: $$(npm --version)"
+	@echo "${CYAN}OryxID Version Information${RESET}"
+	@echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+	@echo "Git commit:  $$(git rev-parse --short HEAD 2>/dev/null || echo 'unknown')"
+	@echo "Git branch:  $$(git rev-parse --abbrev-ref HEAD 2>/dev/null || echo 'unknown')"
+	@echo "Docker:      $$(docker --version)"
+	@echo "Compose:     $$(docker-compose --version)"
 
-.PHONY: env-example
-env-example: ## Create example environment files
-	@cp backend/.env.example backend/.env
-	@cp frontend/.env.example frontend/.env
-	@echo "✅ Created .env files from examples"
-
-# ==================== MONITORING ====================
-
-.PHONY: monitor-health
-monitor-health: ## Check health endpoints
-	@echo "❤️  Checking health..."
-	@curl -s http://localhost:9000/health | jq . || echo "Backend not available"
-	@curl -s http://localhost:3000/health || echo "Frontend not available"
-
-.PHONY: monitor-metrics
-monitor-metrics: ## Show metrics
-	@curl -s http://localhost:9000/metrics | head -20
+.PHONY: info
+info: ## Show environment information
+	@echo "${CYAN}OryxID Environment${RESET}"
+	@echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+	@echo "Admin Panel:  http://localhost:$$(grep FRONTEND_PORT .env | cut -d '=' -f2)"
+	@echo "API Server:   http://localhost:$$(grep SERVER_PORT .env | cut -d '=' -f2)"
+	@echo "Admin User:   $$(grep ADMIN_USERNAME .env | cut -d '=' -f2)"
+	@echo "Environment:  $$(grep SERVER_MODE .env | cut -d '=' -f2)"
 
 # Default target
 .DEFAULT_GOAL := help

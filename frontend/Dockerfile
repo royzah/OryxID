@@ -1,23 +1,24 @@
 # syntax=docker/dockerfile:1
 
 # Development Stage
-FROM node:20-alpine AS dev
-
+FROM node:20-alpine AS development
 WORKDIR /app
 
 # Install dependencies
 COPY package*.json ./
 RUN npm ci
 
-# Copy source
+# Copy source code
 COPY . .
 
+# Expose development port
 EXPOSE 3000
+
+# Development command with hot-reload
 CMD ["npm", "run", "dev", "--", "--host", "0.0.0.0", "--port", "3000"]
 
 # Build Stage
 FROM node:20-alpine AS build
-
 WORKDIR /app
 
 # Install dependencies
@@ -26,6 +27,8 @@ RUN npm ci
 
 # Copy source and build
 COPY . .
+
+# Build the application
 RUN npm run build
 
 # Production Stage
@@ -34,8 +37,12 @@ FROM nginx:alpine AS production
 # Copy built files
 COPY --from=build /app/dist /usr/share/nginx/html
 
-# Copy nginx config
+# Copy nginx configuration
 COPY nginx.conf /etc/nginx/conf.d/default.conf
+
+# Add health check
+HEALTHCHECK --interval=30s --timeout=3s --start-period=5s --retries=3 \
+    CMD wget --no-verbose --tries=1 --spider http://localhost/health || exit 1
 
 EXPOSE 80
 

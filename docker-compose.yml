@@ -1,0 +1,167 @@
+version: "3.8"
+
+services:
+  postgres:
+    image: postgres:16-alpine
+    container_name: oryxid-postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: ${DB_USER}
+      POSTGRES_PASSWORD: ${DB_PASSWORD}
+      POSTGRES_DB: ${DB_NAME}
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+      - ./docker/init-db.sql:/docker-entrypoint-initdb.d/init.sql:ro
+    networks:
+      - oryxid-network
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${DB_USER}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  redis:
+    image: redis:7-alpine
+    container_name: oryxid-redis
+    restart: unless-stopped
+    command: redis-server --requirepass ${REDIS_PASSWORD}
+    volumes:
+      - redis_data:/data
+    networks:
+      - oryxid-network
+    healthcheck:
+      test: ["CMD", "redis-cli", "--raw", "incr", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  backend:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    container_name: oryxid-backend
+    restart: unless-stopped
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    environment:
+      # Server Configuration
+      ORYXID_SERVER_HOST: 0.0.0.0
+      ORYXID_SERVER_PORT: ${SERVER_PORT}
+      ORYXID_SERVER_MODE: ${SERVER_MODE}
+
+      # Database Configuration
+      ORYXID_DATABASE_HOST: postgres
+      ORYXID_DATABASE_PORT: 5432
+      ORYXID_DATABASE_USER: ${DB_USER}
+      ORYXID_DATABASE_PASSWORD: ${DB_PASSWORD}
+      ORYXID_DATABASE_NAME: ${DB_NAME}
+      ORYXID_DATABASE_SSLMODE: ${DB_SSL_MODE}
+
+      # Redis Configuration
+      ORYXID_REDIS_HOST: redis
+      ORYXID_REDIS_PORT: 6379
+      ORYXID_REDIS_PASSWORD: ${REDIS_PASSWORD}
+
+      # OAuth Configuration
+      ORYXID_OAUTH_ISSUER: ${OAUTH_ISSUER}
+      ORYXID_OAUTH_ACCESSTOKENLIFESPAN: ${OAUTH_ACCESS_TOKEN_LIFESPAN}
+      ORYXID_OAUTH_REFRESHTOKENLIFESPAN: ${OAUTH_REFRESH_TOKEN_LIFESPAN}
+      ORYXID_OAUTH_AUTHORIZATIONCODELIFESPAN: ${OAUTH_AUTHORIZATION_CODE_LIFESPAN}
+      ORYXID_OAUTH_ALLOWEDORIGINS: '["http://localhost:3000", "http://frontend:3000"]'
+
+      # Admin Configuration
+      ORYXID_ADMIN_USERNAME: ${ADMIN_USERNAME}
+      ORYXID_ADMIN_EMAIL: ${ADMIN_EMAIL}
+      ORYXID_ADMIN_PASSWORD: ${ADMIN_PASSWORD}
+
+      # JWT Configuration
+      ORYXID_JWT_PRIVATEKEYPATH: /app/certs/private_key.pem
+      ORYXID_JWT_PUBLICKEYPATH: /app/certs/public_key.pem
+      ORYXID_JWT_KID: ${JWT_KID}
+
+      # Security Configuration
+      ORYXID_SECURITY_BCRYPTCOST: ${SECURITY_BCRYPT_COST}
+      ORYXID_SECURITY_RATELIMITENABLED: ${SECURITY_RATE_LIMIT_ENABLED}
+      ORYXID_SECURITY_RATELIMITRPS: ${SECURITY_RATE_LIMIT_RPS}
+      ORYXID_SECURITY_RATELIMITBURST: ${SECURITY_RATE_LIMIT_BURST}
+      ORYXID_SECURITY_PKCEREQUIRED: ${SECURITY_PKCE_REQUIRED}
+      ORYXID_SECURITY_CSRFENABLED: ${SECURITY_CSRF_ENABLED}
+    volumes:
+      - ./certs:/app/certs:ro
+    networks:
+      - oryxid-network
+    healthcheck:
+      test: ["CMD", "/oryxid", "--health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+      target: ${FRONTEND_BUILD_TARGET:-production}
+    container_name: oryxid-frontend
+    restart: unless-stopped
+    depends_on:
+      - backend
+    environment:
+      VITE_API_URL: ${VITE_API_URL}
+    ports:
+      - "${FRONTEND_PORT}:80"
+    networks:
+      - oryxid-network
+    healthcheck:
+      test:
+        [
+          "CMD",
+          "wget",
+          "--no-verbose",
+          "--tries=1",
+          "--spider",
+          "http://localhost/health",
+        ]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+
+  nginx:
+    image: nginx:alpine
+    container_name: oryxid-nginx
+    restart: unless-stopped
+    depends_on:
+      - backend
+      - frontend
+    ports:
+      - "${HTTP_PORT}:80"
+      - "${HTTPS_PORT}:443"
+    volumes:
+      - ./docker/nginx/nginx.conf:/etc/nginx/nginx.conf:ro
+      - ./docker/nginx/conf.d:/etc/nginx/conf.d:ro
+    networks:
+      - oryxid-network
+    healthcheck:
+      test:
+        [
+          "CMD",
+          "wget",
+          "--no-verbose",
+          "--tries=1",
+          "--spider",
+          "http://localhost/health",
+        ]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+
+volumes:
+  postgres_data:
+  redis_data:
+
+networks:
+  oryxid-network:
+    driver: bridge
