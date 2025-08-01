@@ -48,6 +48,7 @@ up: ## Start all services (frontend + backend + database)
 	@echo ""
 	@echo "  ${CYAN}Admin Panel:${RESET} http://localhost:3000"
 	@echo "  ${CYAN}API Server:${RESET}  http://localhost:9000"
+	@echo "  ${CYAN}Nginx Proxy:${RESET} http://localhost:8080"
 	@echo ""
 	@echo "  ${YELLOW}Login:${RESET} Check ADMIN_USERNAME and ADMIN_PASSWORD in .env"
 	@echo ""
@@ -59,7 +60,24 @@ down: ## Stop all services
 	@echo "${GREEN}✅ All services stopped${RESET}"
 
 .PHONY: restart
-restart: down up ## Restart all services
+restart: ## Restart all services
+	@echo "${YELLOW}Restarting OryxID...${RESET}"
+	@docker-compose restart
+	@echo "${GREEN}✅ All services restarted${RESET}"
+
+.PHONY: restart-backend
+restart-backend: ## Restart just the backend service
+	@echo "${YELLOW}Restarting backend...${RESET}"
+	@docker-compose up -d backend
+	@sleep 3
+	@echo "${GREEN}✅ Backend restarted${RESET}"
+
+.PHONY: restart-nginx
+restart-nginx: ## Restart just the nginx service
+	@echo "${YELLOW}Restarting nginx...${RESET}"
+	@docker-compose restart nginx
+	@sleep 2
+	@echo "${GREEN}✅ Nginx restarted${RESET}"
 
 .PHONY: logs
 logs: ## Show logs from all services
@@ -74,8 +92,26 @@ logs-frontend: ## Show frontend logs only
 	@docker-compose logs -f frontend
 
 .PHONY: status
-status: ## Show status of all services
-	@docker-compose ps
+status: ## Show detailed status of all services
+	@echo "${CYAN}OryxID Service Status${RESET}"
+	@echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+	@echo ""
+	@echo "Container Status:"
+	@docker-compose ps --format "table {{.Name}}\t{{.Status}}\t{{.State}}"
+	@echo ""
+	@echo "Health Checks:"
+	@echo -n "  Backend API: "
+	@curl -s http://localhost:9000/health >/dev/null 2>&1 && echo "${GREEN}✅ Healthy${RESET}" || echo "${RED}❌ Unhealthy${RESET}"
+	@echo -n "  Frontend:    "
+	@curl -s http://localhost:3000 >/dev/null 2>&1 && echo "${GREEN}✅ Accessible${RESET}" || echo "${RED}❌ Not accessible${RESET}"
+	@echo -n "  Nginx Proxy: "
+	@curl -s http://localhost:8080/health >/dev/null 2>&1 && echo "${GREEN}✅ Healthy${RESET}" || echo "${RED}❌ Unhealthy${RESET}"
+	@echo ""
+	@if ! curl -s http://localhost:9000/health >/dev/null 2>&1; then \
+		echo "${YELLOW}⚠️  Backend is not healthy. Try:${RESET}"; \
+		echo "    ${CYAN}make fix-running${RESET} - Fix and restart services"; \
+		echo "    ${CYAN}make logs-backend${RESET} - Check backend logs"; \
+	fi
 
 # ==================== SETUP & INITIALIZATION ====================
 
@@ -257,12 +293,26 @@ lint-frontend: ## Lint frontend code
 
 # ==================== MONITORING & DEBUGGING ====================
 
+.PHONY: check-ports
+check-ports: ## Check if required ports are available
+	@echo "${CYAN}Checking port availability...${RESET}"
+	@echo ""
+	@for port in 3000 8080 9000; do \
+		if lsof -i :$port >/dev/null 2>&1; then \
+			echo "  Port $port: ${RED}❌ IN USE${RESET}"; \
+			lsof -i :$port | grep LISTEN | head -1; \
+		else \
+			echo "  Port $port: ${GREEN}✅ Available${RESET}"; \
+		fi; \
+	done
+	@echo ""
+
 .PHONY: health
 health: ## Check health of all services
 	@echo "${CYAN}Checking service health...${RESET}"
 	@echo ""
-	@echo "Backend:  $$(curl -s http://localhost:9000/health 2>/dev/null && echo '${GREEN}✅ Healthy${RESET}' || echo '${YELLOW}❌ Unhealthy${RESET}')"
-	@echo "Frontend: $$(curl -s http://localhost:3000/health 2>/dev/null && echo '${GREEN}✅ Healthy${RESET}' || echo '${YELLOW}❌ Unhealthy${RESET}')"
+	@echo "Backend:  $(curl -s http://localhost:9000/health 2>/dev/null && echo '${GREEN}✅ Healthy${RESET}' || echo '${YELLOW}❌ Unhealthy${RESET}')"
+	@echo "Frontend: $(curl -s http://localhost:3000/health 2>/dev/null && echo '${GREEN}✅ Healthy${RESET}' || echo '${YELLOW}❌ Unhealthy${RESET}')"
 	@echo ""
 
 .PHONY: metrics

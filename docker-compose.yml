@@ -44,6 +44,8 @@ services:
         condition: service_healthy
       redis:
         condition: service_healthy
+    ports:
+      - "${SERVER_PORT}:9000"
     environment:
       # Server Configuration
       ORYXID_SERVER_HOST: 0.0.0.0
@@ -68,7 +70,7 @@ services:
       ORYXID_OAUTH_ACCESSTOKENLIFESPAN: ${OAUTH_ACCESS_TOKEN_LIFESPAN}
       ORYXID_OAUTH_REFRESHTOKENLIFESPAN: ${OAUTH_REFRESH_TOKEN_LIFESPAN}
       ORYXID_OAUTH_AUTHORIZATIONCODELIFESPAN: ${OAUTH_AUTHORIZATION_CODE_LIFESPAN}
-      ORYXID_OAUTH_ALLOWEDORIGINS: '["http://localhost:3000", "http://frontend:3000"]'
+      ORYXID_OAUTH_ALLOWEDORIGINS: '["*"]'
 
       # Admin Configuration
       ORYXID_ADMIN_USERNAME: ${ADMIN_USERNAME}
@@ -132,8 +134,10 @@ services:
     container_name: oryxid-nginx
     restart: unless-stopped
     depends_on:
-      - backend
-      - frontend
+      backend:
+        condition: service_started
+      frontend:
+        condition: service_started
     ports:
       - "${HTTP_PORT}:80"
       - "${HTTPS_PORT}:443"

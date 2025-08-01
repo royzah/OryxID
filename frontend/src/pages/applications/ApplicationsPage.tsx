@@ -185,7 +185,7 @@ export const ApplicationsPage = () => {
 
       <CreateApplicationDialog
         open={isCreateOpen}
-        onOpenChange={setIsCreateOpen}
+        onOpenChange={(open) => setIsCreateOpen(open)}
       />
     </div>
   );
