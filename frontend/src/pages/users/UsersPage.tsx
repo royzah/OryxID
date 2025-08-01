@@ -212,13 +212,18 @@ export const UsersPage = () => {
         </Table>
       </div>
 
-      <CreateUserDialog open={isCreateOpen} onOpenChange={(open) => setIsCreateOpen(open)} />
+      <CreateUserDialog
+        open={isCreateOpen}
+        onOpenChange={(open) => setIsCreateOpen(open)}
+      />
 
       {editingUser && (
         <EditUserDialog
           user={editingUser}
           open={!!editingUser}
-          onOpenChange={(open: boolean) => { if (!open) setEditingUser(null); }}
+          onOpenChange={(open: boolean) => {
+            if (!open) setEditingUser(null);
+          }}
         />
       )}
     </div>
