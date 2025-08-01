@@ -37,9 +37,9 @@ A modern, elegant web application frontend for OryxID - an OAuth2/OpenID Connect
 
 1. Install dependencies:
 
-```bash
-npm install
-```
+   ```bash
+   npm install
+   ```
 
 2. Set up environment variables:
 
@@ -87,7 +87,7 @@ docker run -p 3000:80 oryxid-frontend
 
 ## Project Structure
 
-```
+```text
 src/
 ├── components/
 │   ├── ui/              # shadcn/ui components
@@ -115,17 +115,20 @@ src/
 ## Available Pages
 
 ### Dashboard (`/`)
+
 - Overview statistics
 - Recent activity feed
 - Quick access to main features
 
 ### Applications (`/applications`)
+
 - List all OAuth2 applications
 - Create new applications
 - Search and filter
 - Quick actions (edit, delete)
 
 ### Application Detail (`/applications/:id`)
+
 - View and edit application details
 - Manage client credentials
 - Assign scopes
@@ -133,12 +136,14 @@ src/
 - Token settings
 
 ### Scopes (`/scopes`)
+
 - Grid view of all scopes
 - Create and edit scopes
 - Usage statistics
 - Bulk operations
 
 ### Users (`/users`)
+
 - User list with avatars
 - Create new users
 - Edit user details and roles
@@ -146,12 +151,14 @@ src/
 - Search functionality
 
 ### Audit Logs (`/audit`)
+
 - Timeline view of system events
 - Advanced filtering (date, action, user)
 - Export to CSV
 - Expandable details
 
 ### Settings (`/settings`)
+
 - Profile management
 - Change password
 - Active sessions
@@ -161,23 +168,27 @@ src/
 ## Key Features Implementation
 
 ### Authentication Flow
+
 - JWT-based authentication
 - Automatic token refresh
 - Protected routes
 - Session management
 
 ### Real-time Updates
+
 - Dashboard statistics refresh every 30 seconds
 - Activity feed updates
 - Token expiration countdown
 
 ### Error Handling
+
 - Global error interceptor
 - Toast notifications
 - Error boundaries
 - Retry mechanisms
 
 ### Performance Optimizations
+
 - Lazy loading for pages
 - Query caching with React Query
 - Debounced search inputs
@@ -189,15 +200,3 @@ For development, use these credentials:
 
 - Username: `admin`
 - Password: `admin123`
-
-## Contributing
-
-1. Fork the repository
-2. Create your feature branch (`git checkout -b feature/amazing-feature`)
-3. Commit your changes (`git commit -m 'Add some amazing feature'`)
-4. Push to the branch (`git push origin feature/amazing-feature`)
-5. Open a Pull Request
-
-## License
-
-This project is part of OryxID and follows the same license terms.
