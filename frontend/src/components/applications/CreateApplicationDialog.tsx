@@ -237,23 +237,23 @@ export const CreateApplicationDialog = (
                               key={scope.id}
                               className="flex flex-row items-start space-y-0 space-x-3"
                             >
-                              <FormControl>
+                                <FormControl>
                                 <Checkbox
                                   checked={field.value?.includes(scope.name)}
-                                  onCheckedChange={(checked) => {
-                                    return checked
-                                      ? field.onChange([
-                                          ...(field.value || []),
-                                          scope.name,
-                                        ])
-                                      : field.onChange(
-                                          field.value?.filter(
-                                            (value) => value !== scope.name,
-                                          ),
-                                        );
+                                  onCheckedChange={(checked: boolean | "indeterminate") => {
+                                  return checked
+                                    ? field.onChange([
+                                      ...(field.value || []),
+                                      scope.name,
+                                    ])
+                                    : field.onChange(
+                                      field.value?.filter(
+                                      (value: string) => value !== scope.name,
+                                      ),
+                                    );
                                   }}
                                 />
-                              </FormControl>
+                                </FormControl>
                               <FormLabel className="cursor-pointer text-sm font-normal">
                                 {scope.name}
                               </FormLabel>
