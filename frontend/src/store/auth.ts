@@ -11,6 +11,7 @@ interface AuthState {
   isAuthenticated: boolean;
   isLoading: boolean;
   error: string | null;
+  refreshTimer: ReturnType<typeof setTimeout> | null;
 
   // Actions
   login: (auth: { username: string; password: string }) => Promise<void>;
@@ -30,11 +31,24 @@ export const useAuthStore = create<AuthState>()(
         isAuthenticated: false,
         isLoading: false,
         error: null,
+        refreshTimer: null,
 
         login: async (credentials) => {
           set({ isLoading: true, error: null });
           try {
             const response = await authService.login(credentials);
+
+            // Clear any existing refresh timer
+            const existingTimer = get().refreshTimer;
+            if (existingTimer) {
+              clearTimeout(existingTimer);
+            }
+
+            // Set token expiry timer
+            const expiresIn = response.expiresIn * 1000; // Convert to milliseconds
+            const timer = setTimeout(() => {
+              get().refreshTokenAction();
+            }, expiresIn - 60000); // Refresh 1 minute before expiry
 
             set({
               user: response.user,
@@ -42,13 +56,8 @@ export const useAuthStore = create<AuthState>()(
               refreshToken: response.refreshToken,
               isAuthenticated: true,
               isLoading: false,
+              refreshTimer: timer,
             });
-
-            // Set token expiry timer
-            const expiresIn = response.expiresIn * 1000; // Convert to milliseconds
-            setTimeout(() => {
-              get().refreshTokenAction();
-            }, expiresIn - 60000); // Refresh 1 minute before expiry
           } catch (error) {
             let errorMessage = 'Login failed';
 
@@ -70,8 +79,19 @@ export const useAuthStore = create<AuthState>()(
         },
 
         logout: () => {
-          // Call logout API if needed
-          authService.logout().catch(() => {});
+          // Clear refresh timer
+          const timer = get().refreshTimer;
+          if (timer) {
+            clearTimeout(timer);
+          }
+
+          // Only call logout API if we have a token
+          const token = get().token;
+          if (token) {
+            authService.logout().catch(() => {
+              // Ignore logout errors - we're logging out anyway
+            });
+          }
 
           set({
             user: null,
@@ -79,6 +99,7 @@ export const useAuthStore = create<AuthState>()(
             refreshToken: null,
             isAuthenticated: false,
             error: null,
+            refreshTimer: null,
           });
         },
 
@@ -92,18 +113,34 @@ export const useAuthStore = create<AuthState>()(
           try {
             const response = await authService.refreshToken(refreshToken);
 
-            set({
-              token: response.token,
-              refreshToken: response.refreshToken,
-            });
+            // Clear existing timer
+            const existingTimer = get().refreshTimer;
+            if (existingTimer) {
+              clearTimeout(existingTimer);
+            }
 
             // Set new token expiry timer
             const expiresIn = response.expiresIn * 1000;
-            setTimeout(() => {
+            const timer = setTimeout(() => {
               get().refreshTokenAction();
             }, expiresIn - 60000);
+
+            set({
+              token: response.token,
+              refreshToken: response.refreshToken,
+              refreshTimer: timer,
+            });
           } catch {
-            get().logout();
+            // Don't call logout here - it causes the 403 error
+            // Just clear the auth state
+            set({
+              user: null,
+              token: null,
+              refreshToken: null,
+              isAuthenticated: false,
+              error: null,
+              refreshTimer: null,
+            });
           }
         },
 
@@ -123,7 +160,15 @@ export const useAuthStore = create<AuthState>()(
               isLoading: false,
             });
           } catch {
-            get().logout();
+            // Don't call logout() here to avoid the 403 error
+            set({
+              user: null,
+              token: null,
+              refreshToken: null,
+              isAuthenticated: false,
+              isLoading: false,
+              refreshTimer: null,
+            });
           }
         },
 

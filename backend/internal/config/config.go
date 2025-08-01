@@ -115,6 +115,23 @@ func Load() (*Config, error) {
 		return nil, fmt.Errorf("unmarshal config: %w", err)
 	}
 
+	// Handle AllowedOrigins specially - support both comma-separated string and array
+	if originsStr := viper.GetString("oauth.allowedorigins"); originsStr != "" {
+		// If it's a simple string (not JSON array), split by comma
+		if !strings.HasPrefix(originsStr, "[") {
+			if originsStr == "*" {
+				cfg.OAuth.AllowedOrigins = []string{"*"}
+			} else {
+				origins := strings.Split(originsStr, ",")
+				for i, origin := range origins {
+					origins[i] = strings.TrimSpace(origin)
+				}
+				cfg.OAuth.AllowedOrigins = origins
+			}
+		}
+		// Otherwise, viper.Unmarshal should have handled it
+	}
+
 	// Set JWT specifics
 	cfg.JWT.SigningMethod = jwt.SigningMethodRS256
 	cfg.JWT.PrivateKeyPath = viper.GetString("jwt.privatekeypath")

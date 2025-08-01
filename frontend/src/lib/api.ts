@@ -9,6 +9,7 @@ export const apiClient = axios.create({
   headers: {
     'Content-Type': 'application/json',
   },
+  withCredentials: true, // Important for CSRF cookies
 });
 
 // Request interceptor for auth
@@ -26,16 +27,35 @@ apiClient.interceptors.response.use(
   async (error: AxiosError) => {
     const originalRequest = error.config;
 
+    // Don't retry refresh token requests
+    if (originalRequest?.url?.includes('/auth/refresh')) {
+      return Promise.reject(error);
+    }
+
     if (error.response?.status === 401 && originalRequest) {
-      // Try to refresh token
-      try {
-        await useAuthStore.getState().refreshTokenAction();
-        // Retry original request
-        return apiClient(originalRequest);
-      } catch {
-        // Refresh failed, logout user
-        useAuthStore.getState().logout();
-        window.location.href = '/login';
+      // Check if we're already refreshing
+      const isRefreshing = useAuthStore.getState().isLoading;
+
+      if (!isRefreshing) {
+        try {
+          await useAuthStore.getState().refreshTokenAction();
+          // Retry original request
+          return apiClient(originalRequest);
+        } catch {
+          // Refresh failed, clear auth state without navigation
+          useAuthStore.setState({
+            user: null,
+            token: null,
+            refreshToken: null,
+            isAuthenticated: false,
+            error: null,
+          });
+
+          // Only redirect if we're not already on the login page
+          if (!window.location.pathname.includes('/login')) {
+            window.location.href = '/login';
+          }
+        }
       }
     }
 
