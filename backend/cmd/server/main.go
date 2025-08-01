@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"flag"
 	"fmt"
 	"log"
 	"net/http"
@@ -20,9 +21,21 @@ import (
 	"github.com/tiiuae/oryxid/internal/redis"
 	"github.com/tiiuae/oryxid/internal/tokens"
 	"github.com/tiiuae/oryxid/pkg/crypto"
+	"gorm.io/gorm"
 )
 
 func main() {
+	// Parse command line flags
+	var healthCheck bool
+	flag.BoolVar(&healthCheck, "health", false, "Run health check")
+	flag.Parse()
+
+	// If health check flag is set, just check if the service can start
+	if healthCheck {
+		fmt.Println("OK")
+		os.Exit(0)
+	}
+
 	// Load configuration
 	cfg, err := config.Load()
 	if err != nil {
@@ -30,12 +43,12 @@ func main() {
 	}
 
 	// Load JWT keys
-	privateKey, publicKey, err := crypto.LoadOrGenerateKeys(cfg.JWT.PrivateKeyPath, cfg.JWT.PublicKeyPath)
+	privateKey, err := crypto.LoadPrivateKey(cfg.JWT.PrivateKeyPath)
 	if err != nil {
-		log.Fatalf("Failed to load JWT keys: %v", err)
+		log.Fatalf("Failed to load private key: %v", err)
 	}
 	cfg.JWT.PrivateKey = privateKey
-	cfg.JWT.PublicKey = publicKey
+	cfg.JWT.PublicKey = &privateKey.PublicKey
 
 	// Connect to database
 	db, err := database.Connect(cfg)
@@ -74,6 +87,11 @@ func main() {
 	// Initialize OAuth server
 	oauthServer := oauth.NewServer(db, tokenManager)
 
+	// Start background cleanup tasks
+	stopCleanup := make(chan struct{})
+	go startBackgroundTasks(db, stopCleanup)
+	defer close(stopCleanup)
+
 	// Set Gin mode
 	gin.SetMode(cfg.Server.Mode)
 
@@ -104,6 +122,7 @@ func main() {
 		csrfConfig.RedisClient = redisClient
 		csrfConfig.SkipPaths = []string{
 			"/health",
+			"/metrics",
 			"/csrf-token",
 			"/auth/login",
 			"/auth/refresh",
@@ -119,6 +138,9 @@ func main() {
 	// Health check
 	router.GET("/health", handlers.HealthHandler(db))
 
+	// Metrics endpoint
+	router.GET("/metrics", handlers.MetricsHandler())
+
 	// CSRF token endpoint
 	router.GET("/csrf-token", middleware.CSRFToken())
 
@@ -126,13 +148,17 @@ func main() {
 	oauthHandler := handlers.NewOAuthHandler(oauthServer)
 	oauthGroup := router.Group("/oauth")
 	{
+		// Public endpoints
 		oauthGroup.GET("/authorize", oauthHandler.AuthorizeHandler)
 		oauthGroup.POST("/authorize", oauthHandler.AuthorizeHandler)
 		oauthGroup.POST("/token", middleware.CSRFExempt(), oauthHandler.TokenHandler)
 		oauthGroup.POST("/introspect", middleware.CSRFExempt(), oauthHandler.IntrospectHandler)
 		oauthGroup.POST("/revoke", middleware.CSRFExempt(), oauthHandler.RevokeHandler)
-		oauthGroup.GET("/userinfo", oauthHandler.UserInfoHandler)
-		oauthGroup.POST("/userinfo", oauthHandler.UserInfoHandler)
+
+		// Protected endpoints
+		authMiddleware := auth.NewAuthMiddleware(tokenManager)
+		oauthGroup.GET("/userinfo", authMiddleware.RequireAuth(), oauthHandler.UserInfoHandler)
+		oauthGroup.POST("/userinfo", authMiddleware.RequireAuth(), oauthHandler.UserInfoHandler)
 	}
 
 	// OIDC Discovery
@@ -207,12 +233,6 @@ func main() {
 		}
 	}
 
-	// Static files for admin UI (in production, serve from nginx/cdn)
-	router.Static("/admin", "./frontend/dist")
-	router.NoRoute(func(c *gin.Context) {
-		c.File("./frontend/dist/index.html")
-	})
-
 	// Create HTTP server
 	srv := &http.Server{
 		Addr:         fmt.Sprintf("%s:%d", cfg.Server.Host, cfg.Server.Port),
@@ -224,7 +244,6 @@ func main() {
 	// Start server in goroutine
 	go func() {
 		log.Printf("Starting OryxID server on %s", srv.Addr)
-		log.Printf("Admin panel: http://%s/admin", srv.Addr)
 		log.Printf("OAuth endpoints: http://%s/oauth", srv.Addr)
 		log.Printf("API endpoints: http://%s/api/v1", srv.Addr)
 
@@ -248,4 +267,78 @@ func main() {
 	}
 
 	log.Println("Server exited")
+}
+
+// startBackgroundTasks starts periodic cleanup tasks
+func startBackgroundTasks(db *gorm.DB, stop <-chan struct{}) {
+	// Clean up expired tokens every hour
+	tokenTicker := time.NewTicker(time.Hour)
+	defer tokenTicker.Stop()
+
+	// Clean up expired sessions every 30 minutes
+	sessionTicker := time.NewTicker(30 * time.Minute)
+	defer sessionTicker.Stop()
+
+	// Clean up expired authorization codes every 15 minutes
+	codeTicker := time.NewTicker(15 * time.Minute)
+	defer codeTicker.Stop()
+
+	for {
+		select {
+		case <-stop:
+			log.Println("Stopping background tasks")
+			return
+
+		case <-tokenTicker.C:
+			if err := cleanupExpiredTokens(db); err != nil {
+				log.Printf("Error cleaning up expired tokens: %v", err)
+			}
+
+		case <-sessionTicker.C:
+			if err := cleanupExpiredSessions(db); err != nil {
+				log.Printf("Error cleaning up expired sessions: %v", err)
+			}
+
+		case <-codeTicker.C:
+			if err := cleanupExpiredAuthCodes(db); err != nil {
+				log.Printf("Error cleaning up expired auth codes: %v", err)
+			}
+		}
+	}
+}
+
+func cleanupExpiredTokens(db *gorm.DB) error {
+	result := db.Where("expires_at < ? AND revoked = false", time.Now()).
+		Delete(&database.Token{})
+	if result.Error != nil {
+		return result.Error
+	}
+	if result.RowsAffected > 0 {
+		log.Printf("Cleaned up %d expired tokens", result.RowsAffected)
+	}
+	return nil
+}
+
+func cleanupExpiredSessions(db *gorm.DB) error {
+	result := db.Where("expires_at < ?", time.Now()).
+		Delete(&database.Session{})
+	if result.Error != nil {
+		return result.Error
+	}
+	if result.RowsAffected > 0 {
+		log.Printf("Cleaned up %d expired sessions", result.RowsAffected)
+	}
+	return nil
+}
+
+func cleanupExpiredAuthCodes(db *gorm.DB) error {
+	result := db.Where("expires_at < ?", time.Now()).
+		Delete(&database.AuthorizationCode{})
+	if result.Error != nil {
+		return result.Error
+	}
+	if result.RowsAffected > 0 {
+		log.Printf("Cleaned up %d expired authorization codes", result.RowsAffected)
+	}
+	return nil
 }

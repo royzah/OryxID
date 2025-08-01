@@ -6,7 +6,6 @@ import (
 	"time"
 
 	"github.com/tiiuae/oryxid/internal/config"
-	"github.com/tiiuae/oryxid/pkg/crypto"
 	"golang.org/x/crypto/bcrypt"
 	"gorm.io/driver/postgres"
 	"gorm.io/gorm"
@@ -80,13 +79,60 @@ func Migrate(db *gorm.DB) error {
 		}
 	}
 
+	// Create indexes
+	if err := CreateIndexes(db); err != nil {
+		log.Printf("Warning: Failed to create some indexes: %v", err)
+	}
+
 	log.Println("Database migration completed successfully")
 	return nil
 }
 
-// InitializeDefaultData creates default data if not exists
+// CreateIndexes creates database indexes for performance
+func CreateIndexes(db *gorm.DB) error {
+	indexes := []string{
+		// User indexes
+		"CREATE INDEX IF NOT EXISTS idx_users_username ON users(username)",
+		"CREATE INDEX IF NOT EXISTS idx_users_email ON users(email)",
+
+		// Application indexes
+		"CREATE INDEX IF NOT EXISTS idx_applications_client_id ON applications(client_id)",
+		"CREATE INDEX IF NOT EXISTS idx_applications_owner_id ON applications(owner_id)",
+
+		// Token indexes
+		"CREATE INDEX IF NOT EXISTS idx_tokens_token_hash ON tokens(token_hash)",
+		"CREATE INDEX IF NOT EXISTS idx_tokens_expires_at ON tokens(expires_at)",
+		"CREATE INDEX IF NOT EXISTS idx_tokens_application_id ON tokens(application_id)",
+		"CREATE INDEX IF NOT EXISTS idx_tokens_user_id ON tokens(user_id)",
+
+		// Authorization code indexes
+		"CREATE INDEX IF NOT EXISTS idx_authorization_codes_code ON authorization_codes(code)",
+		"CREATE INDEX IF NOT EXISTS idx_authorization_codes_expires_at ON authorization_codes(expires_at)",
+
+		// Session indexes
+		"CREATE INDEX IF NOT EXISTS idx_sessions_session_id ON sessions(session_id)",
+		"CREATE INDEX IF NOT EXISTS idx_sessions_user_id ON sessions(user_id)",
+		"CREATE INDEX IF NOT EXISTS idx_sessions_expires_at ON sessions(expires_at)",
+
+		// Audit log indexes
+		"CREATE INDEX IF NOT EXISTS idx_audit_logs_created_at ON audit_logs(created_at)",
+		"CREATE INDEX IF NOT EXISTS idx_audit_logs_user_id ON audit_logs(user_id)",
+		"CREATE INDEX IF NOT EXISTS idx_audit_logs_application_id ON audit_logs(application_id)",
+		"CREATE INDEX IF NOT EXISTS idx_audit_logs_action ON audit_logs(action)",
+	}
+
+	for _, idx := range indexes {
+		if err := db.Exec(idx).Error; err != nil {
+			log.Printf("Failed to create index: %s - %v", idx, err)
+		}
+	}
+
+	return nil
+}
+
+// InitializeDefaultData creates minimal required data
 func InitializeDefaultData(db *gorm.DB, cfg *config.Config) error {
-	// Create default roles
+	// Create basic roles
 	roles := []Role{
 		{Name: "admin", Description: "Administrator with full access"},
 		{Name: "user", Description: "Regular user"},
@@ -98,18 +144,15 @@ func InitializeDefaultData(db *gorm.DB, cfg *config.Config) error {
 			if err := db.Create(&role).Error; err != nil {
 				return fmt.Errorf("failed to create role %s: %w", role.Name, err)
 			}
-			log.Printf("Created default role: %s", role.Name)
+			log.Printf("Created role: %s", role.Name)
 		}
 	}
 
-	// Create default permissions
+	// Create basic permissions
 	permissions := []Permission{
 		{Name: "applications:read", Description: "Read applications"},
 		{Name: "applications:write", Description: "Create and update applications"},
 		{Name: "applications:delete", Description: "Delete applications"},
-		{Name: "scopes:read", Description: "Read scopes"},
-		{Name: "scopes:write", Description: "Create and update scopes"},
-		{Name: "scopes:delete", Description: "Delete scopes"},
 		{Name: "users:read", Description: "Read users"},
 		{Name: "users:write", Description: "Create and update users"},
 		{Name: "users:delete", Description: "Delete users"},
@@ -122,11 +165,11 @@ func InitializeDefaultData(db *gorm.DB, cfg *config.Config) error {
 			if err := db.Create(&perm).Error; err != nil {
 				return fmt.Errorf("failed to create permission %s: %w", perm.Name, err)
 			}
-			log.Printf("Created default permission: %s", perm.Name)
+			log.Printf("Created permission: %s", perm.Name)
 		}
 	}
 
-	// Assign all permissions to admin role
+	// Assign permissions to admin role
 	var adminRole Role
 	if err := db.Where("name = ?", "admin").First(&adminRole).Error; err == nil {
 		var allPerms []Permission
@@ -139,7 +182,7 @@ func InitializeDefaultData(db *gorm.DB, cfg *config.Config) error {
 		log.Println("Assigned all permissions to admin role")
 	}
 
-	// Create default admin user if configured
+	// Create admin user only if configured
 	if cfg.Admin.Username != "" && cfg.Admin.Email != "" && cfg.Admin.Password != "" {
 		var existingUser User
 		if err := db.Where("username = ? OR email = ?", cfg.Admin.Username, cfg.Admin.Email).First(&existingUser).Error; err == gorm.ErrRecordNotFound {
@@ -164,61 +207,25 @@ func InitializeDefaultData(db *gorm.DB, cfg *config.Config) error {
 			if err := db.Model(&adminUser).Association("Roles").Append(&adminRole); err != nil {
 				return fmt.Errorf("failed to assign admin role to user: %w", err)
 			}
-			log.Printf("Created default admin user: %s", cfg.Admin.Username)
+			log.Printf("Created admin user: %s", cfg.Admin.Username)
 		}
 	}
 
-	// Create default scopes
-	defaultScopes := []Scope{
-		{Name: "openid", Description: "OpenID Connect scope", IsDefault: true},
-		{Name: "profile", Description: "Access to user profile", IsDefault: true},
-		{Name: "email", Description: "Access to user email", IsDefault: true},
+	// Create basic OpenID Connect scopes (minimal set)
+	basicScopes := []Scope{
+		{Name: "openid", Description: "OpenID Connect scope", IsDefault: false},
+		{Name: "profile", Description: "Access to user profile", IsDefault: false},
+		{Name: "email", Description: "Access to user email", IsDefault: false},
 		{Name: "offline_access", Description: "Offline access for refresh tokens", IsDefault: false},
 	}
 
-	for _, scope := range defaultScopes {
+	for _, scope := range basicScopes {
 		var existing Scope
 		if err := db.Where("name = ?", scope.Name).First(&existing).Error; err == gorm.ErrRecordNotFound {
 			if err := db.Create(&scope).Error; err != nil {
 				return fmt.Errorf("failed to create scope %s: %w", scope.Name, err)
 			}
-			log.Printf("Created default scope: %s", scope.Name)
-		}
-	}
-
-	// Create default test application (development only)
-	if cfg.Server.Mode != "release" {
-		var testApp Application
-		if err := db.Where("name = ?", "Test Application").First(&testApp).Error; err == gorm.ErrRecordNotFound {
-			clientID, _ := crypto.GenerateSecureToken(32)
-			clientSecret, _ := crypto.GenerateSecureToken(64)
-
-			testApp = Application{
-				Name:              "Test Application",
-				Description:       "Default test application for development",
-				ClientID:          clientID,
-				ClientSecret:      clientSecret,
-				ClientType:        "confidential",
-				GrantTypes:        []string{"authorization_code", "client_credentials", "refresh_token"},
-				ResponseTypes:     []string{"code", "token"},
-				RedirectURIs:      []string{"http://localhost:3000/callback", "http://localhost:8080/callback"},
-				SkipAuthorization: true,
-			}
-
-			if err := db.Create(&testApp).Error; err != nil {
-				return fmt.Errorf("failed to create test application: %w", err)
-			}
-
-			// Assign default scopes
-			var scopes []Scope
-			if err := db.Find(&scopes).Error; err != nil {
-				return fmt.Errorf("failed to find scopes: %w", err)
-			}
-			if err := db.Model(&testApp).Association("Scopes").Replace(scopes); err != nil {
-				log.Printf("Failed to assign scopes to test application: %v", err)
-			}
-
-			log.Printf("Created test application - Client ID: %s, Client Secret: %s", clientID, clientSecret)
+			log.Printf("Created scope: %s", scope.Name)
 		}
 	}
 

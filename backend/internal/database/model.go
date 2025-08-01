@@ -54,8 +54,7 @@ type Application struct {
 	Name                 string      `gorm:"not null" json:"name"`
 	Description          string      `json:"description"`
 	ClientID             string      `gorm:"uniqueIndex;not null" json:"client_id"`
-	ClientSecret         string      `gorm:"not null" json:"-"`
-	HashedClientSecret   string      `gorm:"not null" json:"-"`                                  // New field for bcrypt hashed secret
+	HashedClientSecret   string      `gorm:"not null" json:"-"`                                  // Only store hashed secret
 	ClientType           string      `gorm:"not null;default:'confidential'" json:"client_type"` // confidential, public
 	GrantTypes           StringArray `gorm:"type:text[]" json:"grant_types"`
 	ResponseTypes        StringArray `gorm:"type:text[]" json:"response_types"`

@@ -8,7 +8,6 @@ import (
 
 	"github.com/golang-jwt/jwt/v5"
 	"github.com/spf13/viper"
-	"github.com/tiiuae/oryxid/pkg/crypto"
 )
 
 type Config struct {
@@ -99,24 +98,15 @@ func Load() (*Config, error) {
 	viper.SetEnvKeyReplacer(strings.NewReplacer(".", "_"))
 	viper.AutomaticEnv()
 
-	envKeys := []string{
-		"server.host", "server.port", "server.mode", "server.readtimeout", "server.writetimeout",
-		"database.host", "database.port", "database.user", "database.password", "database.name",
-		"redis.host", "redis.port", "redis.password", "redis.db",
-		"admin.username", "admin.email", "admin.password",
-	}
+	// Bind all environment variables
+	bindEnvVars()
 
-	for _, key := range envKeys {
-		if err := viper.BindEnv(key); err != nil {
-			return nil, fmt.Errorf("bind env %q: %w", key, err)
-		}
-	}
-
+	// Try to read config file (optional)
 	if err := viper.ReadInConfig(); err != nil {
-		var nf viper.ConfigFileNotFoundError
-		if !strings.Contains(err.Error(), nf.Error()) {
+		if _, ok := err.(viper.ConfigFileNotFoundError); !ok {
 			return nil, fmt.Errorf("read config file: %w", err)
 		}
+		// Config file not found is OK, we'll use env vars and defaults
 	}
 
 	// Unmarshal into our struct
@@ -125,13 +115,78 @@ func Load() (*Config, error) {
 		return nil, fmt.Errorf("unmarshal config: %w", err)
 	}
 
-	// JWT specifics
+	// Set JWT specifics
 	cfg.JWT.SigningMethod = jwt.SigningMethodRS256
-	if err := loadJWTKeys(cfg); err != nil {
-		return nil, fmt.Errorf("load JWT keys: %w", err)
-	}
+	cfg.JWT.PrivateKeyPath = viper.GetString("jwt.privatekeypath")
+	cfg.JWT.PublicKeyPath = viper.GetString("jwt.publickeypath")
+	cfg.JWT.Kid = viper.GetString("jwt.kid")
+
+	// Note: JWT keys will be loaded separately in main.go to avoid duplication
 
 	return cfg, nil
+}
+
+func bindEnvVars() {
+	envKeys := []string{
+		// Server
+		"server.host",
+		"server.port",
+		"server.mode",
+		"server.readtimeout",
+		"server.writetimeout",
+
+		// Database
+		"database.host",
+		"database.port",
+		"database.user",
+		"database.password",
+		"database.name",
+		"database.sslmode",
+		"database.maxopenconns",
+		"database.maxidleconns",
+		"database.connmaxlifetime",
+
+		// Redis
+		"redis.host",
+		"redis.port",
+		"redis.password",
+		"redis.db",
+		"redis.poolsize",
+		"redis.minidleconns",
+
+		// OAuth
+		"oauth.issuer",
+		"oauth.authorizationcodelifespan",
+		"oauth.accesstokenlifespan",
+		"oauth.refreshtokenlifespan",
+		"oauth.idtokenlifespan",
+		"oauth.allowedorigins",
+
+		// JWT
+		"jwt.privatekeypath",
+		"jwt.publickeypath",
+		"jwt.kid",
+
+		// Security
+		"security.bcryptcost",
+		"security.ratelimitenabled",
+		"security.ratelimitburst",
+		"security.ratelimitrps",
+		"security.pkcerequired",
+		"security.csrfenabled",
+
+		// Admin
+		"admin.username",
+		"admin.email",
+		"admin.password",
+	}
+
+	for _, key := range envKeys {
+		if err := viper.BindEnv(key); err != nil {
+			// Log but don't fail - some keys might not be needed
+			fmt.Printf("Warning: failed to bind env var %s: %v\n", key, err)
+		}
+	}
 }
 
 func setDefaults() {
@@ -143,7 +198,10 @@ func setDefaults() {
 	viper.SetDefault("server.writetimeout", "10s")
 
 	// Database defaults
+	viper.SetDefault("database.host", "localhost")
 	viper.SetDefault("database.port", 5432)
+	viper.SetDefault("database.user", "oryxid")
+	viper.SetDefault("database.name", "oryxid")
 	viper.SetDefault("database.sslmode", "disable")
 	viper.SetDefault("database.maxopenconns", 25)
 	viper.SetDefault("database.maxidleconns", 5)
@@ -157,10 +215,10 @@ func setDefaults() {
 	viper.SetDefault("redis.minidleconns", 5)
 
 	// OAuth defaults
-	viper.SetDefault("oauth.issuer", "https://localhost:9000")
+	viper.SetDefault("oauth.issuer", "http://localhost:9000")
 	viper.SetDefault("oauth.authorizationcodelifespan", "10m")
 	viper.SetDefault("oauth.accesstokenlifespan", "1h")
-	viper.SetDefault("oauth.refreshtokenlifespan", "720h")
+	viper.SetDefault("oauth.refreshtokenlifespan", "720h") // 30 days
 	viper.SetDefault("oauth.idtokenlifespan", "1h")
 	viper.SetDefault("oauth.allowedorigins", []string{"http://localhost:3000"})
 
@@ -172,23 +230,13 @@ func setDefaults() {
 	viper.SetDefault("security.pkcerequired", true)
 	viper.SetDefault("security.csrfenabled", true)
 
-	// JWT key paths & ID
+	// JWT defaults
 	viper.SetDefault("jwt.privatekeypath", "./certs/private_key.pem")
 	viper.SetDefault("jwt.publickeypath", "./certs/public_key.pem")
 	viper.SetDefault("jwt.kid", "default-key-id")
 }
 
-func loadJWTKeys(cfg *Config) error {
-	privateKey, err := crypto.LoadPrivateKey(cfg.JWT.PrivateKeyPath)
-	if err != nil {
-		return fmt.Errorf("load private key %s: %w", cfg.JWT.PrivateKeyPath, err)
-	}
-	cfg.JWT.PrivateKey = privateKey
-	cfg.JWT.PublicKey = &privateKey.PublicKey
-	return nil
-}
-
-// Get returns the loaded config (or panics if Load() wasn’t called).
+// Get returns the loaded config (or panics if Load() wasn't called).
 func Get() *Config {
 	if cfg == nil {
 		panic("config not loaded; call config.Load first")
@@ -198,7 +246,8 @@ func Get() *Config {
 
 // GetDSN builds a PostgreSQL DSN string from the loaded config.
 func GetDSN() string {
-	db := Get().Database
+	c := Get()
+	db := c.Database
 	return fmt.Sprintf(
 		"host=%s port=%d user=%s password=%s dbname=%s sslmode=%s",
 		db.Host, db.Port, db.User, db.Password, db.Name, db.SSLMode,

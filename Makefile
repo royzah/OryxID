@@ -185,6 +185,24 @@ docker-logs: ## Show container logs
 docker-ps: ## Show running containers
 	@docker-compose -f docker/docker-compose.yml ps
 
+.PHONY: docker-setup
+docker-setup: ## Complete Docker setup with keys
+	@echo "🔐 Generating RSA keys..."
+	@mkdir -p docker/certs
+	@openssl genrsa -out docker/certs/private_key.pem 4096
+	@openssl rsa -in docker/certs/private_key.pem -pubout -out docker/certs/public_key.pem
+	@echo "✅ Keys generated"
+
+.PHONY: docker-fresh
+docker-fresh: docker-clean docker-setup ## Fresh start with new database
+	@echo "🚀 Starting fresh environment..."
+	@docker-compose -f docker/docker-compose.yml up -d
+	@echo "✅ Fresh environment started"
+	@echo "   Wait a few seconds for services to initialize..."
+	@echo "   Admin Panel: http://localhost:3000"
+	@echo "   API Server:  http://localhost:9000"
+	@echo "   Default login: admin / admin123"
+
 # ==================== PRODUCTION ====================
 
 .PHONY: prod-build

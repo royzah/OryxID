@@ -70,25 +70,31 @@ func (h *AdminHandler) CreateApplication(c *gin.Context) {
 		return
 	}
 
-	clientSecret, err := crypto.GenerateSecureToken(64)
-	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to generate client secret"})
-		return
-	}
+	var clientSecret string
+	var hashedSecret string
 
-	// Hash client secret for storage
-	hashedSecret, err := bcrypt.GenerateFromPassword([]byte(clientSecret), bcrypt.DefaultCost)
-	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to hash client secret"})
-		return
+	// Only generate secret for confidential clients
+	if req.ClientType == "confidential" {
+		clientSecret, err = crypto.GenerateSecureToken(64)
+		if err != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to generate client secret"})
+			return
+		}
+
+		// Hash client secret for storage
+		hashedSecretBytes, err := bcrypt.GenerateFromPassword([]byte(clientSecret), bcrypt.DefaultCost)
+		if err != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to hash client secret"})
+			return
+		}
+		hashedSecret = string(hashedSecretBytes)
 	}
 
 	app := database.Application{
 		Name:               req.Name,
 		Description:        req.Description,
 		ClientID:           clientID,
-		ClientSecret:       clientSecret, // Store plain text temporarily for legacy compatibility
-		HashedClientSecret: string(hashedSecret),
+		HashedClientSecret: hashedSecret,
 		ClientType:         req.ClientType,
 		GrantTypes:         req.GrantTypes,
 		ResponseTypes:      req.ResponseTypes,
@@ -113,7 +119,7 @@ func (h *AdminHandler) CreateApplication(c *gin.Context) {
 		return
 	}
 
-	// Assign scopes
+	// Assign scopes if provided
 	if len(req.ScopeIDs) > 0 {
 		var scopes []database.Scope
 		if err := tx.Where("id IN ?", req.ScopeIDs).Find(&scopes).Error; err == nil && len(scopes) > 0 {
@@ -125,7 +131,7 @@ func (h *AdminHandler) CreateApplication(c *gin.Context) {
 		}
 	}
 
-	// Assign audiences
+	// Assign audiences if provided
 	if len(req.AudienceIDs) > 0 {
 		var audiences []database.Audience
 		if err := tx.Where("id IN ?", req.AudienceIDs).Find(&audiences).Error; err == nil && len(audiences) > 0 {
@@ -148,19 +154,26 @@ func (h *AdminHandler) CreateApplication(c *gin.Context) {
 	// Reload with associations
 	h.db.Preload("Scopes").Preload("Audiences").First(&app, app.ID)
 
-	// Include client secret in response (only on creation)
+	// Build response
 	response := gin.H{
-		"id":            app.ID,
-		"name":          app.Name,
-		"description":   app.Description,
-		"client_id":     app.ClientID,
-		"client_secret": clientSecret,
-		"client_type":   app.ClientType,
-		"grant_types":   app.GrantTypes,
-		"redirect_uris": app.RedirectURIs,
-		"scopes":        app.Scopes,
-		"audiences":     app.Audiences,
-		"created_at":    app.CreatedAt,
+		"id":                 app.ID,
+		"name":               app.Name,
+		"description":        app.Description,
+		"client_id":          app.ClientID,
+		"client_type":        app.ClientType,
+		"grant_types":        app.GrantTypes,
+		"response_types":     app.ResponseTypes,
+		"redirect_uris":      app.RedirectURIs,
+		"post_logout_uris":   app.PostLogoutURIs,
+		"scopes":             app.Scopes,
+		"audiences":          app.Audiences,
+		"skip_authorization": app.SkipAuthorization,
+		"created_at":         app.CreatedAt,
+	}
+
+	// Include client secret only for confidential clients on creation
+	if req.ClientType == "confidential" && clientSecret != "" {
+		response["client_secret"] = clientSecret
 	}
 
 	c.JSON(http.StatusCreated, response)

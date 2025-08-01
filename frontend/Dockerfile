@@ -1,52 +1,42 @@
 # syntax=docker/dockerfile:1
 
-########################################
-# ——— Development Stage ———————
-########################################
-FROM node:20.10.16-alpine3.16 AS dev
+# Development Stage
+FROM node:20-alpine AS dev
 
-# Ensure LF line endings; no inline comments on FROM
 WORKDIR /app
 
-# Cache dependencies install when package files change
+# Install dependencies
 COPY package*.json ./
 RUN npm ci
 
-# Copy everything else and expose dev server
+# Copy source
 COPY . .
+
 EXPOSE 3000
 CMD ["npm", "run", "dev", "--", "--host", "0.0.0.0", "--port", "3000"]
 
-########################################
-# ——— Build Stage ——————————
-########################################
-FROM node:20.10.16-alpine3.16 AS build
+# Build Stage
+FROM node:20-alpine AS build
 
 WORKDIR /app
+
+# Install dependencies
 COPY package*.json ./
 RUN npm ci
 
+# Copy source and build
 COPY . .
 RUN npm run build
 
-########################################
-# ——— Production Stage (Distroless) ———
-########################################
-# Use a distroless static image for minimal runtime
-FROM gcr.io/distroless/static-debian12 AS production
+# Production Stage
+FROM nginx:alpine AS production
 
-# Copy only the build output
-COPY --from=build /app/dist /app/dist
+# Copy built files
+COPY --from=build /app/dist /usr/share/nginx/html
 
-# Create non-root user for runtime
-USER nonroot
+# Copy nginx config
+COPY nginx.conf /etc/nginx/conf.d/default.conf
 
-# Expose HTTP port
 EXPOSE 80
 
-# Simple healthcheck
-HEALTHCHECK --interval=30s --timeout=5s --start-period=5s --retries=3 \
-    CMD wget --quiet --spider http://localhost/app/dist || exit 1
-
-# Serve static files with a simple HTTP server
-CMD ["./app/dist"]
+CMD ["nginx", "-g", "daemon off;"]

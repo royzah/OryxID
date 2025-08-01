@@ -339,6 +339,96 @@ func (s *Server) RefreshTokenGrant(req *TokenRequest) (*tokens.TokenResponse, er
 	return response, nil
 }
 
+// PasswordGrant handles the password grant flow (Resource Owner Password Credentials)
+func (s *Server) PasswordGrant(req *TokenRequest) (*tokens.TokenResponse, error) {
+	// Validate client credentials
+	var app database.Application
+	if err := s.db.Where("client_id = ?", req.ClientID).First(&app).Error; err != nil {
+		return nil, errors.New("invalid client")
+	}
+
+	// Verify client secret
+	if err := s.verifyClientSecret(&app, req.ClientSecret); err != nil {
+		return nil, errors.New("invalid client credentials")
+	}
+
+	// Validate grant type is allowed
+	grantAllowed := false
+	for _, grant := range app.GrantTypes {
+		if grant == "password" {
+			grantAllowed = true
+			break
+		}
+	}
+	if !grantAllowed {
+		return nil, errors.New("grant type not allowed for this client")
+	}
+
+	// Authenticate user
+	var user database.User
+	if err := s.db.Preload("Roles").Where("username = ? OR email = ?", req.Username, req.Username).First(&user).Error; err != nil {
+		return nil, errors.New("invalid user credentials")
+	}
+
+	// Verify password
+	if err := bcrypt.CompareHashAndPassword([]byte(user.Password), []byte(req.Password)); err != nil {
+		return nil, errors.New("invalid user credentials")
+	}
+
+	// Check if user is active
+	if !user.IsActive {
+		return nil, errors.New("user account is disabled")
+	}
+
+	// Generate tokens
+	scope := req.Scope
+	if scope == "" {
+		// Use default scopes
+		scopes := []string{}
+		var appScopes []database.Scope
+		if err := s.db.Model(&app).Association("Scopes").Find(&appScopes); err == nil {
+			for _, s := range appScopes {
+				if s.IsDefault {
+					scopes = append(scopes, s.Name)
+				}
+			}
+		}
+		scope = strings.Join(scopes, " ")
+	}
+
+	accessToken, err := s.TokenManager.GenerateAccessToken(&app, &user, scope, req.Audience, nil)
+	if err != nil {
+		return nil, err
+	}
+
+	refreshToken, err := s.TokenManager.GenerateRefreshToken(&app, &user, scope)
+	if err != nil {
+		return nil, err
+	}
+
+	response := &tokens.TokenResponse{
+		AccessToken:  accessToken,
+		TokenType:    "Bearer",
+		ExpiresIn:    3600,
+		RefreshToken: refreshToken,
+		Scope:        scope,
+	}
+
+	// Generate ID token if openid scope is present
+	if strings.Contains(scope, "openid") {
+		idToken, err := s.TokenManager.GenerateIDToken(&app, &user, "", time.Now())
+		if err != nil {
+			return nil, err
+		}
+		response.IDToken = idToken
+	}
+
+	// Store tokens
+	s.storeTokens(&app, &user, accessToken, refreshToken)
+
+	return response, nil
+}
+
 // Helper functions
 
 func generateSecureToken(length int) (string, error) {
@@ -371,18 +461,8 @@ func (s *Server) verifyClientSecret(app *database.Application, providedSecret st
 		return nil
 	}
 
-	// Check if we have a hashed secret
-	if app.HashedClientSecret != "" {
-		// Use bcrypt to compare
-		return bcrypt.CompareHashAndPassword([]byte(app.HashedClientSecret), []byte(providedSecret))
-	}
-
-	// Fallback to plain text comparison (for legacy support)
-	if app.ClientSecret != providedSecret {
-		return errors.New("invalid client secret")
-	}
-
-	return nil
+	// Always use bcrypt comparison for hashed secret
+	return bcrypt.CompareHashAndPassword([]byte(app.HashedClientSecret), []byte(providedSecret))
 }
 
 func (s *Server) storeTokens(app *database.Application, user *database.User, accessToken, refreshToken string) {

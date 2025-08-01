@@ -1,52 +1,35 @@
 # syntax=docker/dockerfile:1
 
-###############################################################################
-# ——— Builder Stage: Go 1.21.13 on Debian Bullseye-Slim ————————————
-###############################################################################
-FROM golang:1.21.13-bullseye-slim AS builder
+# Builder Stage
+FROM golang:1.21-alpine AS builder
 
-# Install build deps: git, certs, timezone data
-RUN apt-get update \
-    && DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends \
-    git ca-certificates tzdata \
-    && rm -rf /var/lib/apt/lists/*
+# Install build dependencies
+RUN apk add --no-cache git ca-certificates tzdata
 
 WORKDIR /build
 
-# Cache modules install when go.mod/go.sum change
+# Cache modules
 COPY go.mod go.sum ./
 RUN go mod download
 
-# Copy code and compile static binary
+# Copy source and build
 COPY . .
 RUN CGO_ENABLED=0 GOOS=linux GOARCH=amd64 \
     go build -ldflags="-w -s" -o oryxid ./cmd/server
 
-###############################################################################
-# ——— (Optional) Vulnerability Scan Stage ————————————————————————————
-###############################################################################
-FROM aquasec/trivy:latest AS trivy_scan
-COPY --from=builder /build/oryxid /app/oryxid
-# Fail build on any new CRITICAL or HIGH findings
-RUN trivy fs --exit-code 1 --severity CRITICAL,HIGH --no-progress /app/oryxid
-
-###############################################################################
-# ——— Production Stage: Scratch —————————————————————————————————————
-###############################################################################
+# Production Stage
 FROM scratch AS production
 
-# Copy CA certs so your app can make TLS calls if needed
+# Copy CA certificates
 COPY --from=builder /etc/ssl/certs/ca-certificates.crt /etc/ssl/certs/
+COPY --from=builder /usr/share/zoneinfo /usr/share/zoneinfo
 
-# Copy only the static binary
+# Copy binary
 COPY --from=builder /build/oryxid /oryxid
 
-# Run as non-root (uid 65534 = nobody)
+# Run as non-root
 USER 65534:65534
 
-# Expose your app port & add simple exec-style healthcheck
 EXPOSE 9000
-HEALTHCHECK --interval=30s --timeout=5s --start-period=5s --retries=3 \
-    CMD ["/oryxid", "--health"] || exit 1
 
 ENTRYPOINT ["/oryxid"]

@@ -140,11 +140,7 @@ func (h *OAuthHandler) TokenHandler(c *gin.Context) {
 	case "refresh_token":
 		response, err = h.server.RefreshTokenGrant(&req)
 	case "password":
-		// Resource Owner Password Credentials flow - implement if needed
-		c.JSON(http.StatusBadRequest, gin.H{
-			"error": "unsupported_grant_type",
-		})
-		return
+		response, err = h.server.PasswordGrant(&req)
 	default:
 		c.JSON(http.StatusBadRequest, gin.H{
 			"error": "unsupported_grant_type",
@@ -375,17 +371,9 @@ func (h *OAuthHandler) validateClient(clientID, clientSecret string) (*database.
 		return &app, nil
 	}
 
-	// Check if we have a hashed secret
-	if app.HashedClientSecret != "" {
-		// Use bcrypt to compare
-		if err := bcrypt.CompareHashAndPassword([]byte(app.HashedClientSecret), []byte(clientSecret)); err != nil {
-			return nil, err
-		}
-	} else {
-		// Fallback to plain text comparison (for legacy support)
-		if app.ClientSecret != clientSecret {
-			return nil, gorm.ErrRecordNotFound
-		}
+	// Always use bcrypt to compare hashed secret
+	if err := bcrypt.CompareHashAndPassword([]byte(app.HashedClientSecret), []byte(clientSecret)); err != nil {
+		return nil, err
 	}
 
 	return &app, nil
