@@ -1,46 +1,52 @@
-# Build stage
-FROM golang:1.21-alpine AS builder
+# syntax=docker/dockerfile:1
 
-# Install dependencies
-RUN apk add --no-cache git ca-certificates tzdata
+###############################################################################
+# ——— Builder Stage: Go 1.21.13 on Debian Bullseye-Slim ————————————
+###############################################################################
+FROM golang:1.21.13-bullseye-slim AS builder
 
-# Set working directory
+# Install build deps: git, certs, timezone data
+RUN apt-get update \
+    && DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends \
+    git ca-certificates tzdata \
+    && rm -rf /var/lib/apt/lists/*
+
 WORKDIR /build
 
-# Copy go mod files
+# Cache modules install when go.mod/go.sum change
 COPY go.mod go.sum ./
-
-# Download dependencies
 RUN go mod download
 
-# Copy source code
+# Copy code and compile static binary
 COPY . .
+RUN CGO_ENABLED=0 GOOS=linux GOARCH=amd64 \
+    go build -ldflags="-w -s" -o oryxid ./cmd/server
 
-# Build the application
-RUN CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build \
-    -ldflags="-w -s -extldflags '-static'" \
-    -o oryxid ./cmd/server
+###############################################################################
+# ——— (Optional) Vulnerability Scan Stage ————————————————————————————
+###############################################################################
+FROM aquasec/trivy:latest AS trivy_scan
+COPY --from=builder /build/oryxid /app/oryxid
+# Fail build on any new CRITICAL or HIGH findings
+RUN trivy fs --exit-code 1 --severity CRITICAL,HIGH --no-progress /app/oryxid
 
-# Runtime stage
-FROM alpine:latest
+###############################################################################
+# ——— Production Stage: Scratch —————————————————————————————————————
+###############################################################################
+FROM scratch AS production
 
-# Copy certificates from the builder stage
+# Copy CA certs so your app can make TLS calls if needed
 COPY --from=builder /etc/ssl/certs/ca-certificates.crt /etc/ssl/certs/
 
-# Create a non-root user and group
-RUN addgroup -S appgroup && adduser -S appuser -G appgroup
+# Copy only the static binary
+COPY --from=builder /build/oryxid /oryxid
 
-# Copy the binary from the builder stage to a system path
-COPY --from=builder /build/oryxid /usr/local/bin/oryxid
+# Run as non-root (uid 65534 = nobody)
+USER 65534:65534
 
-# Switch to the non-root user
-USER appuser
-
-# Set the working directory (still useful for relative paths if any)
-WORKDIR /app
-
-# Expose the application port
+# Expose your app port & add simple exec-style healthcheck
 EXPOSE 9000
+HEALTHCHECK --interval=30s --timeout=5s --start-period=5s --retries=3 \
+    CMD ["/oryxid", "--health"] || exit 1
 
-# Run the application from its new location
-ENTRYPOINT ["oryxid"]
+ENTRYPOINT ["/oryxid"]

@@ -92,51 +92,43 @@ func Load() (*Config, error) {
 	viper.AddConfigPath("./config")
 	viper.AddConfigPath("/etc/oryxid/")
 
-	// Set defaults
 	setDefaults()
 
-	// Read environment variables
-	viper.SetEnvPrefix("ORYXID") // look for ORYXID_DATABASE_HOST, etc.
+	// Environment setup
+	viper.SetEnvPrefix("ORYXID")
 	viper.SetEnvKeyReplacer(strings.NewReplacer(".", "_"))
 	viper.AutomaticEnv()
 
-	// Server env → cfg.Server
-	viper.BindEnv("database.host")
-	viper.BindEnv("database.port")
-	viper.BindEnv("database.user")
-	viper.BindEnv("database.password")
-	viper.BindEnv("database.name")
+	envKeys := []string{
+		"server.host", "server.port", "server.mode", "server.readtimeout", "server.writetimeout",
+		"database.host", "database.port", "database.user", "database.password", "database.name",
+		"redis.host", "redis.port", "redis.password", "redis.db",
+		"admin.username", "admin.email", "admin.password",
+	}
 
-	// Redis env → cfg.Redis
-	viper.BindEnv("redis.host")
-	viper.BindEnv("redis.port")
-	viper.BindEnv("redis.password")
-	viper.BindEnv("redis.db")
-
-	// Admin env → cfg.Admin
-	viper.BindEnv("admin.username")
-	viper.BindEnv("admin.email")
-	viper.BindEnv("admin.password")
-
-	// Read config file
-	if err := viper.ReadInConfig(); err != nil {
-		if _, ok := err.(viper.ConfigFileNotFoundError); !ok {
-			return nil, fmt.Errorf("error reading config file: %w", err)
+	for _, key := range envKeys {
+		if err := viper.BindEnv(key); err != nil {
+			return nil, fmt.Errorf("bind env %q: %w", key, err)
 		}
 	}
 
-	// Unmarshal config
-	cfg = &Config{}
-	if err := viper.Unmarshal(cfg); err != nil {
-		return nil, fmt.Errorf("error unmarshalling config: %w", err)
+	if err := viper.ReadInConfig(); err != nil {
+		var nf viper.ConfigFileNotFoundError
+		if !strings.Contains(err.Error(), nf.Error()) {
+			return nil, fmt.Errorf("read config file: %w", err)
+		}
 	}
 
-	// Set JWT signing method
-	cfg.JWT.SigningMethod = jwt.SigningMethodRS256
+	// Unmarshal into our struct
+	cfg = &Config{}
+	if err := viper.Unmarshal(cfg); err != nil {
+		return nil, fmt.Errorf("unmarshal config: %w", err)
+	}
 
-	// Load JWT keys
+	// JWT specifics
+	cfg.JWT.SigningMethod = jwt.SigningMethodRS256
 	if err := loadJWTKeys(cfg); err != nil {
-		return nil, fmt.Errorf("error loading JWT keys: %w", err)
+		return nil, fmt.Errorf("load JWT keys: %w", err)
 	}
 
 	return cfg, nil
@@ -180,34 +172,35 @@ func setDefaults() {
 	viper.SetDefault("security.pkcerequired", true)
 	viper.SetDefault("security.csrfenabled", true)
 
-	// JWT defaults
+	// JWT key paths & ID
 	viper.SetDefault("jwt.privatekeypath", "./certs/private_key.pem")
 	viper.SetDefault("jwt.publickeypath", "./certs/public_key.pem")
 	viper.SetDefault("jwt.kid", "default-key-id")
 }
 
 func loadJWTKeys(cfg *Config) error {
-	// Load the private key from the path specified in the config.
 	privateKey, err := crypto.LoadPrivateKey(cfg.JWT.PrivateKeyPath)
 	if err != nil {
-		return fmt.Errorf("failed to load private key from %s: %w", cfg.JWT.PrivateKeyPath, err)
+		return fmt.Errorf("load private key %s: %w", cfg.JWT.PrivateKeyPath, err)
 	}
-
 	cfg.JWT.PrivateKey = privateKey
 	cfg.JWT.PublicKey = &privateKey.PublicKey
-
 	return nil
 }
 
+// Get returns the loaded config (or panics if Load() wasn’t called).
 func Get() *Config {
 	if cfg == nil {
-		panic("config not loaded")
+		panic("config not loaded; call config.Load first")
 	}
 	return cfg
 }
 
+// GetDSN builds a PostgreSQL DSN string from the loaded config.
 func GetDSN() string {
 	db := Get().Database
-	return fmt.Sprintf("host=%s port=%d user=%s password=%s dbname=%s sslmode=%s",
-		db.Host, db.Port, db.User, db.Password, db.Name, db.SSLMode)
+	return fmt.Sprintf(
+		"host=%s port=%d user=%s password=%s dbname=%s sslmode=%s",
+		db.Host, db.Port, db.User, db.Password, db.Name, db.SSLMode,
+	)
 }
