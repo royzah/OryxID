@@ -319,14 +319,38 @@ func (s *Server) RefreshTokenGrant(req *TokenRequest) (*tokens.TokenResponse, er
 		}
 	}
 
-	// Generate new access token
-	accessToken, err := s.TokenManager.GenerateAccessToken(&app, user, claims.Scope, claims.Audience[0], nil)
+	// Determine scope for new tokens (OAuth 2.1 scope downscaling)
+	requestedScope := claims.Scope // Default to original scope
+	if req.Scope != "" {
+		// Client requested specific scopes - validate they're a subset of original scopes
+		requestedScopes := strings.Split(req.Scope, " ")
+		originalScopes := strings.Split(claims.Scope, " ")
+
+		// Create map of original scopes for quick lookup
+		originalScopeMap := make(map[string]bool)
+		for _, s := range originalScopes {
+			originalScopeMap[s] = true
+		}
+
+		// Validate all requested scopes were in original token
+		for _, s := range requestedScopes {
+			if !originalScopeMap[s] {
+				return nil, errors.New("requested scope exceeds granted scope")
+			}
+		}
+
+		// Use downscaled scope
+		requestedScope = req.Scope
+	}
+
+	// Generate new access token with potentially downscaled scope
+	accessToken, err := s.TokenManager.GenerateAccessToken(&app, user, requestedScope, claims.Audience[0], nil)
 	if err != nil {
 		return nil, err
 	}
 
-	// Generate new refresh token (token rotation for security)
-	newRefreshToken, err := s.TokenManager.GenerateRefreshToken(&app, user, claims.Scope)
+	// Generate new refresh token with potentially downscaled scope (token rotation for security)
+	newRefreshToken, err := s.TokenManager.GenerateRefreshToken(&app, user, requestedScope)
 	if err != nil {
 		return nil, err
 	}
@@ -341,7 +365,7 @@ func (s *Server) RefreshTokenGrant(req *TokenRequest) (*tokens.TokenResponse, er
 		TokenType:    "Bearer",
 		ExpiresIn:    3600,
 		RefreshToken: newRefreshToken, // Return new refresh token (OAuth 2.1 best practice)
-		Scope:        claims.Scope,
+		Scope:        requestedScope,   // Return actual scope (might be downscaled)
 	}
 
 	// Store new access token and new refresh token

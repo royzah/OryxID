@@ -21,15 +21,16 @@ type TokenManager struct {
 
 type CustomClaims struct {
 	jwt.RegisteredClaims
-	Scope    string                 `json:"scope,omitempty"`
-	ClientID string                 `json:"client_id,omitempty"`
-	Username string                 `json:"username,omitempty"`
-	Email    string                 `json:"email,omitempty"`
-	Roles    []string               `json:"roles,omitempty"`
-	Type     string                 `json:"typ,omitempty"`
-	Nonce    string                 `json:"nonce,omitempty"`
-	AuthTime int64                  `json:"auth_time,omitempty"`
-	Extra    map[string]interface{} `json:"ext,omitempty"`
+	Scope         string                 `json:"scope,omitempty"`
+	ClientID      string                 `json:"client_id,omitempty"`
+	Username      string                 `json:"username,omitempty"`
+	Email         string                 `json:"email,omitempty"`
+	EmailVerified bool                   `json:"email_verified,omitempty"`
+	Roles         []string               `json:"roles,omitempty"`
+	Type          string                 `json:"typ,omitempty"`
+	Nonce         string                 `json:"nonce,omitempty"`
+	AuthTime      int64                  `json:"auth_time,omitempty"`
+	Extra         map[string]interface{} `json:"ext,omitempty"`
 }
 
 type TokenResponse struct {
@@ -155,11 +156,12 @@ func (tm *TokenManager) GenerateIDToken(app *database.Application, user *databas
 			IssuedAt:  jwt.NewNumericDate(now),
 			NotBefore: jwt.NewNumericDate(now),
 		},
-		Username: user.Username,
-		Email:    user.Email,
-		Nonce:    nonce,
-		AuthTime: authTime.Unix(),
-		Type:     "ID",
+		Username:      user.Username,
+		Email:         user.Email,
+		EmailVerified: user.EmailVerified,
+		Nonce:         nonce,
+		AuthTime:      authTime.Unix(),
+		Type:          "ID",
 	}
 
 	// Add roles

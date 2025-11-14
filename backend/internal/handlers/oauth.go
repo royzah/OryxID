@@ -347,8 +347,14 @@ func (h *OAuthHandler) UserInfoHandler(c *gin.Context) {
 	// Add email if email scope is present
 	if strings.Contains(claims.Scope, "email") {
 		userInfo["email"] = claims.Email
-		// TODO: Add email_verified field to User model and include actual verification status
-		// For now, omit email_verified rather than claiming all emails are verified
+
+		// Get user from database to check email verification status
+		var user database.User
+		if err := h.db.Where("id = ?", claims.Subject).First(&user).Error; err == nil {
+			userInfo["email_verified"] = user.EmailVerified
+		} else {
+			userInfo["email_verified"] = false // Default to false if user not found
+		}
 	}
 
 	// Add custom claims

@@ -23,12 +23,13 @@ type BaseModel struct {
 // User represents a system user (admin)
 type User struct {
 	BaseModel
-	Username string `gorm:"uniqueIndex;not null" json:"username"`
-	Email    string `gorm:"uniqueIndex;not null" json:"email"`
-	Password string `gorm:"not null" json:"-"`
-	IsActive bool   `gorm:"default:true" json:"is_active"`
-	IsAdmin  bool   `gorm:"default:false" json:"is_admin"`
-	Roles    []Role `gorm:"many2many:user_roles;" json:"roles,omitempty"`
+	Username      string `gorm:"uniqueIndex;not null" json:"username"`
+	Email         string `gorm:"uniqueIndex;not null" json:"email"`
+	EmailVerified bool   `gorm:"default:false" json:"email_verified"`
+	Password      string `gorm:"not null" json:"-"`
+	IsActive      bool   `gorm:"default:true" json:"is_active"`
+	IsAdmin       bool   `gorm:"default:false" json:"is_admin"`
+	Roles         []Role `gorm:"many2many:user_roles;" json:"roles,omitempty"`
 }
 
 // Role represents user roles
