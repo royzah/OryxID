@@ -4,9 +4,9 @@ import (
 	"testing"
 	"time"
 
-	"github.com/google/uuid"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+	"github.com/tiiuae/oryxid/internal/config"
 	"github.com/tiiuae/oryxid/internal/database"
 	"github.com/tiiuae/oryxid/internal/tokens"
 	"golang.org/x/crypto/bcrypt"
@@ -36,6 +36,18 @@ func setupTestDB(t *testing.T) *gorm.DB {
 	require.NoError(t, err)
 
 	return db
+}
+
+func createTestTokenManager(t *testing.T) *tokens.TokenManager {
+	// Load test JWT config
+	cfg, err := config.LoadJWTConfig("./testdata/test_private_key.pem", "./testdata/test_public_key.pem")
+	require.NoError(t, err)
+
+	// Create token manager
+	tm, err := tokens.NewTokenManager(cfg, "http://localhost:8080")
+	require.NoError(t, err)
+
+	return tm
 }
 
 func createTestApplication(t *testing.T, db *gorm.DB) *database.Application {
@@ -129,14 +141,7 @@ func TestGenerateAuthorizationCode(t *testing.T) {
 	app := createTestApplication(t, db)
 	user := createTestUser(t, db)
 
-	// Create token manager
-	tm, err := tokens.NewTokenManager(
-		"http://localhost:8080",
-		"./testdata/test_private_key.pem",
-		"./testdata/test_public_key.pem",
-	)
-	require.NoError(t, err)
-
+	tm := createTestTokenManager(t)
 	server := NewServer(db, tm)
 
 	req := &AuthorizeRequest{
@@ -172,13 +177,7 @@ func TestScopeDownscaling(t *testing.T) {
 	app := createTestApplication(t, db)
 	user := createTestUser(t, db)
 
-	tm, err := tokens.NewTokenManager(
-		"http://localhost:8080",
-		"./testdata/test_private_key.pem",
-		"./testdata/test_public_key.pem",
-	)
-	require.NoError(t, err)
-
+	tm := createTestTokenManager(t)
 	server := NewServer(db, tm)
 
 	// Generate refresh token with full scope
@@ -223,13 +222,7 @@ func TestRefreshTokenRotation(t *testing.T) {
 	app := createTestApplication(t, db)
 	user := createTestUser(t, db)
 
-	tm, err := tokens.NewTokenManager(
-		"http://localhost:8080",
-		"./testdata/test_private_key.pem",
-		"./testdata/test_public_key.pem",
-	)
-	require.NoError(t, err)
-
+	tm := createTestTokenManager(t)
 	server := NewServer(db, tm)
 
 	// Generate initial refresh token
@@ -275,13 +268,7 @@ func TestPARCreationAndValidation(t *testing.T) {
 	db := setupTestDB(t)
 	app := createTestApplication(t, db)
 
-	tm, err := tokens.NewTokenManager(
-		"http://localhost:8080",
-		"./testdata/test_private_key.pem",
-		"./testdata/test_public_key.pem",
-	)
-	require.NoError(t, err)
-
+	tm := createTestTokenManager(t)
 	server := NewServer(db, tm)
 
 	req := &AuthorizeRequest{
@@ -319,13 +306,7 @@ func TestPARExpiration(t *testing.T) {
 	db := setupTestDB(t)
 	app := createTestApplication(t, db)
 
-	tm, err := tokens.NewTokenManager(
-		"http://localhost:8080",
-		"./testdata/test_private_key.pem",
-		"./testdata/test_public_key.pem",
-	)
-	require.NoError(t, err)
-
+	tm := createTestTokenManager(t)
 	server := NewServer(db, tm)
 
 	// Create PAR
@@ -368,13 +349,7 @@ func TestClientIDMismatchInPAR(t *testing.T) {
 	err := db.Create(parRequest).Error
 	require.NoError(t, err)
 
-	tm, err := tokens.NewTokenManager(
-		"http://localhost:8080",
-		"./testdata/test_private_key.pem",
-		"./testdata/test_public_key.pem",
-	)
-	require.NoError(t, err)
-
+	tm := createTestTokenManager(t)
 	server := NewServer(db, tm)
 
 	// Try to use PAR with different client_id
