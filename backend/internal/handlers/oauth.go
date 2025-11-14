@@ -135,12 +135,63 @@ func (h *OAuthHandler) TokenHandler(c *gin.Context) {
 	req.Username = c.PostForm("username")
 	req.Password = c.PostForm("password")
 
-	// Get client credentials from Basic Auth or form
-	clientID, clientSecret, hasAuth := c.Request.BasicAuth()
-	if !hasAuth {
+	// Get client credentials - support multiple authentication methods
+	var clientID, clientSecret string
+	var app *database.Application
+	var err error
+
+	// Check for private_key_jwt authentication (RFC 7523)
+	clientAssertion := c.PostForm("client_assertion")
+	clientAssertionType := c.PostForm("client_assertion_type")
+
+	if clientAssertion != "" && clientAssertionType == "urn:ietf:params:oauth:client-assertion-type:jwt-bearer" {
+		// private_key_jwt authentication
 		clientID = c.PostForm("client_id")
-		clientSecret = c.PostForm("client_secret")
+		if clientID == "" {
+			c.JSON(http.StatusBadRequest, gin.H{
+				"error":             "invalid_request",
+				"error_description": "client_id required with client_assertion",
+			})
+			return
+		}
+
+		// Validate the JWT assertion
+		tokenEndpoint := getBaseURL(c) + "/oauth/token"
+		if err := h.server.ValidatePrivateKeyJWT(clientAssertion, clientID, tokenEndpoint); err != nil {
+			c.JSON(http.StatusUnauthorized, gin.H{
+				"error":             "invalid_client",
+				"error_description": err.Error(),
+			})
+			return
+		}
+
+		// Retrieve the application
+		if err := h.db.Where("client_id = ?", clientID).First(&app).Error; err != nil {
+			c.JSON(http.StatusUnauthorized, gin.H{
+				"error": "invalid_client",
+			})
+			return
+		}
+	} else {
+		// Traditional client_secret_basic or client_secret_post
+		var hasAuth bool
+		clientID, clientSecret, hasAuth = c.Request.BasicAuth()
+		if !hasAuth {
+			clientID = c.PostForm("client_id")
+			clientSecret = c.PostForm("client_secret")
+		}
+
+		// Validate client
+		app, err = h.validateClient(clientID, clientSecret)
+		if err != nil {
+			c.JSON(http.StatusUnauthorized, gin.H{
+				"error":             "invalid_client",
+				"error_description": err.Error(),
+			})
+			return
+		}
 	}
+
 	req.ClientID = clientID
 	req.ClientSecret = clientSecret
 
@@ -148,16 +199,6 @@ func (h *OAuthHandler) TokenHandler(c *gin.Context) {
 	if req.GrantType == "" {
 		c.JSON(http.StatusBadRequest, gin.H{
 			"error": "unsupported_grant_type",
-		})
-		return
-	}
-
-	// Validate client
-	app, err := h.validateClient(clientID, clientSecret)
-	if err != nil {
-		c.JSON(http.StatusUnauthorized, gin.H{
-			"error":             "invalid_client",
-			"error_description": err.Error(),
 		})
 		return
 	}
@@ -330,7 +371,7 @@ func (h *OAuthHandler) DiscoveryHandler(c *gin.Context) {
 		"grant_types_supported":                        []string{"authorization_code", "client_credentials", "refresh_token", "password"},            // Removed implicit, added password
 		"subject_types_supported":                      []string{"public"},
 		"id_token_signing_alg_values_supported":        []string{"RS256"},
-		"token_endpoint_auth_methods_supported":        []string{"client_secret_basic", "client_secret_post"},                                       // TODO: Add private_key_jwt
+		"token_endpoint_auth_methods_supported":        []string{"client_secret_basic", "client_secret_post", "private_key_jwt"},                // RFC 7523
 		"claims_supported":                             []string{"sub", "iss", "aud", "exp", "iat", "nbf", "email", "email_verified", "username", "roles"}, // Added email_verified
 		"code_challenge_methods_supported":             []string{"S256"},                                                                             // OAuth 2.1 - only S256 allowed
 	}
@@ -401,19 +442,49 @@ func (h *OAuthHandler) UserInfoHandler(c *gin.Context) {
 
 // PARHandler handles POST /oauth/par (Pushed Authorization Requests - RFC 9126)
 func (h *OAuthHandler) PARHandler(c *gin.Context) {
-	// Extract client credentials from Basic Auth or form
-	clientID, clientSecret, hasBasicAuth := c.Request.BasicAuth()
-	if !hasBasicAuth {
-		clientID = c.PostForm("client_id")
-		clientSecret = c.PostForm("client_secret")
-	}
+	// Extract client credentials - support multiple authentication methods
+	var clientID, clientSecret string
 
-	if clientID == "" {
-		c.JSON(http.StatusBadRequest, gin.H{
-			"error":             "invalid_client",
-			"error_description": "client_id is required",
-		})
-		return
+	// Check for private_key_jwt authentication (RFC 7523)
+	clientAssertion := c.PostForm("client_assertion")
+	clientAssertionType := c.PostForm("client_assertion_type")
+
+	if clientAssertion != "" && clientAssertionType == "urn:ietf:params:oauth:client-assertion-type:jwt-bearer" {
+		// private_key_jwt authentication
+		clientID = c.PostForm("client_id")
+		if clientID == "" {
+			c.JSON(http.StatusBadRequest, gin.H{
+				"error":             "invalid_request",
+				"error_description": "client_id required with client_assertion",
+			})
+			return
+		}
+
+		// Validate the JWT assertion
+		tokenEndpoint := getBaseURL(c) + "/oauth/token"
+		if err := h.server.ValidatePrivateKeyJWT(clientAssertion, clientID, tokenEndpoint); err != nil {
+			c.JSON(http.StatusUnauthorized, gin.H{
+				"error":             "invalid_client",
+				"error_description": err.Error(),
+			})
+			return
+		}
+	} else {
+		// Traditional client_secret_basic or client_secret_post
+		var hasBasicAuth bool
+		clientID, clientSecret, hasBasicAuth = c.Request.BasicAuth()
+		if !hasBasicAuth {
+			clientID = c.PostForm("client_id")
+			clientSecret = c.PostForm("client_secret")
+		}
+
+		if clientID == "" {
+			c.JSON(http.StatusBadRequest, gin.H{
+				"error":             "invalid_client",
+				"error_description": "client_id is required",
+			})
+			return
+		}
 	}
 
 	// Build authorization request from form parameters

@@ -2,13 +2,17 @@ package oauth
 
 import (
 	"crypto/rand"
+	"crypto/rsa"
 	"crypto/sha256"
+	"crypto/x509"
 	"encoding/base64"
+	"encoding/pem"
 	"errors"
 	"fmt"
 	"strings"
 	"time"
 
+	"github.com/golang-jwt/jwt/v5"
 	"github.com/tiiuae/oryxid/internal/database"
 	"github.com/tiiuae/oryxid/internal/tokens"
 	"golang.org/x/crypto/bcrypt"
@@ -628,4 +632,115 @@ func (s *Server) ValidatePAR(requestURI, clientID string) (*database.PushedAutho
 	s.db.Model(&par).Update("used", true)
 
 	return &par, nil
+}
+
+// ValidatePrivateKeyJWT validates a JWT used for client authentication (RFC 7523)
+func (s *Server) ValidatePrivateKeyJWT(clientAssertion, clientID, tokenEndpoint string) error {
+	// Find the client
+	var app database.Application
+	if err := s.db.Where("client_id = ?", clientID).First(&app).Error; err != nil {
+		return errors.New("client not found")
+	}
+
+	// Check if client is configured for private_key_jwt
+	if app.TokenEndpointAuthMethod != "private_key_jwt" {
+		return errors.New("client not configured for private_key_jwt authentication")
+	}
+
+	// Client must have a public key
+	if app.PublicKeyPEM == "" {
+		return errors.New("client has no public key configured")
+	}
+
+	// Parse the PEM-encoded public key
+	block, _ := pem.Decode([]byte(app.PublicKeyPEM))
+	if block == nil {
+		return errors.New("failed to parse PEM block containing the public key")
+	}
+
+	// Parse the RSA public key
+	pub, err := x509.ParsePKIXPublicKey(block.Bytes)
+	if err != nil {
+		return fmt.Errorf("failed to parse public key: %w", err)
+	}
+
+	rsaPub, ok := pub.(*rsa.PublicKey)
+	if !ok {
+		return errors.New("public key is not RSA")
+	}
+
+	// Parse and validate the JWT
+	token, err := jwt.Parse(clientAssertion, func(token *jwt.Token) (interface{}, error) {
+		// Verify signing method is RSA
+		if _, ok := token.Method.(*jwt.SigningMethodRSA); !ok {
+			return nil, fmt.Errorf("unexpected signing method: %v", token.Header["alg"])
+		}
+		return rsaPub, nil
+	})
+
+	if err != nil {
+		return fmt.Errorf("failed to validate JWT: %w", err)
+	}
+
+	if !token.Valid {
+		return errors.New("invalid JWT")
+	}
+
+	// Extract claims
+	claims, ok := token.Claims.(jwt.MapClaims)
+	if !ok {
+		return errors.New("invalid JWT claims")
+	}
+
+	// Validate required claims per RFC 7523
+	// iss (issuer) - MUST be the client_id
+	iss, ok := claims["iss"].(string)
+	if !ok || iss != clientID {
+		return errors.New("invalid iss claim - must equal client_id")
+	}
+
+	// sub (subject) - MUST be the client_id
+	sub, ok := claims["sub"].(string)
+	if !ok || sub != clientID {
+		return errors.New("invalid sub claim - must equal client_id")
+	}
+
+	// aud (audience) - MUST be the token endpoint URL
+	aud, ok := claims["aud"]
+	if !ok {
+		return errors.New("missing aud claim")
+	}
+
+	// aud can be string or array of strings
+	audValid := false
+	switch v := aud.(type) {
+	case string:
+		audValid = (v == tokenEndpoint)
+	case []interface{}:
+		for _, a := range v {
+			if audStr, ok := a.(string); ok && audStr == tokenEndpoint {
+				audValid = true
+				break
+			}
+		}
+	}
+
+	if !audValid {
+		return errors.New("invalid aud claim - must be token endpoint URL")
+	}
+
+	// exp (expiration) - MUST be present and not expired
+	exp, ok := claims["exp"].(float64)
+	if !ok {
+		return errors.New("missing exp claim")
+	}
+
+	if time.Now().Unix() > int64(exp) {
+		return errors.New("JWT expired")
+	}
+
+	// jti (JWT ID) - OPTIONAL but recommended for replay prevention
+	// TODO: Implement jti replay prevention cache
+
+	return nil
 }
