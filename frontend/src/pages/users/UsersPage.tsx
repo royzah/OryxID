@@ -136,7 +136,7 @@ export const UsersPage = () => {
                   </TableCell>
                 </TableRow>
               ))
-            ) : data?.items.length === 0 ? (
+            ) : (data?.items || []).length === 0 ? (
               <TableRow>
                 <TableCell
                   colSpan={5}

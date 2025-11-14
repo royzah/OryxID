@@ -232,7 +232,7 @@ export const AuditPage = () => {
               </CardContent>
             </Card>
           ))
-        ) : data?.items.length === 0 ? (
+        ) : (data?.items || []).length === 0 ? (
           <Card>
             <CardContent className="py-12 text-center">
               <p className="text-gray-500">
