@@ -440,19 +440,17 @@ func generateSecureToken(length int) (string, error) {
 }
 
 func validatePKCE(challenge, method, verifier string) bool {
-	switch method {
-	case "S256":
-		h := sha256.Sum256([]byte(verifier))
-		computed := base64.URLEncoding.EncodeToString(h[:])
-		// Remove padding for comparison
-		computed = strings.TrimRight(computed, "=")
-		challenge = strings.TrimRight(challenge, "=")
-		return computed == challenge
-	case "plain":
-		return verifier == challenge
-	default:
+	// OAuth 2.1 only allows S256 - plain method is insecure and deprecated
+	if method != "S256" {
 		return false
 	}
+
+	h := sha256.Sum256([]byte(verifier))
+	computed := base64.URLEncoding.EncodeToString(h[:])
+	// Remove padding for comparison
+	computed = strings.TrimRight(computed, "=")
+	challenge = strings.TrimRight(challenge, "=")
+	return computed == challenge
 }
 
 func (s *Server) verifyClientSecret(app *database.Application, providedSecret string) error {

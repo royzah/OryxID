@@ -291,14 +291,14 @@ func (h *OAuthHandler) DiscoveryHandler(c *gin.Context) {
 		"introspection_endpoint":                baseURL + "/oauth/introspect",
 		"revocation_endpoint":                   baseURL + "/oauth/revoke",
 		"scopes_supported":                      []string{"openid", "profile", "email", "offline_access"},
-		"response_types_supported":              []string{"code", "token", "id_token", "code token", "code id_token", "token id_token", "code token id_token"},
-		"response_modes_supported":              []string{"query", "fragment"},
-		"grant_types_supported":                 []string{"authorization_code", "implicit", "client_credentials", "refresh_token"},
+		"response_types_supported":              []string{"code"}, // Only authorization code flow fully implemented
+		"response_modes_supported":              []string{"query"},
+		"grant_types_supported":                 []string{"authorization_code", "client_credentials", "refresh_token", "password"}, // Removed implicit, added password
 		"subject_types_supported":               []string{"public"},
 		"id_token_signing_alg_values_supported": []string{"RS256"},
 		"token_endpoint_auth_methods_supported": []string{"client_secret_basic", "client_secret_post"},
 		"claims_supported":                      []string{"sub", "iss", "aud", "exp", "iat", "nbf", "email", "username", "roles"},
-		"code_challenge_methods_supported":      []string{"plain", "S256"},
+		"code_challenge_methods_supported":      []string{"S256"}, // OAuth 2.1 - only S256 allowed
 	}
 
 	c.JSON(http.StatusOK, discovery)
@@ -347,7 +347,8 @@ func (h *OAuthHandler) UserInfoHandler(c *gin.Context) {
 	// Add email if email scope is present
 	if strings.Contains(claims.Scope, "email") {
 		userInfo["email"] = claims.Email
-		userInfo["email_verified"] = true
+		// TODO: Add email_verified field to User model and include actual verification status
+		// For now, omit email_verified rather than claiming all emails are verified
 	}
 
 	// Add custom claims
