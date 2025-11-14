@@ -155,6 +155,7 @@ func main() {
 		oauthGroup.POST("/token", oauthHandler.TokenHandler)
 		oauthGroup.POST("/introspect", oauthHandler.IntrospectHandler)
 		oauthGroup.POST("/revoke", oauthHandler.RevokeHandler)
+		oauthGroup.POST("/par", oauthHandler.PARHandler) // RFC 9126 - Pushed Authorization Requests
 
 		// Protected endpoints
 		authMiddleware := auth.NewAuthMiddleware(tokenManager, db)

@@ -30,6 +30,7 @@ type AuthorizeRequest struct {
 	CodeChallenge       string
 	CodeChallengeMethod string
 	Audience            string
+	RequestURI          string // For PAR (RFC 9126)
 }
 
 type TokenRequest struct {
@@ -527,4 +528,104 @@ func (s *Server) storeTokens(app *database.Application, user *database.User, acc
 		}
 		s.db.Create(token)
 	}
+}
+
+// PARResponse represents the response from a Pushed Authorization Request
+type PARResponse struct {
+	RequestURI string `json:"request_uri"`
+	ExpiresIn  int    `json:"expires_in"`
+}
+
+// CreatePushedAuthorizationRequest handles PAR (RFC 9126) - POST /oauth/par
+func (s *Server) CreatePushedAuthorizationRequest(req *AuthorizeRequest, clientSecret string) (*PARResponse, error) {
+	// Validate client
+	var app database.Application
+	if err := s.db.Where("client_id = ?", req.ClientID).First(&app).Error; err != nil {
+		return nil, errors.New("invalid client")
+	}
+
+	// Verify client authentication (confidential clients must authenticate)
+	if app.ClientType != "public" {
+		if err := s.verifyClientSecret(&app, clientSecret); err != nil {
+			return nil, errors.New("invalid client credentials")
+		}
+	}
+
+	// Validate redirect URI
+	if !app.RedirectURIs.Contains(req.RedirectURI) {
+		return nil, errors.New("invalid redirect URI")
+	}
+
+	// Validate response type
+	if req.ResponseType != "code" {
+		return nil, errors.New("unsupported response type")
+	}
+
+	// Validate PKCE if present
+	if req.CodeChallenge != "" && req.CodeChallengeMethod != "S256" {
+		return nil, errors.New("only S256 code challenge method supported")
+	}
+
+	// Generate unique request URI
+	b := make([]byte, 32)
+	if _, err := rand.Read(b); err != nil {
+		return nil, err
+	}
+	requestURIValue := base64.URLEncoding.EncodeToString(b)
+	requestURI := fmt.Sprintf("urn:ietf:params:oauth:request_uri:%s", requestURIValue)
+
+	// Store PAR with 90 second expiration (RFC 9126 recommendation)
+	par := &database.PushedAuthorizationRequest{
+		RequestURI:          requestURI,
+		ApplicationID:       app.ID,
+		ResponseType:        req.ResponseType,
+		ClientID:            req.ClientID,
+		RedirectURI:         req.RedirectURI,
+		Scope:               req.Scope,
+		State:               req.State,
+		Nonce:               req.Nonce,
+		CodeChallenge:       req.CodeChallenge,
+		CodeChallengeMethod: req.CodeChallengeMethod,
+		ExpiresAt:           time.Now().Add(90 * time.Second),
+		Used:                false,
+	}
+
+	if err := s.db.Create(par).Error; err != nil {
+		return nil, fmt.Errorf("failed to store PAR: %w", err)
+	}
+
+	return &PARResponse{
+		RequestURI: requestURI,
+		ExpiresIn:  90,
+	}, nil
+}
+
+// ValidatePAR validates and retrieves a stored PAR by request_uri
+func (s *Server) ValidatePAR(requestURI, clientID string) (*database.PushedAuthorizationRequest, error) {
+	var par database.PushedAuthorizationRequest
+
+	// Find the PAR
+	if err := s.db.Where("request_uri = ?", requestURI).First(&par).Error; err != nil {
+		return nil, errors.New("invalid request_uri")
+	}
+
+	// Verify client ID matches
+	if par.ClientID != clientID {
+		return nil, errors.New("client_id mismatch")
+	}
+
+	// Check if already used (one-time use)
+	if par.Used {
+		return nil, errors.New("request_uri already used")
+	}
+
+	// Check if expired
+	if time.Now().After(par.ExpiresAt) {
+		return nil, errors.New("request_uri expired")
+	}
+
+	// Mark as used
+	s.db.Model(&par).Update("used", true)
+
+	return &par, nil
 }

@@ -30,16 +30,48 @@ func NewOAuthHandler(server *oauth.Server) *OAuthHandler {
 
 // AuthorizeHandler handles GET /oauth/authorize
 func (h *OAuthHandler) AuthorizeHandler(c *gin.Context) {
-	req := &oauth.AuthorizeRequest{
-		ResponseType:        c.Query("response_type"),
-		ClientID:            c.Query("client_id"),
-		RedirectURI:         c.Query("redirect_uri"),
-		Scope:               c.Query("scope"),
-		State:               c.Query("state"),
-		Nonce:               c.Query("nonce"),
-		CodeChallenge:       c.Query("code_challenge"),
-		CodeChallengeMethod: c.Query("code_challenge_method"),
-		Audience:            c.Query("audience"),
+	// Check for PAR (RFC 9126) - if request_uri is present, load from stored PAR
+	requestURI := c.Query("request_uri")
+	clientID := c.Query("client_id")
+
+	var req *oauth.AuthorizeRequest
+
+	if requestURI != "" {
+		// Validate and retrieve PAR
+		par, err := h.server.ValidatePAR(requestURI, clientID)
+		if err != nil {
+			c.JSON(http.StatusBadRequest, gin.H{
+				"error":             "invalid_request",
+				"error_description": err.Error(),
+			})
+			return
+		}
+
+		// Populate request from PAR
+		req = &oauth.AuthorizeRequest{
+			ResponseType:        par.ResponseType,
+			ClientID:            par.ClientID,
+			RedirectURI:         par.RedirectURI,
+			Scope:               par.Scope,
+			State:               par.State,
+			Nonce:               par.Nonce,
+			CodeChallenge:       par.CodeChallenge,
+			CodeChallengeMethod: par.CodeChallengeMethod,
+			RequestURI:          requestURI,
+		}
+	} else {
+		// Traditional authorization request with parameters in URL
+		req = &oauth.AuthorizeRequest{
+			ResponseType:        c.Query("response_type"),
+			ClientID:            c.Query("client_id"),
+			RedirectURI:         c.Query("redirect_uri"),
+			Scope:               c.Query("scope"),
+			State:               c.Query("state"),
+			Nonce:               c.Query("nonce"),
+			CodeChallenge:       c.Query("code_challenge"),
+			CodeChallengeMethod: c.Query("code_challenge_method"),
+			Audience:            c.Query("audience"),
+		}
 	}
 
 	// Validate request
@@ -282,23 +314,25 @@ func (h *OAuthHandler) DiscoveryHandler(c *gin.Context) {
 	baseURL := getBaseURL(c)
 
 	discovery := gin.H{
-		"issuer":                                baseURL,
-		"authorization_endpoint":                baseURL + "/oauth/authorize",
-		"token_endpoint":                        baseURL + "/oauth/token",
-		"userinfo_endpoint":                     baseURL + "/oauth/userinfo",
-		"jwks_uri":                              baseURL + "/.well-known/jwks.json",
-		"registration_endpoint":                 baseURL + "/oauth/register",
-		"introspection_endpoint":                baseURL + "/oauth/introspect",
-		"revocation_endpoint":                   baseURL + "/oauth/revoke",
-		"scopes_supported":                      []string{"openid", "profile", "email", "offline_access"},
-		"response_types_supported":              []string{"code"}, // Only authorization code flow fully implemented
-		"response_modes_supported":              []string{"query"},
-		"grant_types_supported":                 []string{"authorization_code", "client_credentials", "refresh_token", "password"}, // Removed implicit, added password
-		"subject_types_supported":               []string{"public"},
-		"id_token_signing_alg_values_supported": []string{"RS256"},
-		"token_endpoint_auth_methods_supported": []string{"client_secret_basic", "client_secret_post"},
-		"claims_supported":                      []string{"sub", "iss", "aud", "exp", "iat", "nbf", "email", "username", "roles"},
-		"code_challenge_methods_supported":      []string{"S256"}, // OAuth 2.1 - only S256 allowed
+		"issuer":                                       baseURL,
+		"authorization_endpoint":                       baseURL + "/oauth/authorize",
+		"token_endpoint":                               baseURL + "/oauth/token",
+		"userinfo_endpoint":                            baseURL + "/oauth/userinfo",
+		"jwks_uri":                                     baseURL + "/.well-known/jwks.json",
+		"registration_endpoint":                        baseURL + "/oauth/register",
+		"introspection_endpoint":                       baseURL + "/oauth/introspect",
+		"revocation_endpoint":                          baseURL + "/oauth/revoke",
+		"pushed_authorization_request_endpoint":        baseURL + "/oauth/par",                                                                      // RFC 9126
+		"require_pushed_authorization_requests":        false,                                                                                        // PAR is optional (can be made required per client)
+		"scopes_supported":                             []string{"openid", "profile", "email", "offline_access"},
+		"response_types_supported":                     []string{"code"},                                                                             // Only authorization code flow fully implemented
+		"response_modes_supported":                     []string{"query"},
+		"grant_types_supported":                        []string{"authorization_code", "client_credentials", "refresh_token", "password"},            // Removed implicit, added password
+		"subject_types_supported":                      []string{"public"},
+		"id_token_signing_alg_values_supported":        []string{"RS256"},
+		"token_endpoint_auth_methods_supported":        []string{"client_secret_basic", "client_secret_post"},                                       // TODO: Add private_key_jwt
+		"claims_supported":                             []string{"sub", "iss", "aud", "exp", "iat", "nbf", "email", "email_verified", "username", "roles"}, // Added email_verified
+		"code_challenge_methods_supported":             []string{"S256"},                                                                             // OAuth 2.1 - only S256 allowed
 	}
 
 	c.JSON(http.StatusOK, discovery)
@@ -363,6 +397,55 @@ func (h *OAuthHandler) UserInfoHandler(c *gin.Context) {
 	}
 
 	c.JSON(http.StatusOK, userInfo)
+}
+
+// PARHandler handles POST /oauth/par (Pushed Authorization Requests - RFC 9126)
+func (h *OAuthHandler) PARHandler(c *gin.Context) {
+	// Extract client credentials from Basic Auth or form
+	clientID, clientSecret, hasBasicAuth := c.Request.BasicAuth()
+	if !hasBasicAuth {
+		clientID = c.PostForm("client_id")
+		clientSecret = c.PostForm("client_secret")
+	}
+
+	if clientID == "" {
+		c.JSON(http.StatusBadRequest, gin.H{
+			"error":             "invalid_client",
+			"error_description": "client_id is required",
+		})
+		return
+	}
+
+	// Build authorization request from form parameters
+	req := &oauth.AuthorizeRequest{
+		ResponseType:        c.PostForm("response_type"),
+		ClientID:            clientID,
+		RedirectURI:         c.PostForm("redirect_uri"),
+		Scope:               c.PostForm("scope"),
+		State:               c.PostForm("state"),
+		Nonce:               c.PostForm("nonce"),
+		CodeChallenge:       c.PostForm("code_challenge"),
+		CodeChallengeMethod: c.PostForm("code_challenge_method"),
+		Audience:            c.PostForm("audience"),
+	}
+
+	// Create PAR
+	response, err := h.server.CreatePushedAuthorizationRequest(req, clientSecret)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{
+			"error":             "invalid_request",
+			"error_description": err.Error(),
+		})
+		return
+	}
+
+	// Log PAR creation
+	var app database.Application
+	if err := h.db.Where("client_id = ?", clientID).First(&app).Error; err == nil {
+		h.logAudit(c, &app, "oauth.par", "request_uri", response.RequestURI)
+	}
+
+	c.JSON(http.StatusCreated, response)
 }
 
 // Helper functions
