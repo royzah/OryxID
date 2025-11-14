@@ -52,3 +52,9 @@ pnpm-debug.log*
 # Ignore local docker-compose override files
 docker-compose.override.yml
 docker-compose.override.yaml
+
+# --- Certificates & Keys ---
+# RSA keys for JWT signing (generated locally)
+certs/
+*.pem
+!example.pem

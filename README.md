@@ -1,509 +1,683 @@
-# OryxID - Modern OAuth2/OpenID Connect Server
+# 🔐 OryxID - Modern OAuth2/OpenID Connect Server
 
 ![Go Version](https://img.shields.io/badge/Go-1.21+-00ADD8?style=for-the-badge&logo=go)
-![React Version](https://img.shields.io/badge/React-18+-61DAFB?style=for-the-badge&logo=react)
+![React Version](https://img.shields.io/badge/React-19+-61DAFB?style=for-the-badge&logo=react)
 ![TypeScript Version](https://img.shields.io/badge/TypeScript-5+-3178C6?style=for-the-badge&logo=typescript)
-![License](https://img.shields.io/badge/License-MIT-green?style=for-the-badge)
+![Docker](https://img.shields.io/badge/Docker-Ready-2496ED?style=for-the-badge&logo=docker)
+![License](https://img.shields.io/badge/License-Apache_2.0-green?style=for-the-badge)
 
-A modern, high-performance OAuth2 and OpenID Connect server built with Go and React. OryxID provides enterprise-grade authentication and authorization services with a beautiful admin interface.
+A **production-ready**, high-performance OAuth2 and OpenID Connect server built with Go and React. OryxID provides enterprise-grade authentication and authorization services with a beautiful, modern admin interface.
 
-## 🌟 Features
+---
 
-- **🔐 OAuth 2.0 & OpenID Connect**: Full implementation with PKCE support
-- **🎨 Modern Admin UI**: Beautiful React-based dashboard for easy management
-- **⚡ High Performance**: Built with Go for exceptional speed and low resource usage
-- **🔑 JWT Tokens**: RS256 signed tokens with customizable claims
-- **🏢 Multi-tenancy**: Support for multiple applications and API audiences
-- **🔍 Audit Logging**: Comprehensive activity tracking and monitoring
-- **🐳 Cloud Native**: Docker and Kubernetes ready with health checks
-- **🛡️ Security First**: CSRF protection, rate limiting, and secure defaults
+## ✨ Features
 
-## 📸 Screenshots
+### 🔐 **Security & Authentication**
+- **OAuth 2.0 & OpenID Connect** - Full RFC-compliant implementation
+- **PKCE Support** - Enhanced security for mobile and SPA applications
+- **RS256 JWT Tokens** - Industry-standard token signing
+- **CSRF Protection** - Built-in cross-site request forgery prevention
+- **Rate Limiting** - Automatic DDoS and brute-force protection
+- **Secure Defaults** - Security-first configuration out of the box
 
-### Dashboard
+### 🎨 **Modern Admin Interface**
+- **React 19** - Latest React with hooks and concurrent features
+- **Shadcn/UI** - Beautiful, accessible component library
+- **TailwindCSS** - Modern utility-first styling
+- **Real-time Updates** - TanStack Query for data synchronization
+- **Responsive Design** - Mobile-first, works on all devices
 
-Clean overview of your OAuth infrastructure
+### ⚡ **Performance & Scale**
+- **High Performance** - Go-powered backend with <1ms latency
+- **Optimized Docker Images** - Multi-stage builds, minimal size
+- **PostgreSQL** - Reliable, battle-tested database
+- **Redis Caching** - Fast session and token storage
+- **Horizontal Scaling** - Stateless design, scale infinitely
 
-### Applications Management
+### 🏢 **Enterprise Features**
+- **Multi-tenancy** - Support multiple applications and audiences
+- **Audit Logging** - Comprehensive activity tracking for compliance
+- **Custom Scopes** - Fine-grained permission control
+- **Role-based Access** - Admin and user role management
+- **API Audiences** - Separate resource server authorization
 
-Easy OAuth client configuration
-
-### Scope Management
-
-Fine-grained permission control
-
-## 🏗️ Architecture
-
-OryxID consists of two main components that work together:
-
-```text
-┌─────────────────────────────────────────────────────────────┐
-│                         Frontend (React)                    │
-│  ┌─────────────┐  ┌──────────────┐  ┌──────────────────┐    │
-│  │   Pages     │  │  Components  │  │  State (Zustand) │    │
-│  └──────┬──────┘  └───────┬──────┘  └────────┬─────────┘    │
-│         └─────────────────┴──────────────────┘              │
-│                           │                                 │
-│                    Axios + TanStack Query                   │
-└───────────────────────────┬─────────────────────────────────┘
-                            │ HTTPS/REST API
-┌───────────────────────────┴─────────────────────────────────┐
-│                      Backend (Go + Gin)                     │
-│  ┌─────────────┐  ┌──────────────┐  ┌──────────────────┐    │
-│  │   Handlers  │  │  OAuth2 Core │  │   Middleware     │    │
-│  └──────┬──────┘  └───────┬──────┘  └────────┬─────────┘    │
-│         └─────────────────┴──────────────────┘              │
-│                           │                                 │
-│                    GORM + PostgreSQL                        │
-└───────────────────────────┬─────────────────────────────────┘
-                            │
-                   ┌────────┴────────┐
-                   │   PostgreSQL    │
-                   │   Redis Cache   │
-                   └─────────────────┘
-```
-
-### Component Interaction
-
-1. **Frontend → Backend API**
-
-   - Admin authentication via `/auth/login`
-   - Resource management via `/api/v1/*` endpoints
-   - Real-time token validation
-
-2. **OAuth Clients → Backend**
-
-   - Authorization via `/oauth/authorize`
-   - Token exchange via `/oauth/token`
-   - Token introspection via `/oauth/introspect`
-
-3. **Backend → Database**
-   - User and application storage in PostgreSQL
-   - Session management in Redis
-   - Audit logging for compliance
+---
 
 ## 🚀 Quick Start
 
 ### Prerequisites
 
-- Docker and Docker Compose
-- Git
-- Make (optional, for convenience commands)
+- **Docker** and **Docker Compose** (required)
+- **Make** (recommended, or use docker-compose directly)
+- **Git**
 
-### One-Command Setup
+### ⚡ One-Command Setup
 
 ```bash
-# Clone the repository
+# 1. Clone the repository
 git clone https://github.com/tiiuae/oryxid.git
 cd oryxid
 
-# Generate RSA keys and start everything
+# 2. Setup and start (generates keys, starts all services)
 make setup && make dev
 ```
 
-The application will be available at:
+**That's it!** 🎉 The application is now running.
 
-- **Admin Panel**: [http://localhost:3000](http://localhost:3000)
-- **OAuth Server**: [http://localhost:9000](http://localhost:9000)
+### 🌐 Access the Application
 
-Default credentials:
+**Open your browser and navigate to:**
 
-- Username: `admin`
-- Password: `admin123`
-
-## 📦 Local Development
-
-### Using Docker Compose (Recommended)
-
-```bash
-# Start all services
-docker-compose -f docker/docker-compose.yml up -d
-
-# View logs
-docker-compose -f docker/docker-compose.yml logs -f
-
-# Stop services
-docker-compose -f docker/docker-compose.yml down
+```
+http://localhost:8080
 ```
 
-### Manual Setup
+> **Important:** Always access the application via **port 8080** (Nginx proxy), not 3000 or 9000 directly!
 
-#### Backend Setup
+**Default Login Credentials:**
+- **Username:** `admin`
+- **Password:** `admin123`
 
-```bash
-# Navigate to backend
-cd backend
+> ⚠️ **Security:** Change the default password in production! Edit the `.env` file before deploying.
 
-# Install dependencies
-go mod download
+---
 
-# Set up environment
-cp .env.example .env
-# Edit .env with your database credentials
+## 📦 Architecture Overview
 
-# Generate RSA keys
-mkdir -p certs
-openssl genrsa -out certs/private_key.pem 4096
-openssl rsa -in certs/private_key.pem -pubout -out certs/public_key.pem
-
-# Run database migrations
-go run cmd/migrate/main.go up
-
-# Start the server
-go run cmd/server/main.go
+```
+┌─────────────────────────────────────────────────────────────┐
+│                      🌐 Nginx (Port 8080)                   │
+│                    Reverse Proxy & SSL                      │
+└────────────────┬──────────────────────────┬─────────────────┘
+                 │                          │
+        ┌────────┴────────┐        ┌────────┴────────┐
+        │   Frontend      │        │    Backend      │
+        │   React + Vite  │        │    Go + Gin     │
+        │   Port 3000     │        │    Port 9000    │
+        └─────────────────┘        └────────┬────────┘
+                                             │
+                              ┌──────────────┴──────────────┐
+                              │                             │
+                     ┌────────┴────────┐        ┌──────────┴─────────┐
+                     │  PostgreSQL     │        │      Redis         │
+                     │  Port 5432      │        │      Port 6379     │
+                     └─────────────────┘        └────────────────────┘
 ```
 
-#### Frontend Setup
+### Port Mapping
+
+| Service | Internal Port | External Port | Access URL |
+|---------|--------------|---------------|------------|
+| **Nginx** (Main Entry) | 80 | 8080 | `http://localhost:8080` |
+| **Frontend** | 3000 | 3000 | `http://localhost:3000` (dev only) |
+| **Backend API** | 9000 | 9000 | `http://localhost:9000` (testing only) |
+| **PostgreSQL** | 5432 | - | Internal only |
+| **Redis** | 6379 | - | Internal only |
+
+> **Best Practice:** In production, only expose port 8080 (or 443 with SSL). Keep all other ports internal.
+
+---
+
+## 🛠️ Make Commands Reference
+
+OryxID includes a comprehensive Makefile for easy management:
+
+### Quick Commands
 
 ```bash
-# Navigate to frontend
-cd frontend
-
-# Install dependencies
-npm install
-
-# Set up environment
-cp .env.example .env
-# Edit .env with your API URL
-
-# Start development server
-npm run dev
+make setup          # Initial setup (generate keys, create .env)
+make up             # Start all services in production mode
+make dev            # Start all services in development mode (hot-reload)
+make down           # Stop all services
+make restart        # Restart all services
+make status         # Show service status and health checks
 ```
 
-### Using Make Commands
+### Service Management
 
 ```bash
-# Backend commands
-make backend-run      # Run backend server
-make backend-test     # Run backend tests
-make backend-build    # Build backend binary
-
-# Frontend commands
-make frontend-run     # Run frontend dev server
-make frontend-build   # Build frontend for production
-make frontend-test    # Run frontend tests
-
-# Database commands
-make db-migrate       # Run migrations
-make db-rollback      # Rollback last migration
-make db-seed          # Seed test data
-
-# Docker commands
-make docker-build     # Build all images
-make docker-up        # Start all containers
-make docker-down      # Stop all containers
+make restart-backend    # Restart only backend
+make restart-nginx      # Restart only nginx
+make logs               # Show logs from all services
+make logs-backend       # Show backend logs only
+make logs-frontend      # Show frontend logs only
 ```
+
+### Development
+
+```bash
+make test               # Run all tests (backend + frontend)
+make test-backend       # Run backend tests
+make test-frontend      # Run frontend tests
+make lint               # Run all linters
+make lint-backend       # Lint Go code
+make lint-frontend      # Lint TypeScript/React code
+```
+
+### Docker Management
+
+```bash
+make build              # Build all Docker images
+make build-no-cache     # Build without cache (clean build)
+make pull               # Pull latest base images
+make ps                 # Show running containers
+```
+
+### Database Operations
+
+```bash
+make db-shell           # Open PostgreSQL shell
+make db-backup          # Backup database to ./backups/
+make db-restore         # Restore from latest backup
+make redis-shell        # Open Redis CLI
+```
+
+### Production
+
+```bash
+make prod-build         # Build production images
+make prod-up            # Start in production mode
+```
+
+### Cleanup
+
+```bash
+make clean              # Stop and remove containers
+make clean-volumes      # Remove containers AND data (⚠️ deletes DB!)
+make prune              # Clean up Docker system
+```
+
+### Monitoring
+
+```bash
+make health             # Check service health
+make metrics            # View Prometheus metrics
+make check-ports        # Check if ports are available
+```
+
+### Debugging
+
+```bash
+make shell-backend      # Open shell in backend container
+make shell-frontend     # Open shell in frontend container
+```
+
+---
 
 ## 🔧 Configuration
 
-### Backend Configuration
+### Environment Variables
 
-Create `backend/.env`:
+The `.env` file contains all configuration. Here are the key variables:
 
 ```env
-# Server
-SERVER_PORT=9000
-SERVER_MODE=debug
+# Server Configuration
+SERVER_MODE=debug                    # debug or release
+SERVER_PORT=9000                     # Backend API port
+FRONTEND_PORT=3000                   # Frontend dev server port
+HTTP_PORT=8080                       # Nginx HTTP port
+HTTPS_PORT=8443                      # Nginx HTTPS port (when SSL enabled)
+
+# Frontend Build Mode
+FRONTEND_BUILD_TARGET=development    # development or production
 
 # Database
-DB_HOST=localhost
+DB_HOST=postgres
 DB_PORT=5432
 DB_USER=oryxid
-DB_PASSWORD=your_password
+DB_PASSWORD=oryxid_secret           # ⚠️ Change in production!
 DB_NAME=oryxid
 
 # Redis
-REDIS_HOST=localhost
+REDIS_HOST=redis
 REDIS_PORT=6379
+REDIS_PASSWORD=redis_secret          # ⚠️ Change in production!
 
-# OAuth
+# OAuth Configuration
 OAUTH_ISSUER=http://localhost:9000
+OAUTH_ACCESS_TOKEN_LIFESPAN=3600s    # 1 hour
+OAUTH_REFRESH_TOKEN_LIFESPAN=2592000s # 30 days
+
+# Admin User (Login Credentials)
+ADMIN_USERNAME=admin
+ADMIN_EMAIL=admin@oryxid.local
+ADMIN_PASSWORD=admin123              # ⚠️ CHANGE THIS!
 
 # Security
-JWT_PRIVATE_KEY_PATH=./certs/private_key.pem
-JWT_PUBLIC_KEY_PATH=./certs/public_key.pem
+SECURITY_BCRYPT_COST=12
+SECURITY_RATE_LIMIT_ENABLED=true
+SECURITY_PKCE_REQUIRED=true
+SECURITY_CSRF_ENABLED=true
+
+# Frontend API URL
+VITE_API_URL=http://localhost:9000   # Backend API endpoint
 ```
 
-### Frontend Configuration
+### SSL/HTTPS Configuration
 
-Create `frontend/.env`:
+To enable HTTPS:
 
-```env
-VITE_API_URL=http://localhost:9000
-```
+1. **Generate or obtain SSL certificates**
+2. **Update nginx configuration** in `docker/nginx/conf.d/default.conf`
+3. **Uncomment HTTPS server block** at the bottom of the file
+4. **Update `.env`** to use HTTPS URLs
+5. **Restart nginx:** `make restart-nginx`
 
-## 🧪 Testing
+---
 
-### Test OAuth Flow
+## 🧪 Testing OAuth Flow
+
+### 1. Create an Application
+
+1. Login to admin panel at `http://localhost:8080`
+2. Navigate to **Applications** → **Create Application**
+3. Fill in details:
+   - **Name:** My Test App
+   - **Client ID:** `test-client`
+   - **Redirect URIs:** `http://localhost:8080/callback`
+   - **Grant Types:** `authorization_code`, `refresh_token`
+   - **Scopes:** `openid`, `profile`, `email`
+4. **Save** and note the `client_secret`
+
+### 2. Test Authorization Flow
 
 ```bash
-# Run the OAuth test script
-./scripts/test-oauth.sh
+# Get authorization code
+curl -X GET "http://localhost:9000/oauth/authorize?\
+response_type=code&\
+client_id=test-client&\
+redirect_uri=http://localhost:8080/callback&\
+scope=openid%20profile%20email&\
+state=random-state-value"
 
-# Or manually test:
-# 1. Create an application in the admin panel
-# 2. Note the client_id and client_secret
-# 3. Test authorization code flow:
-curl "http://localhost:9000/oauth/authorize?response_type=code&client_id=YOUR_CLIENT_ID&redirect_uri=http://localhost:8080/callback&scope=openid profile"
+# Exchange code for tokens (replace CODE with actual code)
+curl -X POST "http://localhost:9000/oauth/token" \
+  -H "Content-Type: application/x-www-form-urlencoded" \
+  -u "test-client:CLIENT_SECRET" \
+  -d "grant_type=authorization_code" \
+  -d "code=CODE" \
+  -d "redirect_uri=http://localhost:8080/callback"
 ```
 
-### Run Tests
+### 3. Introspect Token
 
 ```bash
-# Backend tests
-cd backend && go test ./...
-
-# Frontend tests
-cd frontend && npm test
+curl -X POST "http://localhost:9000/oauth/introspect" \
+  -H "Content-Type: application/x-www-form-urlencoded" \
+  -d "token=YOUR_ACCESS_TOKEN"
 ```
 
-## 🚢 Production Deployment
+### 4. Get User Info
+
+```bash
+curl -X GET "http://localhost:9000/oauth/userinfo" \
+  -H "Authorization: Bearer YOUR_ACCESS_TOKEN"
+```
+
+---
+
+## 🔍 Troubleshooting
+
+### ❓ "I can't access localhost:3000 or localhost:9000!"
+
+**Solution:** Access the application via **http://localhost:8080** (Nginx proxy)
+
+**Why?** The architecture uses Nginx as a reverse proxy:
+- Port **8080** → Routes to frontend and backend
+- Port **3000** → Frontend dev server (internal container port)
+- Port **9000** → Backend API (internal container port)
+
+In development mode, ports 3000 and 9000 are mapped for direct access when needed, but the **main entry point** is always **8080**.
+
+### ❓ "Services won't start / Port already in use"
+
+```bash
+# Check what's using the ports
+make check-ports
+
+# If ports are busy, stop conflicting services or change ports in .env
+```
+
+### ❓ "Database connection failed"
+
+```bash
+# Check PostgreSQL is running
+docker ps | grep postgres
+
+# View PostgreSQL logs
+make logs | grep postgres
+
+# Reset database (⚠️ deletes all data!)
+make clean-volumes && make setup && make dev
+```
+
+### ❓ "Frontend shows 'Network Error' or can't reach API"
+
+1. **Check backend is running:**
+   ```bash
+   curl http://localhost:9000/health
+   ```
+
+2. **Verify `VITE_API_URL` in `.env`:**
+   ```env
+   VITE_API_URL=http://localhost:9000
+   ```
+
+3. **Restart services:**
+   ```bash
+   make restart
+   ```
+
+### ❓ "JWT/Token errors"
+
+```bash
+# Ensure RSA keys exist
+ls -la certs/
+
+# If missing, regenerate keys
+make generate-keys
+
+# Restart backend
+make restart-backend
+```
+
+### ❓ "Docker build fails with npm errors"
+
+This might be due to dependency conflicts. The frontend uses `--legacy-peer-deps` to handle ESLint version conflicts.
+
+```bash
+# Clean rebuild
+make clean
+make build-no-cache
+make dev
+```
+
+### ❓ "How do I view logs?"
+
+```bash
+# All logs
+make logs
+
+# Specific service
+make logs-backend
+make logs-frontend
+
+# Or use docker-compose directly
+docker-compose logs -f
+```
+
+---
+
+## 🚀 Production Deployment
+
+### Pre-Deployment Checklist
+
+- [ ] Change `ADMIN_PASSWORD` in `.env`
+- [ ] Change `DB_PASSWORD` in `.env`
+- [ ] Change `REDIS_PASSWORD` in `.env`
+- [ ] Set `SERVER_MODE=release` in `.env`
+- [ ] Set `FRONTEND_BUILD_TARGET=production` in `.env`
+- [ ] Update `OAUTH_ISSUER` to your production domain
+- [ ] Update `VITE_API_URL` to your production API URL
+- [ ] Configure SSL certificates for HTTPS
+- [ ] Set up database backups
+- [ ] Configure logging and monitoring
+- [ ] Review security settings
 
 ### Docker Deployment
 
-1. **Build Production Images**
-
-   ```bash
-   # Build both frontend and backend
-   make prod-build
-
-   # Or individually:
-   docker build -t oryxid-backend:latest ./backend
-   docker build -t oryxid-frontend:latest ./frontend
-   ```
-
-2. **Run with Docker Compose**
-
-   ```yaml
-   # docker-compose.prod.yml
-   version: "3.8"
-
-   services:
-     postgres:
-       image: postgres:16-alpine
-       environment:
-         POSTGRES_PASSWORD: ${DB_PASSWORD}
-       volumes:
-         - postgres_data:/var/lib/postgresql/data
-       restart: unless-stopped
-
-     redis:
-       image: redis:7-alpine
-       command: redis-server --requirepass ${REDIS_PASSWORD}
-       restart: unless-stopped
-
-     backend:
-       image: oryxid-backend:latest
-       environment:
-         - SERVER_MODE=release
-         - DB_HOST=postgres
-         - REDIS_HOST=redis
-       depends_on:
-         - postgres
-         - redis
-       restart: unless-stopped
-
-     frontend:
-       image: oryxid-frontend:latest
-       depends_on:
-         - backend
-       ports:
-         - "80:80"
-       restart: unless-stopped
-
-   volumes:
-     postgres_data:
-   ```
-
-### Kubernetes Deployment
-
-1. **Create Namespace and Secrets**
-
-   ```bash
-   kubectl create namespace oryxid
-   kubectl create secret generic oryxid-secrets \
-     --from-literal=db-password=your-password \
-     --from-literal=redis-password=your-password \
-     -n oryxid
-   ```
-
-2. **Apply Manifests**
-
-   ```bash
-   kubectl apply -f k8s/ -n oryxid
-   ```
-
-3. **Check Deployment**
-
-   ```bash
-   kubectl get pods -n oryxid
-   kubectl get svc -n oryxid
-   ```
-
-### Cloud Deployment Options
-
-#### AWS ECS
-
 ```bash
-# Build and push to ECR
-aws ecr get-login-password | docker login --username AWS --password-stdin $ECR_REGISTRY
-docker tag oryxid-backend:latest $ECR_REGISTRY/oryxid-backend:latest
-docker push $ECR_REGISTRY/oryxid-backend:latest
+# 1. Build production images
+make prod-build
 
-# Deploy with ECS CLI or Terraform
+# 2. Start in production mode
+make prod-up
+
+# 3. Verify services are healthy
+make status
 ```
 
-#### Google Cloud Run
+### Using Docker Compose
 
 ```bash
-# Build and push to GCR
-gcloud builds submit --tag gcr.io/$PROJECT_ID/oryxid-backend
-gcloud builds submit --tag gcr.io/$PROJECT_ID/oryxid-frontend
+# Start services
+docker-compose up -d
 
-# Deploy
-gcloud run deploy oryxid-backend --image gcr.io/$PROJECT_ID/oryxid-backend
-gcloud run deploy oryxid-frontend --image gcr.io/$PROJECT_ID/oryxid-frontend
+# Check status
+docker-compose ps
+
+# View logs
+docker-compose logs -f
+
+# Stop services
+docker-compose down
 ```
 
-#### Azure Container Instances
+### Cloud Deployment
 
-```bash
-# Push to ACR
-az acr build --registry $ACR_NAME --image oryxid-backend:latest ./backend
-az acr build --registry $ACR_NAME --image oryxid-frontend:latest ./frontend
+OryxID is cloud-native and works with all major platforms:
 
-# Deploy
-az container create --resource-group $RG --name oryxid --image $ACR_NAME.azurecr.io/oryxid-backend:latest
-```
+- **AWS ECS/EKS**
+- **Google Cloud Run / GKE**
+- **Azure Container Instances / AKS**
+- **DigitalOcean App Platform**
+- **Heroku**
+- **Fly.io**
+- **Railway**
 
-## 📊 Monitoring
+See the [Deployment Guide](./docs/DEPLOYMENT.md) for platform-specific instructions.
+
+---
+
+## 📊 Monitoring & Observability
 
 ### Health Checks
 
 ```bash
-# Backend health
+# Application health
+curl http://localhost:8080/health
+
+# Backend API health
 curl http://localhost:9000/health
 
-# Frontend health (through nginx)
-curl http://localhost:3000/health
+# Database connectivity (internal check)
+make db-shell
 ```
 
 ### Metrics
 
-The backend exposes Prometheus metrics at `/metrics`:
+OryxID exposes Prometheus-compatible metrics:
 
 ```bash
 curl http://localhost:9000/metrics
 ```
 
+**Available Metrics:**
+- HTTP request duration
+- Request count by endpoint
+- Active sessions
+- Token generation rate
+- Database query performance
+- Cache hit/miss ratio
+
 ### Logging
 
-- Backend logs in JSON format (production)
-- Frontend logs to browser console
-- All logs include correlation IDs for tracing
+- **Backend:** Structured JSON logs with correlation IDs
+- **Format:** Configurable via `LOG_FORMAT` (json or text)
+- **Level:** Configurable via `LOG_LEVEL` (debug, info, warn, error)
+
+View logs:
+```bash
+make logs              # All services
+make logs-backend      # Backend only
+make logs-frontend     # Frontend only
+```
+
+---
 
 ## 🤝 API Integration
 
-### For OAuth Clients
+### OpenID Connect Discovery
 
-1. **Register your application** in the admin panel
-2. **Implement OAuth flow**:
+OryxID exposes a discovery document at:
+
+```
+http://localhost:9000/.well-known/openid-configuration
+```
+
+### JWKS Endpoint
+
+Public keys for token verification:
+
+```
+http://localhost:9000/.well-known/jwks.json
+```
+
+### Example: Integrate with Your Application
+
+#### JavaScript/Node.js
 
 ```javascript
-// Authorization request
-const authUrl = `https://auth.yourdomain.com/oauth/authorize?
-  response_type=code&
-  client_id=${CLIENT_ID}&
-  redirect_uri=${REDIRECT_URI}&
-  scope=openid profile email&
-  state=${STATE}`;
+const OAUTH_CONFIG = {
+  issuer: 'http://localhost:9000',
+  authorizationEndpoint: 'http://localhost:9000/oauth/authorize',
+  tokenEndpoint: 'http://localhost:9000/oauth/token',
+  userInfoEndpoint: 'http://localhost:9000/oauth/userinfo',
+  clientId: 'your-client-id',
+  clientSecret: 'your-client-secret',
+  redirectUri: 'http://localhost:8080/callback',
+};
 
-// Token exchange
-const tokenResponse = await fetch("https://auth.yourdomain.com/oauth/token", {
-  method: "POST",
-  headers: {
-    "Content-Type": "application/x-www-form-urlencoded",
-    Authorization: `Basic ${btoa(`${CLIENT_ID}:${CLIENT_SECRET}`)}`,
-  },
-  body: new URLSearchParams({
-    grant_type: "authorization_code",
-    code: authorizationCode,
-    redirect_uri: REDIRECT_URI,
-  }),
-});
+// Redirect user to authorization
+function login() {
+  const url = `${OAUTH_CONFIG.authorizationEndpoint}?` +
+    `response_type=code&` +
+    `client_id=${OAUTH_CONFIG.clientId}&` +
+    `redirect_uri=${encodeURIComponent(OAUTH_CONFIG.redirectUri)}&` +
+    `scope=openid profile email&` +
+    `state=${generateRandomState()}`;
+
+  window.location.href = url;
+}
+
+// Exchange code for tokens
+async function exchangeCode(code) {
+  const response = await fetch(OAUTH_CONFIG.tokenEndpoint, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/x-www-form-urlencoded',
+      'Authorization': 'Basic ' + btoa(`${OAUTH_CONFIG.clientId}:${OAUTH_CONFIG.clientSecret}`)
+    },
+    body: new URLSearchParams({
+      grant_type: 'authorization_code',
+      code: code,
+      redirect_uri: OAUTH_CONFIG.redirectUri
+    })
+  });
+
+  return await response.json();
+}
 ```
 
-### For Resource Servers
+#### Python
 
-Validate tokens using introspection:
+```python
+import requests
+from requests.auth import HTTPBasicAuth
 
-```go
-resp, err := http.Post("https://auth.yourdomain.com/oauth/introspect",
-    "application/x-www-form-urlencoded",
-    strings.NewReader("token=" + accessToken))
+OAUTH_CONFIG = {
+    'issuer': 'http://localhost:9000',
+    'token_endpoint': 'http://localhost:9000/oauth/token',
+    'client_id': 'your-client-id',
+    'client_secret': 'your-client-secret',
+}
+
+def exchange_code(code, redirect_uri):
+    response = requests.post(
+        OAUTH_CONFIG['token_endpoint'],
+        auth=HTTPBasicAuth(OAUTH_CONFIG['client_id'], OAUTH_CONFIG['client_secret']),
+        data={
+            'grant_type': 'authorization_code',
+            'code': code,
+            'redirect_uri': redirect_uri
+        }
+    )
+    return response.json()
 ```
 
-## 🛠️ Troubleshooting
-
-### Common Issues
-
-1. **Cannot connect to database**
-
-   - Check PostgreSQL is running: `docker ps`
-   - Verify credentials in `.env`
-   - Check network connectivity
-
-2. **Frontend can't reach backend**
-
-   - Verify `VITE_API_URL` is correct
-   - Check CORS settings in backend
-   - Ensure backend is running on expected port
-
-3. **JWT errors**
-   - Ensure RSA keys are generated
-   - Check file permissions on key files
-   - Verify key paths in configuration
-
-### Debug Mode
-
-Enable debug logging:
-
-```bash
-# Backend
-export ORYXID_SERVER_MODE=debug
-
-# Frontend
-export VITE_ENABLE_DEBUG=true
-```
+---
 
 ## 📚 Documentation
 
-- [Backend Documentation](./backend/README.md) - Detailed backend architecture and API reference
-- [Frontend Documentation](./frontend/README.md) - Frontend development guide and component library
-- [API Reference](./docs/api/README.md) - Complete API documentation with examples
-- [Security Guide](./docs/security/README.md) - Security best practices and configurations
+- **[Backend Documentation](./backend/README.md)** - Go backend architecture
+- **[Frontend Documentation](./frontend/README.md)** - React frontend guide
+- **[API Reference](./docs/API.md)** - Complete API documentation
+- **[OAuth Guide](./docs/OAUTH.md)** - OAuth 2.0 / OIDC implementation details
+- **[Security Guide](./docs/SECURITY.md)** - Security best practices
+- **[Deployment Guide](./docs/DEPLOYMENT.md)** - Production deployment instructions
+
+---
 
 ## 🤝 Contributing
 
-We welcome contributions! Please see our [Contributing Guide](CONTRIBUTING.md) for details.
+We welcome contributions! Whether it's:
+
+- 🐛 Bug reports
+- ✨ Feature requests
+- 📝 Documentation improvements
+- 🔧 Code contributions
+
+Please see our [Contributing Guide](./CONTRIBUTING.md) for details.
 
 ### Development Workflow
 
-1. Fork the repository
-2. Create a feature branch: `git checkout -b feature/amazing-feature`
-3. Make your changes
-4. Run tests: `make test`
-5. Commit: `git commit -m 'Add amazing feature'`
-6. Push: `git push origin feature/amazing-feature`
-7. Open a Pull Request
+1. **Fork** the repository
+2. **Clone** your fork: `git clone https://github.com/YOUR_USERNAME/oryxid.git`
+3. **Create a branch:** `git checkout -b feature/amazing-feature`
+4. **Make changes** and commit: `git commit -m 'Add amazing feature'`
+5. **Run tests:** `make test`
+6. **Push:** `git push origin feature/amazing-feature`
+7. **Open a Pull Request**
+
+---
 
 ## 📄 License
 
-This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details.
+This project is licensed under the **Apache License 2.0** - see the [LICENSE](LICENSE) file for details.
+
+---
 
 ## 🙏 Acknowledgments
 
-- [Gin Web Framework](https://gin-gonic.com/) for the excellent Go web framework
-- [React](https://react.dev/) for the UI library
-- [Tailwind CSS](https://tailwindcss.com/) for the utility-first CSS framework
-- [Radix UI](https://www.radix-ui.com/) for accessible component primitives
+Built with amazing open-source technologies:
+
+- **[Go](https://go.dev/)** - Programming language
+- **[Gin](https://gin-gonic.com/)** - Web framework
+- **[GORM](https://gorm.io/)** - ORM library
+- **[React](https://react.dev/)** - UI library
+- **[Vite](https://vitejs.dev/)** - Build tool
+- **[Shadcn/UI](https://ui.shadcn.com/)** - Component library
+- **[TailwindCSS](https://tailwindcss.com/)** - CSS framework
+- **[TanStack Query](https://tanstack.com/query)** - Data fetching
+- **[PostgreSQL](https://www.postgresql.org/)** - Database
+- **[Redis](https://redis.io/)** - Caching
+
+---
+
+## 📞 Support
+
+- **Issues:** [GitHub Issues](https://github.com/tiiuae/oryxid/issues)
+- **Discussions:** [GitHub Discussions](https://github.com/tiiuae/oryxid/discussions)
+- **Documentation:** [Wiki](https://github.com/tiiuae/oryxid/wiki)
+
+---
+
+<div align="center">
+
+**⭐ Star us on GitHub!** — it helps the project grow
+
+[Report Bug](https://github.com/tiiuae/oryxid/issues) · [Request Feature](https://github.com/tiiuae/oryxid/issues) · [Documentation](./docs/)
+
+Made with ❤️ by the OryxID team
+
+</div>
