@@ -274,7 +274,7 @@ export const ApplicationDetailPage = () => {
             </CardHeader>
             <CardContent>
               <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
-                {scopes?.items.map((scope) => (
+                {(scopes?.items || []).map((scope) => (
                   <div key={scope.id} className="flex items-start space-x-3">
                     <Checkbox
                       checked={application.scopes.includes(scope.name)}

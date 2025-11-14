@@ -226,7 +226,7 @@ export const CreateApplicationDialog = (
                 <FormItem>
                   <FormLabel>Scopes</FormLabel>
                   <div className="grid max-h-48 grid-cols-2 gap-3 overflow-y-auto rounded-md border p-3">
-                    {scopes?.items.map((scope) => (
+                    {(scopes?.items || []).map((scope) => (
                       <FormField
                         key={scope.id}
                         control={form.control}

@@ -105,7 +105,7 @@ export const ScopesPage = () => {
             </div>
           </div>
         ) : (
-          data?.items.map((scope) => (
+          (data?.items || []).map((scope) => (
             <Card
               key={scope.id}
               className="group transition-shadow hover:shadow-md"

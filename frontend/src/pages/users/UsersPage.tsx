@@ -146,7 +146,7 @@ export const UsersPage = () => {
                 </TableCell>
               </TableRow>
             ) : (
-              data?.items.map((user) => (
+              (data?.items || []).map((user) => (
                 <TableRow key={user.id} className="hover:bg-gray-50">
                   <TableCell>
                     <div className="flex items-center gap-3">
