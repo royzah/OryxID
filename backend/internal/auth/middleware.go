@@ -1,20 +1,26 @@
 package auth
 
 import (
+	"crypto/sha256"
+	"encoding/base64"
 	"net/http"
 	"strings"
 
 	"github.com/gin-gonic/gin"
+	"github.com/tiiuae/oryxid/internal/database"
 	"github.com/tiiuae/oryxid/internal/tokens"
+	"gorm.io/gorm"
 )
 
 type AuthMiddleware struct {
 	tokenManager *tokens.TokenManager
+	db           *gorm.DB
 }
 
-func NewAuthMiddleware(tm *tokens.TokenManager) *AuthMiddleware {
+func NewAuthMiddleware(tm *tokens.TokenManager, db *gorm.DB) *AuthMiddleware {
 	return &AuthMiddleware{
 		tokenManager: tm,
+		db:           db,
 	}
 }
 
@@ -28,12 +34,25 @@ func (m *AuthMiddleware) RequireAuth() gin.HandlerFunc {
 			return
 		}
 
-		// Validate token
+		// Validate token signature and expiration
 		claims, err := m.tokenManager.ValidateToken(token)
 		if err != nil {
 			c.JSON(http.StatusUnauthorized, gin.H{"error": "Invalid token"})
 			c.Abort()
 			return
+		}
+
+		// Check if token has been revoked (OAuth 2.1 security)
+		hash := sha256.Sum256([]byte(token))
+		tokenHash := base64.URLEncoding.EncodeToString(hash[:])
+
+		var storedToken database.Token
+		if err := m.db.Where("token_hash = ?", tokenHash).First(&storedToken).Error; err == nil {
+			if storedToken.Revoked {
+				c.JSON(http.StatusUnauthorized, gin.H{"error": "Token has been revoked"})
+				c.Abort()
+				return
+			}
 		}
 
 		// Set user context

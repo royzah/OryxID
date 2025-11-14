@@ -325,16 +325,27 @@ func (s *Server) RefreshTokenGrant(req *TokenRequest) (*tokens.TokenResponse, er
 		return nil, err
 	}
 
+	// Generate new refresh token (token rotation for security)
+	newRefreshToken, err := s.TokenManager.GenerateRefreshToken(&app, user, claims.Scope)
+	if err != nil {
+		return nil, err
+	}
+
+	// Revoke old refresh token to prevent reuse
+	s.db.Model(&database.Token{}).
+		Where("token_hash = ? AND token_type = ?", tokenHash, "refresh").
+		Update("revoked", true)
+
 	response := &tokens.TokenResponse{
 		AccessToken:  accessToken,
 		TokenType:    "Bearer",
 		ExpiresIn:    3600,
-		RefreshToken: req.RefreshToken, // Return same refresh token
+		RefreshToken: newRefreshToken, // Return new refresh token (OAuth 2.1 best practice)
 		Scope:        claims.Scope,
 	}
 
-	// Store new access token
-	s.storeTokens(&app, user, accessToken, "")
+	// Store new access token and new refresh token
+	s.storeTokens(&app, user, accessToken, newRefreshToken)
 
 	return response, nil
 }
