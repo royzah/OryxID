@@ -227,3 +227,33 @@ func (j *JSONB) Scan(value interface{}) error {
 	}
 	return json.Unmarshal(bytes, j)
 }
+
+// SigningKey represents a cryptographic key for JWT signing (key rotation support)
+type SigningKey struct {
+	BaseModel
+	KeyID         string     `gorm:"uniqueIndex;not null" json:"key_id"`        // kid claim
+	Algorithm     string     `gorm:"not null;default:'RS256'" json:"algorithm"` // Signing algorithm
+	PrivateKeyPEM string     `gorm:"type:text;not null" json:"-"`               // PEM-encoded private key (never exposed)
+	PublicKeyPEM  string     `gorm:"type:text;not null" json:"public_key_pem"`  // PEM-encoded public key
+	IsActive      bool       `gorm:"default:true;index" json:"is_active"`       // Currently used for signing
+	ActivatedAt   time.Time  `gorm:"not null" json:"activated_at"`              // When this key became active
+	ExpiresAt     *time.Time `json:"expires_at,omitempty"`                      // Optional expiration (for key rotation)
+	RevokedAt     *time.Time `json:"revoked_at,omitempty"`                      // If key compromised
+}
+
+// PushedAuthorizationRequest represents a PAR object (RFC 9126)
+type PushedAuthorizationRequest struct {
+	BaseModel
+	RequestURI          string    `gorm:"uniqueIndex;not null" json:"request_uri"` // urn:ietf:params:oauth:request_uri:<value>
+	ApplicationID       uuid.UUID `gorm:"type:uuid;not null;index" json:"application_id"`
+	ResponseType        string    `gorm:"not null" json:"response_type"`
+	ClientID            string    `gorm:"not null" json:"client_id"`
+	RedirectURI         string    `gorm:"not null" json:"redirect_uri"`
+	Scope               string    `json:"scope,omitempty"`
+	State               string    `json:"state,omitempty"`
+	Nonce               string    `json:"nonce,omitempty"`
+	CodeChallenge       string    `json:"code_challenge,omitempty"`
+	CodeChallengeMethod string    `json:"code_challenge_method,omitempty"`
+	ExpiresAt           time.Time `gorm:"not null;index" json:"expires_at"` // PAR requests expire quickly (typically 90 seconds)
+	Used                bool      `gorm:"default:false;index" json:"used"`  // One-time use
+}
