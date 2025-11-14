@@ -122,7 +122,7 @@ services:
       - ./frontend/tsconfig.json:/app/tsconfig.json:ro
       - ./frontend/tsconfig.node.json:/app/tsconfig.node.json:ro
       - ./frontend/tailwind.config.js:/app/tailwind.config.js:ro
-      - ./frontend/postcss.config.js:/app/postcss.config.js:ro
+      - ./frontend/postcss.config.cjs:/app/postcss.config.cjs:ro
     networks:
       - oryxid-network
     healthcheck:
