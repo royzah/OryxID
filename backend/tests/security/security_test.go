@@ -32,11 +32,10 @@ func setupSecurityTestEnv(t *testing.T) (*gin.Engine, *gorm.DB, *oauth.Server, *
 	db, err := gorm.Open(sqlite.Open(":memory:"), &gorm.Config{})
 	require.NoError(t, err)
 
-	// Migrate models (excluding Application/AuditLog due to pq.StringArray compatibility issues with SQLite)
+	// Migrate models (excluding those that reference Application due to pq.StringArray compatibility issues with SQLite)
+	// AuthorizationCode and Token have foreign key relationships with Application
 	err = db.AutoMigrate(
 		&database.User{},
-		&database.AuthorizationCode{},
-		&database.Token{},
 		&database.PushedAuthorizationRequest{},
 	)
 	require.NoError(t, err)
@@ -65,6 +64,49 @@ func setupSecurityTestEnv(t *testing.T) (*gin.Engine, *gorm.DB, *oauth.Server, *
 			refresh_token_lifespan INTEGER,
 			owner_id TEXT,
 			metadata TEXT
+		)
+	`).Error
+	require.NoError(t, err)
+
+	// Manually create AuthorizationCode table
+	err = db.Exec(`
+		CREATE TABLE IF NOT EXISTS authorization_codes (
+			id TEXT PRIMARY KEY,
+			created_at DATETIME,
+			updated_at DATETIME,
+			deleted_at DATETIME,
+			code TEXT UNIQUE NOT NULL,
+			application_id TEXT NOT NULL,
+			user_id TEXT,
+			redirect_uri TEXT,
+			scope TEXT,
+			audience TEXT,
+			state TEXT,
+			nonce TEXT,
+			code_challenge TEXT,
+			code_challenge_method TEXT,
+			expires_at DATETIME,
+			used BOOLEAN DEFAULT 0
+		)
+	`).Error
+	require.NoError(t, err)
+
+	// Manually create Token table
+	err = db.Exec(`
+		CREATE TABLE IF NOT EXISTS tokens (
+			id TEXT PRIMARY KEY,
+			created_at DATETIME,
+			updated_at DATETIME,
+			deleted_at DATETIME,
+			token_hash TEXT UNIQUE NOT NULL,
+			token_type TEXT NOT NULL,
+			application_id TEXT NOT NULL,
+			user_id TEXT,
+			scope TEXT,
+			audience TEXT,
+			expires_at DATETIME,
+			revoked BOOLEAN DEFAULT 0,
+			revoked_at DATETIME
 		)
 	`).Error
 	require.NoError(t, err)

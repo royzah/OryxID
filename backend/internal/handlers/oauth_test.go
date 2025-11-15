@@ -32,14 +32,12 @@ func setupTestEnvironment(t *testing.T) (*gin.Engine, *gorm.DB, *tokens.TokenMan
 	db, err := gorm.Open(sqlite.Open(":memory:"), &gorm.Config{})
 	require.NoError(t, err)
 
-	// Migrate models (excluding Application/AuditLog/Scope/Audience due to pq.StringArray compatibility issues with SQLite)
-	// Scope and Audience have many-to-many relationships with Application, which triggers GORM to parse Application
+	// Migrate models (excluding those that reference Application due to pq.StringArray compatibility issues with SQLite)
+	// AuthorizationCode, Token, Scope, and Audience all have relationships with Application
 	err = db.AutoMigrate(
 		&database.User{},
 		&database.Role{},
 		&database.Permission{},
-		&database.AuthorizationCode{},
-		&database.Token{},
 		&database.Session{},
 		&database.SigningKey{},
 		&database.PushedAuthorizationRequest{},
@@ -110,6 +108,49 @@ func setupTestEnvironment(t *testing.T) (*gin.Engine, *gorm.DB, *tokens.TokenMan
 	require.NoError(t, err)
 
 	err = db.Exec(`CREATE TABLE IF NOT EXISTS application_audiences (application_id TEXT, audience_id TEXT, PRIMARY KEY (application_id, audience_id))`).Error
+	require.NoError(t, err)
+
+	// Manually create AuthorizationCode table
+	err = db.Exec(`
+		CREATE TABLE IF NOT EXISTS authorization_codes (
+			id TEXT PRIMARY KEY,
+			created_at DATETIME,
+			updated_at DATETIME,
+			deleted_at DATETIME,
+			code TEXT UNIQUE NOT NULL,
+			application_id TEXT NOT NULL,
+			user_id TEXT,
+			redirect_uri TEXT,
+			scope TEXT,
+			audience TEXT,
+			state TEXT,
+			nonce TEXT,
+			code_challenge TEXT,
+			code_challenge_method TEXT,
+			expires_at DATETIME,
+			used BOOLEAN DEFAULT 0
+		)
+	`).Error
+	require.NoError(t, err)
+
+	// Manually create Token table
+	err = db.Exec(`
+		CREATE TABLE IF NOT EXISTS tokens (
+			id TEXT PRIMARY KEY,
+			created_at DATETIME,
+			updated_at DATETIME,
+			deleted_at DATETIME,
+			token_hash TEXT UNIQUE NOT NULL,
+			token_type TEXT NOT NULL,
+			application_id TEXT NOT NULL,
+			user_id TEXT,
+			scope TEXT,
+			audience TEXT,
+			expires_at DATETIME,
+			revoked BOOLEAN DEFAULT 0,
+			revoked_at DATETIME
+		)
+	`).Error
 	require.NoError(t, err)
 
 	// Generate test RSA keys
