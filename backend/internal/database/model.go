@@ -37,7 +37,7 @@ type User struct {
 	Password      string `gorm:"not null" json:"-"`
 	IsActive      bool   `gorm:"default:true" json:"is_active"`
 	IsAdmin       bool   `gorm:"default:false" json:"is_admin"`
-	Roles         []Role `gorm:"many2many:user_roles;" json:"roles,omitempty"`
+	Roles         []Role `gorm:"many2many:user_roles" json:"roles,omitempty"`
 }
 
 // Role represents user roles
@@ -45,8 +45,8 @@ type Role struct {
 	BaseModel
 	Name        string       `gorm:"uniqueIndex;not null" json:"name"`
 	Description string       `json:"description"`
-	Permissions []Permission `gorm:"many2many:role_permissions;" json:"permissions,omitempty"`
-	Users       []User       `gorm:"many2many:user_roles;" json:"-"`
+	Permissions []Permission `gorm:"many2many:role_permissions" json:"permissions,omitempty"`
+	Users       []User       `gorm:"many2many:user_roles" json:"-"`
 }
 
 // Permission represents fine-grained permissions
@@ -54,7 +54,7 @@ type Permission struct {
 	BaseModel
 	Name        string `gorm:"uniqueIndex;not null" json:"name"`
 	Description string `json:"description"`
-	Roles       []Role `gorm:"many2many:role_permissions;" json:"-"`
+	Roles       []Role `gorm:"many2many:role_permissions" json:"-"`
 }
 
 // Application represents an OAuth2 client
@@ -72,8 +72,8 @@ type Application struct {
 	ResponseTypes            pq.StringArray `json:"response_types"`
 	RedirectURIs             pq.StringArray `json:"redirect_uris"`
 	PostLogoutURIs           pq.StringArray `json:"post_logout_uris"`
-	Scopes                   []Scope    `gorm:"many2many:application_scopes;" json:"scopes,omitempty"`
-	Audiences                []Audience `gorm:"many2many:application_audiences;" json:"audiences,omitempty"`
+	Scopes                   []Scope    `gorm:"many2many:application_scopes" json:"scopes,omitempty"`
+	Audiences                []Audience `gorm:"many2many:application_audiences" json:"audiences,omitempty"`
 	SkipAuthorization        bool       `gorm:"default:false" json:"skip_authorization"`
 	AccessTokenLifespan      int        `json:"access_token_lifespan"`  // seconds, 0 means use default
 	RefreshTokenLifespan     int        `json:"refresh_token_lifespan"` // seconds, 0 means use default
@@ -88,7 +88,7 @@ type Scope struct {
 	Name         string        `gorm:"uniqueIndex;not null" json:"name"`
 	Description  string        `json:"description"`
 	IsDefault    bool          `gorm:"default:false" json:"is_default"`
-	Applications []Application `gorm:"many2many:application_scopes;" json:"-"`
+	Applications []Application `gorm:"many2many:application_scopes" json:"-"`
 }
 
 // Audience represents API audiences
@@ -97,8 +97,8 @@ type Audience struct {
 	Identifier   string        `gorm:"uniqueIndex;not null" json:"identifier"`
 	Name         string        `gorm:"not null" json:"name"`
 	Description  string        `json:"description"`
-	Scopes       []Scope       `gorm:"many2many:audience_scopes;" json:"scopes,omitempty"`
-	Applications []Application `gorm:"many2many:application_audiences;" json:"-"`
+	Scopes       []Scope       `gorm:"many2many:audience_scopes" json:"scopes,omitempty"`
+	Applications []Application `gorm:"many2many:application_audiences" json:"-"`
 }
 
 // AuthorizationCode represents OAuth2 authorization codes
