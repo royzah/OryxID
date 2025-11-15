@@ -14,10 +14,18 @@ import (
 
 // Base model with common fields
 type BaseModel struct {
-	ID        uuid.UUID      `gorm:"type:uuid;primary_key;default:uuid_generate_v4()" json:"id"`
+	ID        uuid.UUID      `gorm:"type:uuid;primary_key" json:"id"`
 	CreatedAt time.Time      `json:"created_at"`
 	UpdatedAt time.Time      `json:"updated_at"`
 	DeletedAt gorm.DeletedAt `gorm:"index" json:"-"`
+}
+
+// BeforeCreate hook to generate UUID before creating record
+func (b *BaseModel) BeforeCreate(tx *gorm.DB) error {
+	if b.ID == uuid.Nil {
+		b.ID = uuid.New()
+	}
+	return nil
 }
 
 // User represents a system user (admin)
