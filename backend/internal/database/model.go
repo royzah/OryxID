@@ -8,7 +8,6 @@ import (
 	"time"
 
 	"github.com/google/uuid"
-	"github.com/lib/pq"
 	"gorm.io/gorm"
 )
 
@@ -189,79 +188,6 @@ type AuditLog struct {
 	UserAgent     string                 `json:"user_agent"`
 	StatusCode    int                    `json:"status_code"`
 	Metadata      map[string]interface{} `json:"metadata,omitempty"`
-}
-
-// StringArray is a custom type for PostgreSQL text[] support
-type StringArray []string
-
-// Value converts StringArray to database value
-func (s StringArray) Value() (driver.Value, error) {
-	if s == nil {
-		return nil, nil
-	}
-	// Use JSON encoding for cross-database compatibility (PostgreSQL, SQLite, MySQL)
-	return json.Marshal([]string(s))
-}
-
-// Scan converts database value to StringArray
-func (s *StringArray) Scan(value interface{}) error {
-	if value == nil {
-		*s = nil
-		return nil
-	}
-
-	// Try JSON unmarshaling first (works for SQLite and PostgreSQL with JSON storage)
-	var bytes []byte
-	switch v := value.(type) {
-	case []byte:
-		bytes = v
-	case string:
-		bytes = []byte(v)
-	default:
-		// Fallback to PostgreSQL array type
-		return pq.Array(s).Scan(value)
-	}
-
-	var arr []string
-	if err := json.Unmarshal(bytes, &arr); err != nil {
-		// If JSON fails, try pq.Array as fallback
-		return pq.Array(s).Scan(value)
-	}
-	*s = StringArray(arr)
-	return nil
-}
-
-// MarshalJSON custom JSON marshaling
-func (s StringArray) MarshalJSON() ([]byte, error) {
-	if s == nil {
-		return []byte("[]"), nil
-	}
-	return json.Marshal([]string(s))
-}
-
-// UnmarshalJSON custom JSON unmarshaling
-func (s *StringArray) UnmarshalJSON(data []byte) error {
-	var arr []string
-	if err := json.Unmarshal(data, &arr); err != nil {
-		return err
-	}
-	*s = StringArray(arr)
-	return nil
-}
-
-// Contains checks if the array contains a value
-func (s StringArray) Contains(value string) bool {
-	for _, v := range s {
-		if v == value {
-			return true
-		}
-	}
-	return false
-}
-
-// Join returns a string representation
-func (s StringArray) Join(separator string) string {
-	return strings.Join(s, separator)
 }
 
 // JSONB is a custom type for PostgreSQL JSONB support
