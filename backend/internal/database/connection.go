@@ -56,8 +56,92 @@ func Migrate(db *gorm.DB) error {
 		return fmt.Errorf("failed to create uuid extension: %w", err)
 	}
 
-	// Manually create signing_keys table (GORM AutoMigrate has parsing issues)
-	log.Println("Creating signing_keys table...")
+	log.Println("Creating all tables manually...")
+
+	// Create permissions table
+	if err := db.Exec(`
+		CREATE TABLE IF NOT EXISTS permissions (
+			id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+			created_at TIMESTAMP WITH TIME ZONE,
+			updated_at TIMESTAMP WITH TIME ZONE,
+			deleted_at TIMESTAMP WITH TIME ZONE,
+			name TEXT UNIQUE NOT NULL,
+			description TEXT
+		)
+	`).Error; err != nil {
+		return fmt.Errorf("failed to create permissions table: %w", err)
+	}
+	if err := db.Exec(`CREATE INDEX IF NOT EXISTS idx_permissions_deleted_at ON permissions(deleted_at)`).Error; err != nil {
+		return fmt.Errorf("failed to create permissions index: %w", err)
+	}
+
+	// Create roles table
+	if err := db.Exec(`
+		CREATE TABLE IF NOT EXISTS roles (
+			id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+			created_at TIMESTAMP WITH TIME ZONE,
+			updated_at TIMESTAMP WITH TIME ZONE,
+			deleted_at TIMESTAMP WITH TIME ZONE,
+			name TEXT UNIQUE NOT NULL,
+			description TEXT
+		)
+	`).Error; err != nil {
+		return fmt.Errorf("failed to create roles table: %w", err)
+	}
+	if err := db.Exec(`CREATE INDEX IF NOT EXISTS idx_roles_deleted_at ON roles(deleted_at)`).Error; err != nil {
+		return fmt.Errorf("failed to create roles index: %w", err)
+	}
+
+	// Create role_permissions junction table
+	if err := db.Exec(`
+		CREATE TABLE IF NOT EXISTS role_permissions (
+			role_id UUID REFERENCES roles(id) ON DELETE CASCADE,
+			permission_id UUID REFERENCES permissions(id) ON DELETE CASCADE,
+			PRIMARY KEY (role_id, permission_id)
+		)
+	`).Error; err != nil {
+		return fmt.Errorf("failed to create role_permissions table: %w", err)
+	}
+
+	// Create users table
+	if err := db.Exec(`
+		CREATE TABLE IF NOT EXISTS users (
+			id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+			created_at TIMESTAMP WITH TIME ZONE,
+			updated_at TIMESTAMP WITH TIME ZONE,
+			deleted_at TIMESTAMP WITH TIME ZONE,
+			username TEXT UNIQUE NOT NULL,
+			email TEXT UNIQUE NOT NULL,
+			email_verified BOOLEAN DEFAULT FALSE,
+			password TEXT NOT NULL,
+			is_active BOOLEAN DEFAULT TRUE,
+			is_admin BOOLEAN DEFAULT FALSE
+		)
+	`).Error; err != nil {
+		return fmt.Errorf("failed to create users table: %w", err)
+	}
+	if err := db.Exec(`CREATE INDEX IF NOT EXISTS idx_users_deleted_at ON users(deleted_at)`).Error; err != nil {
+		return fmt.Errorf("failed to create users index: %w", err)
+	}
+	if err := db.Exec(`CREATE INDEX IF NOT EXISTS idx_users_username ON users(username)`).Error; err != nil {
+		return fmt.Errorf("failed to create users username index: %w", err)
+	}
+	if err := db.Exec(`CREATE INDEX IF NOT EXISTS idx_users_email ON users(email)`).Error; err != nil {
+		return fmt.Errorf("failed to create users email index: %w", err)
+	}
+
+	// Create user_roles junction table
+	if err := db.Exec(`
+		CREATE TABLE IF NOT EXISTS user_roles (
+			user_id UUID REFERENCES users(id) ON DELETE CASCADE,
+			role_id UUID REFERENCES roles(id) ON DELETE CASCADE,
+			PRIMARY KEY (user_id, role_id)
+		)
+	`).Error; err != nil {
+		return fmt.Errorf("failed to create user_roles table: %w", err)
+	}
+
+	// Create signing_keys table
 	if err := db.Exec(`
 		CREATE TABLE IF NOT EXISTS signing_keys (
 			id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
@@ -76,8 +160,6 @@ func Migrate(db *gorm.DB) error {
 	`).Error; err != nil {
 		return fmt.Errorf("failed to create signing_keys table: %w", err)
 	}
-
-	// Create indexes for signing_keys
 	if err := db.Exec(`CREATE INDEX IF NOT EXISTS idx_signing_keys_deleted_at ON signing_keys(deleted_at)`).Error; err != nil {
 		return fmt.Errorf("failed to create signing_keys deleted_at index: %w", err)
 	}
@@ -85,45 +167,35 @@ func Migrate(db *gorm.DB) error {
 		return fmt.Errorf("failed to create signing_keys is_active index: %w", err)
 	}
 
-	// DEBUG: Test if AutoMigrate works at all with a simple struct
-	type SimpleTest struct {
-		ID   uint   `gorm:"primaryKey"`
-		Name string `gorm:"not null"`
+	// Create sessions table
+	if err := db.Exec(`
+		CREATE TABLE IF NOT EXISTS sessions (
+			id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+			created_at TIMESTAMP WITH TIME ZONE,
+			updated_at TIMESTAMP WITH TIME ZONE,
+			deleted_at TIMESTAMP WITH TIME ZONE,
+			session_id TEXT UNIQUE NOT NULL,
+			user_id UUID REFERENCES users(id) ON DELETE CASCADE,
+			expires_at TIMESTAMP WITH TIME ZONE NOT NULL,
+			data JSONB
+		)
+	`).Error; err != nil {
+		return fmt.Errorf("failed to create sessions table: %w", err)
 	}
-	log.Println("DEBUG: Testing AutoMigrate with simple struct...")
-	if err := db.AutoMigrate(&SimpleTest{}); err != nil {
-		log.Printf("DEBUG: Simple AutoMigrate FAILED: %v", err)
-	} else {
-		log.Println("DEBUG: Simple AutoMigrate SUCCEEDED")
-		db.Migrator().DropTable(&SimpleTest{})
+	if err := db.Exec(`CREATE INDEX IF NOT EXISTS idx_sessions_deleted_at ON sessions(deleted_at)`).Error; err != nil {
+		return fmt.Errorf("failed to create sessions index: %w", err)
 	}
-
-	log.Println("Migrating Permission...")
-	log.Printf("DEBUG: Permission model fields: %+v", Permission{})
-	log.Println("DEBUG: About to call db.AutoMigrate(&Permission{})")
-	if err := db.AutoMigrate(&Permission{}); err != nil {
-		log.Printf("DEBUG: AutoMigrate failed with error: %v", err)
-		log.Printf("DEBUG: Error type: %T", err)
-		return fmt.Errorf("failed to migrate Permission: %w", err)
+	if err := db.Exec(`CREATE INDEX IF NOT EXISTS idx_sessions_session_id ON sessions(session_id)`).Error; err != nil {
+		return fmt.Errorf("failed to create sessions session_id index: %w", err)
 	}
-	log.Println("DEBUG: Permission migration succeeded")
-
-	log.Println("Migrating Role...")
-	if err := db.AutoMigrate(&Role{}); err != nil {
-		return fmt.Errorf("failed to migrate Role: %w", err)
+	if err := db.Exec(`CREATE INDEX IF NOT EXISTS idx_sessions_user_id ON sessions(user_id)`).Error; err != nil {
+		return fmt.Errorf("failed to create sessions user_id index: %w", err)
 	}
-
-	log.Println("Migrating User...")
-	if err := db.AutoMigrate(&User{}); err != nil {
-		return fmt.Errorf("failed to migrate User: %w", err)
+	if err := db.Exec(`CREATE INDEX IF NOT EXISTS idx_sessions_expires_at ON sessions(expires_at)`).Error; err != nil {
+		return fmt.Errorf("failed to create sessions expires_at index: %w", err)
 	}
 
-	log.Println("Migrating Session...")
-	if err := db.AutoMigrate(&Session{}); err != nil {
-		return fmt.Errorf("failed to migrate Session: %w", err)
-	}
-
-	// Manually create applications table (GORM can't handle pq.StringArray in AutoMigrate)
+	// Create applications table
 	if err := db.Exec(`
 		CREATE TABLE IF NOT EXISTS applications (
 			id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
@@ -134,8 +206,8 @@ func Migrate(db *gorm.DB) error {
 			description TEXT,
 			client_id TEXT UNIQUE NOT NULL,
 			hashed_client_secret TEXT NOT NULL,
-			client_type TEXT NOT NULL DEFAULT 'confidential',
-			token_endpoint_auth_method TEXT DEFAULT 'client_secret_basic',
+			client_type TEXT NOT NULL,
+			token_endpoint_auth_method TEXT,
 			public_key_pem TEXT,
 			jwks_uri TEXT,
 			grant_types TEXT[],
@@ -151,30 +223,213 @@ func Migrate(db *gorm.DB) error {
 	`).Error; err != nil {
 		return fmt.Errorf("failed to create applications table: %w", err)
 	}
-
-	// Create deleted_at index for soft deletes
 	if err := db.Exec(`CREATE INDEX IF NOT EXISTS idx_applications_deleted_at ON applications(deleted_at)`).Error; err != nil {
 		return fmt.Errorf("failed to create applications index: %w", err)
 	}
-
-	// Now migrate models that reference Application
-	if err := db.AutoMigrate(
-		&Scope{},
-		&Audience{},
-		&AuthorizationCode{},
-		&Token{},
-		&AuditLog{},
-		&PushedAuthorizationRequest{},
-	); err != nil {
-		return fmt.Errorf("failed to migrate models: %w", err)
+	if err := db.Exec(`CREATE INDEX IF NOT EXISTS idx_applications_client_id ON applications(client_id)`).Error; err != nil {
+		return fmt.Errorf("failed to create applications client_id index: %w", err)
+	}
+	if err := db.Exec(`CREATE INDEX IF NOT EXISTS idx_applications_owner_id ON applications(owner_id)`).Error; err != nil {
+		return fmt.Errorf("failed to create applications owner_id index: %w", err)
 	}
 
-	// Create indexes
-	if err := CreateIndexes(db); err != nil {
-		log.Printf("Warning: Failed to create some indexes: %v", err)
+	// Create scopes table
+	if err := db.Exec(`
+		CREATE TABLE IF NOT EXISTS scopes (
+			id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+			created_at TIMESTAMP WITH TIME ZONE,
+			updated_at TIMESTAMP WITH TIME ZONE,
+			deleted_at TIMESTAMP WITH TIME ZONE,
+			name TEXT UNIQUE NOT NULL,
+			description TEXT,
+			is_default BOOLEAN DEFAULT FALSE
+		)
+	`).Error; err != nil {
+		return fmt.Errorf("failed to create scopes table: %w", err)
+	}
+	if err := db.Exec(`CREATE INDEX IF NOT EXISTS idx_scopes_deleted_at ON scopes(deleted_at)`).Error; err != nil {
+		return fmt.Errorf("failed to create scopes index: %w", err)
 	}
 
-	log.Println("Database migration completed successfully")
+	// Create audiences table
+	if err := db.Exec(`
+		CREATE TABLE IF NOT EXISTS audiences (
+			id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+			created_at TIMESTAMP WITH TIME ZONE,
+			updated_at TIMESTAMP WITH TIME ZONE,
+			deleted_at TIMESTAMP WITH TIME ZONE,
+			identifier TEXT UNIQUE NOT NULL,
+			name TEXT NOT NULL,
+			description TEXT
+		)
+	`).Error; err != nil {
+		return fmt.Errorf("failed to create audiences table: %w", err)
+	}
+	if err := db.Exec(`CREATE INDEX IF NOT EXISTS idx_audiences_deleted_at ON audiences(deleted_at)`).Error; err != nil {
+		return fmt.Errorf("failed to create audiences index: %w", err)
+	}
+
+	// Create application_scopes junction table
+	if err := db.Exec(`
+		CREATE TABLE IF NOT EXISTS application_scopes (
+			application_id UUID REFERENCES applications(id) ON DELETE CASCADE,
+			scope_id UUID REFERENCES scopes(id) ON DELETE CASCADE,
+			PRIMARY KEY (application_id, scope_id)
+		)
+	`).Error; err != nil {
+		return fmt.Errorf("failed to create application_scopes table: %w", err)
+	}
+
+	// Create application_audiences junction table
+	if err := db.Exec(`
+		CREATE TABLE IF NOT EXISTS application_audiences (
+			application_id UUID REFERENCES applications(id) ON DELETE CASCADE,
+			audience_id UUID REFERENCES audiences(id) ON DELETE CASCADE,
+			PRIMARY KEY (application_id, audience_id)
+		)
+	`).Error; err != nil {
+		return fmt.Errorf("failed to create application_audiences table: %w", err)
+	}
+
+	// Create audience_scopes junction table
+	if err := db.Exec(`
+		CREATE TABLE IF NOT EXISTS audience_scopes (
+			audience_id UUID REFERENCES audiences(id) ON DELETE CASCADE,
+			scope_id UUID REFERENCES scopes(id) ON DELETE CASCADE,
+			PRIMARY KEY (audience_id, scope_id)
+		)
+	`).Error; err != nil {
+		return fmt.Errorf("failed to create audience_scopes table: %w", err)
+	}
+
+	// Create authorization_codes table
+	if err := db.Exec(`
+		CREATE TABLE IF NOT EXISTS authorization_codes (
+			id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+			created_at TIMESTAMP WITH TIME ZONE,
+			updated_at TIMESTAMP WITH TIME ZONE,
+			deleted_at TIMESTAMP WITH TIME ZONE,
+			code TEXT UNIQUE NOT NULL,
+			application_id UUID REFERENCES applications(id) ON DELETE CASCADE,
+			user_id UUID REFERENCES users(id) ON DELETE CASCADE,
+			redirect_uri TEXT NOT NULL,
+			scope TEXT,
+			code_challenge TEXT,
+			code_challenge_method TEXT,
+			nonce TEXT,
+			expires_at TIMESTAMP WITH TIME ZONE NOT NULL,
+			used BOOLEAN DEFAULT FALSE
+		)
+	`).Error; err != nil {
+		return fmt.Errorf("failed to create authorization_codes table: %w", err)
+	}
+	if err := db.Exec(`CREATE INDEX IF NOT EXISTS idx_authorization_codes_deleted_at ON authorization_codes(deleted_at)`).Error; err != nil {
+		return fmt.Errorf("failed to create authorization_codes index: %w", err)
+	}
+	if err := db.Exec(`CREATE INDEX IF NOT EXISTS idx_authorization_codes_code ON authorization_codes(code)`).Error; err != nil {
+		return fmt.Errorf("failed to create authorization_codes code index: %w", err)
+	}
+	if err := db.Exec(`CREATE INDEX IF NOT EXISTS idx_authorization_codes_expires_at ON authorization_codes(expires_at)`).Error; err != nil {
+		return fmt.Errorf("failed to create authorization_codes expires_at index: %w", err)
+	}
+
+	// Create tokens table
+	if err := db.Exec(`
+		CREATE TABLE IF NOT EXISTS tokens (
+			id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+			created_at TIMESTAMP WITH TIME ZONE,
+			updated_at TIMESTAMP WITH TIME ZONE,
+			deleted_at TIMESTAMP WITH TIME ZONE,
+			token_hash TEXT UNIQUE NOT NULL,
+			token_type TEXT NOT NULL,
+			application_id UUID REFERENCES applications(id) ON DELETE CASCADE,
+			user_id UUID REFERENCES users(id) ON DELETE CASCADE,
+			scope TEXT,
+			expires_at TIMESTAMP WITH TIME ZONE NOT NULL,
+			revoked BOOLEAN DEFAULT FALSE
+		)
+	`).Error; err != nil {
+		return fmt.Errorf("failed to create tokens table: %w", err)
+	}
+	if err := db.Exec(`CREATE INDEX IF NOT EXISTS idx_tokens_deleted_at ON tokens(deleted_at)`).Error; err != nil {
+		return fmt.Errorf("failed to create tokens index: %w", err)
+	}
+	if err := db.Exec(`CREATE INDEX IF NOT EXISTS idx_tokens_token_hash ON tokens(token_hash)`).Error; err != nil {
+		return fmt.Errorf("failed to create tokens token_hash index: %w", err)
+	}
+	if err := db.Exec(`CREATE INDEX IF NOT EXISTS idx_tokens_expires_at ON tokens(expires_at)`).Error; err != nil {
+		return fmt.Errorf("failed to create tokens expires_at index: %w", err)
+	}
+	if err := db.Exec(`CREATE INDEX IF NOT EXISTS idx_tokens_application_id ON tokens(application_id)`).Error; err != nil {
+		return fmt.Errorf("failed to create tokens application_id index: %w", err)
+	}
+	if err := db.Exec(`CREATE INDEX IF NOT EXISTS idx_tokens_user_id ON tokens(user_id)`).Error; err != nil {
+		return fmt.Errorf("failed to create tokens user_id index: %w", err)
+	}
+
+	// Create audit_logs table
+	if err := db.Exec(`
+		CREATE TABLE IF NOT EXISTS audit_logs (
+			id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+			created_at TIMESTAMP WITH TIME ZONE,
+			updated_at TIMESTAMP WITH TIME ZONE,
+			deleted_at TIMESTAMP WITH TIME ZONE,
+			user_id UUID REFERENCES users(id) ON DELETE SET NULL,
+			application_id UUID REFERENCES applications(id) ON DELETE SET NULL,
+			action TEXT NOT NULL,
+			resource_type TEXT,
+			resource_id TEXT,
+			ip_address TEXT,
+			user_agent TEXT,
+			details JSONB
+		)
+	`).Error; err != nil {
+		return fmt.Errorf("failed to create audit_logs table: %w", err)
+	}
+	if err := db.Exec(`CREATE INDEX IF NOT EXISTS idx_audit_logs_deleted_at ON audit_logs(deleted_at)`).Error; err != nil {
+		return fmt.Errorf("failed to create audit_logs index: %w", err)
+	}
+	if err := db.Exec(`CREATE INDEX IF NOT EXISTS idx_audit_logs_created_at ON audit_logs(created_at)`).Error; err != nil {
+		return fmt.Errorf("failed to create audit_logs created_at index: %w", err)
+	}
+	if err := db.Exec(`CREATE INDEX IF NOT EXISTS idx_audit_logs_user_id ON audit_logs(user_id)`).Error; err != nil {
+		return fmt.Errorf("failed to create audit_logs user_id index: %w", err)
+	}
+	if err := db.Exec(`CREATE INDEX IF NOT EXISTS idx_audit_logs_application_id ON audit_logs(application_id)`).Error; err != nil {
+		return fmt.Errorf("failed to create audit_logs application_id index: %w", err)
+	}
+	if err := db.Exec(`CREATE INDEX IF NOT EXISTS idx_audit_logs_action ON audit_logs(action)`).Error; err != nil {
+		return fmt.Errorf("failed to create audit_logs action index: %w", err)
+	}
+
+	// Create pushed_authorization_requests table
+	if err := db.Exec(`
+		CREATE TABLE IF NOT EXISTS pushed_authorization_requests (
+			id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+			created_at TIMESTAMP WITH TIME ZONE,
+			updated_at TIMESTAMP WITH TIME ZONE,
+			deleted_at TIMESTAMP WITH TIME ZONE,
+			request_uri TEXT UNIQUE NOT NULL,
+			application_id UUID NOT NULL,
+			response_type TEXT NOT NULL,
+			client_id TEXT NOT NULL,
+			redirect_uri TEXT NOT NULL,
+			scope TEXT,
+			state TEXT,
+			nonce TEXT,
+			code_challenge TEXT,
+			code_challenge_method TEXT,
+			expires_at TIMESTAMP WITH TIME ZONE NOT NULL,
+			used BOOLEAN DEFAULT FALSE
+		)
+	`).Error; err != nil {
+		return fmt.Errorf("failed to create pushed_authorization_requests table: %w", err)
+	}
+	if err := db.Exec(`CREATE INDEX IF NOT EXISTS idx_pushed_authorization_requests_deleted_at ON pushed_authorization_requests(deleted_at)`).Error; err != nil {
+		return fmt.Errorf("failed to create pushed_authorization_requests index: %w", err)
+	}
+
+	log.Println("All tables created successfully")
 	return nil
 }
 
