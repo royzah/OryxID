@@ -263,7 +263,8 @@ func TestRefreshToken_Success(t *testing.T) {
 		ClientID: "admin-panel",
 		Name:     "Admin Panel",
 	}
-	require.NoError(t, db.Create(app).Error)
+	// Use Table() to explicitly specify table name and bypass some GORM model introspection
+	require.NoError(t, db.Table("applications").Create(app).Error)
 
 	// Generate refresh token
 	refreshToken, err := tm.GenerateRefreshToken(app, user, "openid profile")
@@ -322,7 +323,8 @@ func TestRefreshToken_AccessTokenInsteadOfRefresh(t *testing.T) {
 		ClientID: "admin-panel",
 		Name:     "Admin Panel",
 	}
-	require.NoError(t, db.Create(app).Error)
+	// Use Table() to explicitly specify table name and bypass some GORM model introspection
+	require.NoError(t, db.Table("applications").Create(app).Error)
 
 	// Generate ACCESS token instead of refresh token
 	accessToken, err := tm.GenerateAccessToken(app, user, "openid profile", "admin-panel", nil)

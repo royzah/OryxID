@@ -180,7 +180,8 @@ func createTestApplication(t *testing.T, db *gorm.DB) *database.Application {
 		RedirectURIs:            pq.StringArray{"https://example.com/callback"},
 	}
 
-	err = db.Create(app).Error
+	// Use Table() to explicitly specify table name and bypass some GORM model introspection
+	err = db.Table("applications").Create(app).Error
 	require.NoError(t, err)
 
 	return app

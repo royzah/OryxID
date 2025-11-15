@@ -197,7 +197,8 @@ func setupTestEnvironment(t *testing.T) (*gin.Engine, *gorm.DB, *tokens.TokenMan
 		ResponseTypes:           pq.StringArray{"code"},
 		RedirectURIs:            pq.StringArray{"https://example.com/callback"},
 	}
-	require.NoError(t, db.Create(app).Error)
+	// Use Table() to explicitly specify table name and bypass some GORM model introspection
+	require.NoError(t, db.Table("applications").Create(app).Error)
 
 	// Create test user
 	hashedPassword, _ := bcrypt.GenerateFromPassword([]byte("password123"), bcrypt.DefaultCost)
