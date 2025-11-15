@@ -17,16 +17,57 @@ import (
 
 // Integration tests require the full stack to be running
 // Run with: make test-integration
+//
+// IMPORTANT: These tests require a test OAuth application to be registered:
+//   Client ID: test-client-id
+//   Client Secret: test-secret (hashed with bcrypt)
+//   Grant Types: client_credentials, authorization_code, refresh_token
+//   Redirect URIs: https://example.com/callback
+//
+// To set up the test application, run the backend and use the admin API or database migration.
 
 const (
-	baseURL = "http://localhost:8080"
+	baseURL      = "http://localhost:8080"
+	testClientID = "test-client-id"
+	testSecret   = "test-secret"
 )
+
+// verifyTestClientExists checks if the test OAuth application is configured
+func verifyTestClientExists(t *testing.T) {
+	// Try to get a token with test credentials
+	data := url.Values{}
+	data.Set("grant_type", "client_credentials")
+	data.Set("scope", "openid")
+
+	req, err := http.NewRequest("POST", baseURL+"/oauth/token", strings.NewReader(data.Encode()))
+	if err != nil {
+		t.Skip("Cannot create test request - is the server running?")
+		return
+	}
+
+	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	req.SetBasicAuth(testClientID, testSecret)
+
+	client := &http.Client{Timeout: 10 * time.Second}
+	resp, err := client.Do(req)
+	if err != nil {
+		t.Skipf("Cannot connect to server at %s - is it running?", baseURL)
+		return
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode == http.StatusUnauthorized {
+		t.Skipf("Test OAuth application not configured. Please register an application with client_id=%s and client_secret=%s", testClientID, testSecret)
+		return
+	}
+}
 
 // TestFullAuthorizationCodeFlow tests the complete OAuth2 authorization code flow with PKCE
 func TestFullAuthorizationCodeFlow(t *testing.T) {
 	if testing.Short() {
 		t.Skip("Skipping integration test in short mode")
 	}
+	verifyTestClientExists(t)
 
 	// Step 1: Generate PKCE challenge
 	codeVerifier := "dBjftJeZ4CVP-mB92K27uhbUJU1p1r_wW1gFWFOEjXk"
@@ -52,9 +93,10 @@ func TestClientCredentialsFlow(t *testing.T) {
 	if testing.Short() {
 		t.Skip("Skipping integration test in short mode")
 	}
+	verifyTestClientExists(t)
 
-	clientID := "test-client-id"
-	clientSecret := "test-secret"
+	clientID := testClientID
+	clientSecret := testSecret
 
 	// Request token
 	data := url.Values{}
@@ -91,10 +133,11 @@ func TestRefreshTokenFlow(t *testing.T) {
 	if testing.Short() {
 		t.Skip("Skipping integration test in short mode")
 	}
+	verifyTestClientExists(t)
 
 	// First get initial tokens using client credentials
-	clientID := "test-client-id"
-	clientSecret := "test-secret"
+	clientID := testClientID
+	clientSecret := testSecret
 
 	// Get initial tokens
 	data := url.Values{}
@@ -126,9 +169,10 @@ func TestTokenRevocation(t *testing.T) {
 	if testing.Short() {
 		t.Skip("Skipping integration test in short mode")
 	}
+	verifyTestClientExists(t)
 
-	clientID := "test-client-id"
-	clientSecret := "test-secret"
+	clientID := testClientID
+	clientSecret := testSecret
 
 	// Get a token first
 	data := url.Values{}
@@ -315,8 +359,8 @@ type PARResponse struct {
 }
 
 func createPAR(t *testing.T, codeChallenge string) *PARResponse {
-	clientID := "test-client-id"
-	clientSecret := "test-secret"
+	clientID := testClientID
+	clientSecret := testSecret
 
 	data := url.Values{}
 	data.Set("response_type", "code")
@@ -380,9 +424,10 @@ func TestConcurrentTokenRequests(t *testing.T) {
 	if testing.Short() {
 		t.Skip("Skipping integration test in short mode")
 	}
+	verifyTestClientExists(t)
 
-	clientID := "test-client-id"
-	clientSecret := "test-secret"
+	clientID := testClientID
+	clientSecret := testSecret
 
 	concurrency := 10
 	results := make(chan error, concurrency)
@@ -431,9 +476,10 @@ func TestRateLimiting(t *testing.T) {
 	if testing.Short() {
 		t.Skip("Skipping integration test in short mode")
 	}
+	verifyTestClientExists(t)
 
-	clientID := "test-client-id"
-	clientSecret := "test-secret"
+	clientID := testClientID
+	clientSecret := testSecret
 
 	client := &http.Client{Timeout: 10 * time.Second}
 
