@@ -37,6 +37,7 @@ func setupSecurityTestEnv(t *testing.T) (*gin.Engine, *gorm.DB, *oauth.Server, *
 		&database.Application{},
 		&database.AuthorizationCode{},
 		&database.Token{},
+		&database.AuditLog{},
 		&database.PushedAuthorizationRequest{},
 	)
 	require.NoError(t, err)

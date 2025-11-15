@@ -380,11 +380,12 @@ func Migrate(db *gorm.DB) error {
 			user_id UUID REFERENCES users(id) ON DELETE SET NULL,
 			application_id UUID REFERENCES applications(id) ON DELETE SET NULL,
 			action TEXT NOT NULL,
-			resource_type TEXT,
+			resource TEXT,
 			resource_id TEXT,
 			ip_address TEXT,
 			user_agent TEXT,
-			details JSONB
+			status_code INTEGER,
+			metadata JSONB
 		)
 	`).Error; err != nil {
 		return fmt.Errorf("failed to create audit_logs table: %w", err)
