@@ -70,9 +70,9 @@ func createTestApplication(t *testing.T, db *gorm.DB) *database.Application {
 		HashedClientSecret:      string(hashedSecret),
 		ClientType:              "confidential",
 		TokenEndpointAuthMethod: "client_secret_basic",
-		GrantTypes:              database.StringArray{"authorization_code", "refresh_token", "client_credentials"},
-		ResponseTypes:           database.StringArray{"code"},
-		RedirectURIs:            database.StringArray{"https://example.com/callback"},
+		GrantTypes:              []string{"authorization_code", "refresh_token", "client_credentials"},
+		ResponseTypes:           []string{"code"},
+		RedirectURIs:            []string{"https://example.com/callback"},
 	}
 
 	err = db.Create(app).Error

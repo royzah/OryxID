@@ -88,9 +88,9 @@ func setupTestEnvironment(t *testing.T) (*gin.Engine, *gorm.DB, *tokens.TokenMan
 		HashedClientSecret:      string(hashedSecret),
 		ClientType:              "confidential",
 		TokenEndpointAuthMethod: "client_secret_basic",
-		GrantTypes:              database.StringArray{"authorization_code", "refresh_token", "client_credentials"},
-		ResponseTypes:           database.StringArray{"code"},
-		RedirectURIs:            database.StringArray{"https://example.com/callback"},
+		GrantTypes:              []string{"authorization_code", "refresh_token", "client_credentials"},
+		ResponseTypes:           []string{"code"},
+		RedirectURIs:            []string{"https://example.com/callback"},
 	}
 	require.NoError(t, db.Create(app).Error)
 
