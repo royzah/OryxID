@@ -97,10 +97,10 @@ func (h *AdminHandler) CreateApplication(c *gin.Context) {
 		ClientID:           clientID,
 		HashedClientSecret: hashedSecret,
 		ClientType:         req.ClientType,
-		GrantTypes:         pq.StringArray(req.GrantTypes),
-		ResponseTypes:      pq.StringArray(req.ResponseTypes),
-		RedirectURIs:       pq.StringArray(req.RedirectURIs),
-		PostLogoutURIs:     pq.StringArray(req.PostLogoutURIs),
+		GrantTypes:         database.StringArray(req.GrantTypes),
+		ResponseTypes:      database.StringArray(req.ResponseTypes),
+		RedirectURIs:       database.StringArray(req.RedirectURIs),
+		PostLogoutURIs:     database.StringArray(req.PostLogoutURIs),
 		SkipAuthorization:  req.SkipAuthorization,
 	}
 
@@ -808,7 +808,7 @@ func (h *AdminHandler) DeleteUser(c *gin.Context) {
 
 func (h *AdminHandler) ListAuditLogs(c *gin.Context) {
 	var logs []database.AuditLog
-	// Note: Preload("Application") removed due to GORM parsing issues with pq.StringArray
+	// Note: Preload("Application") removed due to GORM parsing issues with database.StringArray
 	// Application details can be fetched separately if needed
 	query := h.db.Preload("User").Order("created_at DESC")
 
