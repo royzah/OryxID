@@ -14,7 +14,7 @@ import (
 
 // Base model with common fields
 type BaseModel struct {
-	ID        uuid.UUID      `gorm:"type:uuid;primaryKey" json:"id"`
+	ID        uuid.UUID      `gorm:"primaryKey" json:"id"`
 	CreatedAt time.Time      `json:"created_at"`
 	UpdatedAt time.Time      `json:"updated_at"`
 	DeletedAt gorm.DeletedAt `gorm:"index" json:"-"`
@@ -276,7 +276,7 @@ type SigningKey struct {
 type PushedAuthorizationRequest struct {
 	BaseModel
 	RequestURI          string    `gorm:"uniqueIndex;not null" json:"request_uri"` // urn:ietf:params:oauth:request_uri:<value>
-	ApplicationID       uuid.UUID `gorm:"type:uuid;not null;index" json:"application_id"`
+	ApplicationID       uuid.UUID `gorm:"not null;index" json:"application_id"`
 	ResponseType        string    `gorm:"not null" json:"response_type"`
 	ClientID            string    `gorm:"not null" json:"client_id"`
 	RedirectURI         string    `gorm:"not null" json:"redirect_uri"`
