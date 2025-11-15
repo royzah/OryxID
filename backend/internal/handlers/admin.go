@@ -96,10 +96,10 @@ func (h *AdminHandler) CreateApplication(c *gin.Context) {
 		ClientID:           clientID,
 		HashedClientSecret: hashedSecret,
 		ClientType:         req.ClientType,
-		GrantTypes:         req.GrantTypes,
-		ResponseTypes:      req.ResponseTypes,
-		RedirectURIs:       req.RedirectURIs,
-		PostLogoutURIs:     req.PostLogoutURIs,
+		GrantTypes:         database.StringArray(req.GrantTypes),
+		ResponseTypes:      database.StringArray(req.ResponseTypes),
+		RedirectURIs:       database.StringArray(req.RedirectURIs),
+		PostLogoutURIs:     database.StringArray(req.PostLogoutURIs),
 		SkipAuthorization:  req.SkipAuthorization,
 	}
 
@@ -807,7 +807,9 @@ func (h *AdminHandler) DeleteUser(c *gin.Context) {
 
 func (h *AdminHandler) ListAuditLogs(c *gin.Context) {
 	var logs []database.AuditLog
-	query := h.db.Preload("User").Preload("Application").Order("created_at DESC")
+	// Note: Preload("Application") removed due to GORM parsing issues with database.StringArray
+	// Application details can be fetched separately if needed
+	query := h.db.Preload("User").Order("created_at DESC")
 
 	// Optional filtering
 	if userID := c.Query("user_id"); userID != "" {
@@ -880,7 +882,7 @@ func (h *AdminHandler) logAudit(c *gin.Context, action, resource, resourceID str
 		IPAddress:  c.ClientIP(),
 		UserAgent:  c.GetHeader("User-Agent"),
 		StatusCode: statusCode,
-		Metadata: database.JSONB{
+		Metadata: map[string]interface{}{
 			"method": c.Request.Method,
 			"path":   c.Request.URL.Path,
 		},

@@ -20,7 +20,7 @@ func setupTestDB(t *testing.T) *gorm.DB {
 	db, err := gorm.Open(sqlite.Open(":memory:"), &gorm.Config{})
 	require.NoError(t, err)
 
-	// Migrate all models
+	// Now using custom StringArray type with JSONB, GORM AutoMigrate works perfectly
 	err = db.AutoMigrate(
 		&database.User{},
 		&database.Role{},

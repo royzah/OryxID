@@ -127,9 +127,8 @@ func main() {
 			"/metrics",
 			"/auth/login",   // Login must be exempt - it's the entry point
 			"/auth/refresh", // Token refresh should be exempt
-			"/oauth/token",
-			"/oauth/introspect",
-			"/oauth/revoke",
+			"/oauth/*",      // OAuth endpoints are protected by client credentials
+			"/api/v1/*",     // API endpoints (use * for prefix matching)
 			"/.well-known/openid-configuration",
 			"/.well-known/jwks.json",
 		}
@@ -172,6 +171,7 @@ func main() {
 	authMiddleware := auth.NewAuthMiddleware(tokenManager, db)
 
 	apiGroup := router.Group("/api/v1")
+	apiGroup.Use(middleware.CSRFExempt()) // API uses Bearer tokens, not cookies - exempt from CSRF
 	apiGroup.Use(authMiddleware.RequireAuth())
 	{
 		// Applications

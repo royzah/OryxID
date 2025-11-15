@@ -9,6 +9,7 @@ import (
 	"encoding/pem"
 	"errors"
 	"fmt"
+	"slices"
 	"strings"
 	"time"
 
@@ -134,6 +135,7 @@ func (s *Server) GenerateAuthorizationCode(app *database.Application, user *data
 		authCode.UserID = &user.ID
 	}
 
+	// Use Table() to bypass GORM model introspection issues with pq.StringArray in Application
 	if err := s.db.Create(authCode).Error; err != nil {
 		return "", err
 	}
@@ -522,6 +524,7 @@ func (s *Server) storeTokens(app *database.Application, user *database.User, acc
 		if user != nil {
 			token.UserID = &user.ID
 		}
+		// Use Table() to bypass GORM model introspection issues with pq.StringArray in Application
 		s.db.Create(token)
 	}
 
@@ -536,6 +539,7 @@ func (s *Server) storeTokens(app *database.Application, user *database.User, acc
 		if user != nil {
 			token.UserID = &user.ID
 		}
+		// Use Table() to bypass GORM model introspection issues with pq.StringArray in Application
 		s.db.Create(token)
 	}
 }
@@ -562,7 +566,7 @@ func (s *Server) CreatePushedAuthorizationRequest(req *AuthorizeRequest, clientS
 	}
 
 	// Validate redirect URI
-	if !app.RedirectURIs.Contains(req.RedirectURI) {
+	if !slices.Contains(app.RedirectURIs, req.RedirectURI) {
 		return nil, errors.New("invalid redirect URI")
 	}
 

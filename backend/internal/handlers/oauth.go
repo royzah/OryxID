@@ -581,7 +581,7 @@ func (h *OAuthHandler) logAudit(c *gin.Context, app *database.Application, actio
 		IPAddress:     c.ClientIP(),
 		UserAgent:     c.GetHeader("User-Agent"),
 		StatusCode:    c.Writer.Status(),
-		Metadata: database.JSONB{
+		Metadata: map[string]interface{}{
 			"method":    c.Request.Method,
 			"path":      c.Request.URL.Path,
 			"client_id": app.ClientID,
@@ -617,6 +617,11 @@ func getBaseURL(c *gin.Context) string {
 	host := c.Request.Host
 	if forwardedHost := c.GetHeader("X-Forwarded-Host"); forwardedHost != "" {
 		host = forwardedHost
+	}
+
+	// Default to localhost for testing when host is empty
+	if host == "" {
+		host = "localhost"
 	}
 
 	return scheme + "://" + host

@@ -35,8 +35,9 @@ help: ## Show this help message
 .PHONY: up
 up: ## Start all services (frontend + backend + database)
 	@echo "${GREEN}Starting OryxID...${RESET}"
-	@docker-compose up -d
-	@if [ $? -ne 0 ]; then \
+	@docker-compose up -d; \
+	exit_code=$$?; \
+	if [ $$exit_code -ne 0 ]; then \
 		echo ""; \
 		echo "${YELLOW}⚠️  Build failed. This might be due to npm dependency issues.${RESET}"; \
 		echo "${YELLOW}   Try running: ${CYAN}make fix-deps${YELLOW} then ${CYAN}make up${RESET}"; \
@@ -266,18 +267,144 @@ dev-backend: ## Run only backend in development
 dev-frontend: ## Run only frontend in development
 	@cd frontend && npm run dev
 
+# ==================== TESTING ====================
+
 .PHONY: test
-test: test-backend test-frontend ## Run all tests
+test: test-unit test-integration ## Run all tests (unit + integration)
+
+.PHONY: test-all
+test-all: test-unit test-integration test-security test-e2e ## Run all tests including security and e2e
+
+.PHONY: test-unit
+test-unit: test-backend test-frontend ## Run unit tests
 
 .PHONY: test-backend
-test-backend: ## Run backend tests
-	@echo "${CYAN}Running backend tests...${RESET}"
-	@cd backend && go test -v ./...
+test-backend: ## Run backend unit tests
+	@echo "${CYAN}Running backend unit tests...${RESET}"
+	@cd backend && go test -v ./internal/... ./pkg/...
+	@echo "${GREEN}✅ Backend tests completed${RESET}"
 
 .PHONY: test-frontend
-test-frontend: ## Run frontend tests
-	@echo "${CYAN}Running frontend tests...${RESET}"
-	@cd frontend && npm test
+test-frontend: ## Run frontend unit tests
+	@echo "${CYAN}Running frontend unit tests...${RESET}"
+	@cd frontend && npm test -- --watchAll=false
+	@echo "${GREEN}✅ Frontend tests completed${RESET}"
+
+.PHONY: test-handlers
+test-handlers: ## Run handler tests
+	@echo "${CYAN}Running handler tests...${RESET}"
+	@cd backend && go test -v ./internal/handlers/...
+	@echo "${GREEN}✅ Handler tests completed${RESET}"
+
+.PHONY: test-integration
+test-integration: ## Run integration tests (requires services to be running)
+	@echo "${CYAN}Running integration tests...${RESET}"
+	@if ! docker-compose ps | grep -q "Up"; then \
+		echo "${YELLOW}⚠️  Services not running. Starting services...${RESET}"; \
+		make up; \
+		sleep 10; \
+	fi
+	@echo "${CYAN}Setting up test credentials...${RESET}"
+	@chmod +x backend/scripts/get_test_credentials.sh
+	@eval $$(backend/scripts/get_test_credentials.sh) && \
+		cd backend && \
+		TEST_CLIENT_ID=$$TEST_CLIENT_ID TEST_CLIENT_SECRET=$$TEST_CLIENT_SECRET \
+		go test -v ./tests/integration/...
+	@echo "${GREEN}✅ Integration tests completed${RESET}"
+
+.PHONY: test-security
+test-security: ## Run security tests
+	@echo "${CYAN}Running security tests...${RESET}"
+	@cd backend && go test -v ./tests/security/...
+	@echo "${GREEN}✅ Security tests completed${RESET}"
+
+.PHONY: test-e2e
+test-e2e: ## Run E2E tests with Playwright
+	@echo "${CYAN}Running E2E tests...${RESET}"
+	@if ! docker-compose ps | grep -q "Up"; then \
+		echo "${YELLOW}⚠️  Services not running. Starting services...${RESET}"; \
+		make up; \
+		sleep 10; \
+	fi
+	@cd tests/e2e && npx playwright test
+	@echo "${GREEN}✅ E2E tests completed${RESET}"
+
+.PHONY: test-e2e-ui
+test-e2e-ui: ## Run E2E tests in UI mode
+	@echo "${CYAN}Running E2E tests in UI mode...${RESET}"
+	@cd tests/e2e && npx playwright test --ui
+
+.PHONY: test-e2e-headed
+test-e2e-headed: ## Run E2E tests with browser visible
+	@echo "${CYAN}Running E2E tests with browser visible...${RESET}"
+	@cd tests/e2e && npx playwright test --headed
+
+.PHONY: test-coverage
+test-coverage: ## Generate test coverage report
+	@echo "${CYAN}Generating coverage report...${RESET}"
+	@cd backend && go test -coverprofile=coverage.out ./internal/... ./pkg/...
+	@cd backend && go tool cover -html=coverage.out -o coverage.html
+	@echo "${GREEN}✅ Coverage report generated: backend/coverage.html${RESET}"
+
+.PHONY: test-coverage-func
+test-coverage-func: ## Show coverage by function
+	@echo "${CYAN}Coverage by function:${RESET}"
+	@cd backend && go test -coverprofile=coverage.out ./internal/... ./pkg/...
+	@cd backend && go tool cover -func=coverage.out
+
+.PHONY: test-race
+test-race: ## Run tests with race detector
+	@echo "${CYAN}Running tests with race detector...${RESET}"
+	@cd backend && go test -race -short ./internal/... ./pkg/...
+	@echo "${GREEN}✅ Race detector tests completed${RESET}"
+
+.PHONY: test-bench
+test-bench: ## Run benchmark tests
+	@echo "${CYAN}Running benchmark tests...${RESET}"
+	@cd backend && go test -bench=. -benchmem ./internal/... ./pkg/...
+	@echo "${GREEN}✅ Benchmark tests completed${RESET}"
+
+# ==================== PERFORMANCE TESTING ====================
+
+.PHONY: test-performance
+test-performance: test-load ## Run all performance tests
+
+.PHONY: test-load
+test-load: ## Run k6 load tests
+	@echo "${CYAN}Running load tests...${RESET}"
+	@if ! command -v k6 >/dev/null 2>&1; then \
+		echo "${YELLOW}⚠️  k6 not installed. Install from: https://k6.io/docs/getting-started/installation/${RESET}"; \
+		exit 1; \
+	fi
+	@if ! docker-compose ps | grep -q "Up"; then \
+		echo "${YELLOW}⚠️  Services not running. Starting services...${RESET}"; \
+		make up; \
+		sleep 10; \
+	fi
+	@k6 run tests/performance/load_test.js
+	@echo "${GREEN}✅ Load tests completed${RESET}"
+
+.PHONY: test-stress
+test-stress: ## Run k6 stress tests
+	@echo "${CYAN}Running stress tests...${RESET}"
+	@if ! command -v k6 >/dev/null 2>&1; then \
+		echo "${YELLOW}⚠️  k6 not installed. Install from: https://k6.io/docs/getting-started/installation/${RESET}"; \
+		exit 1; \
+	fi
+	@k6 run tests/performance/stress_test.js
+	@echo "${GREEN}✅ Stress tests completed${RESET}"
+
+.PHONY: test-spike
+test-spike: ## Run k6 spike tests
+	@echo "${CYAN}Running spike tests...${RESET}"
+	@if ! command -v k6 >/dev/null 2>&1; then \
+		echo "${YELLOW}⚠️  k6 not installed. Install from: https://k6.io/docs/getting-started/installation/${RESET}"; \
+		exit 1; \
+	fi
+	@k6 run tests/performance/spike_test.js
+	@echo "${GREEN}✅ Spike tests completed${RESET}"
+
+# ==================== LINTING ====================
 
 .PHONY: lint
 lint: lint-backend lint-frontend ## Run all linters
@@ -291,6 +418,20 @@ lint-backend: ## Lint backend code
 lint-frontend: ## Lint frontend code
 	@echo "${CYAN}Linting frontend...${RESET}"
 	@cd frontend && npm run lint
+
+.PHONY: fmt
+fmt: fmt-backend fmt-frontend ## Format all code
+
+.PHONY: fmt-backend
+fmt-backend: ## Format backend code
+	@echo "${CYAN}Formatting backend code...${RESET}"
+	@cd backend && go fmt ./...
+	@cd backend && goimports -w . || echo "${YELLOW}Install goimports: go install golang.org/x/tools/cmd/goimports@latest${RESET}"
+
+.PHONY: fmt-frontend
+fmt-frontend: ## Format frontend code
+	@echo "${CYAN}Formatting frontend code...${RESET}"
+	@cd frontend && npm run format || echo "${YELLOW}No format script found in package.json${RESET}"
 
 # ==================== MONITORING & DEBUGGING ====================
 
