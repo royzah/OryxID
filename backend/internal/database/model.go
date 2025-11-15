@@ -66,12 +66,12 @@ type Application struct {
 	HashedClientSecret       string     `gorm:"not null" json:"-"`                                  // Only store hashed secret
 	ClientType               string     `gorm:"not null;default:'confidential'" json:"client_type"` // confidential, public
 	TokenEndpointAuthMethod  string     `gorm:"default:'client_secret_basic'" json:"token_endpoint_auth_method"` // client_secret_basic, client_secret_post, private_key_jwt
-	PublicKeyPEM             string     `gorm:"type:text" json:"public_key_pem,omitempty"` // For private_key_jwt authentication
-	JWKSURI                  string     `json:"jwks_uri,omitempty"` // Alternative to PublicKeyPEM - fetch keys from URL
-	GrantTypes               []string   `gorm:"type:text[]" json:"grant_types"`
-	ResponseTypes            []string   `gorm:"type:text[]" json:"response_types"`
-	RedirectURIs             []string   `gorm:"type:text[]" json:"redirect_uris"`
-	PostLogoutURIs           []string   `gorm:"type:text[]" json:"post_logout_uris"`
+	PublicKeyPEM             string         `gorm:"type:text" json:"public_key_pem,omitempty"` // For private_key_jwt authentication
+	JWKSURI                  string         `json:"jwks_uri,omitempty"` // Alternative to PublicKeyPEM - fetch keys from URL
+	GrantTypes               pq.StringArray `gorm:"type:text[]" json:"grant_types"`
+	ResponseTypes            pq.StringArray `gorm:"type:text[]" json:"response_types"`
+	RedirectURIs             pq.StringArray `gorm:"type:text[]" json:"redirect_uris"`
+	PostLogoutURIs           pq.StringArray `gorm:"type:text[]" json:"post_logout_uris"`
 	Scopes                   []Scope    `gorm:"many2many:application_scopes;" json:"scopes,omitempty"`
 	Audiences                []Audience `gorm:"many2many:application_audiences;" json:"audiences,omitempty"`
 	SkipAuthorization        bool       `gorm:"default:false" json:"skip_authorization"`

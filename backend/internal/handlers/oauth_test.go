@@ -11,6 +11,7 @@ import (
 
 	"github.com/gin-gonic/gin"
 	"github.com/golang-jwt/jwt/v5"
+	"github.com/lib/pq"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"github.com/tiiuae/oryxid/internal/config"
@@ -88,9 +89,9 @@ func setupTestEnvironment(t *testing.T) (*gin.Engine, *gorm.DB, *tokens.TokenMan
 		HashedClientSecret:      string(hashedSecret),
 		ClientType:              "confidential",
 		TokenEndpointAuthMethod: "client_secret_basic",
-		GrantTypes:              []string{"authorization_code", "refresh_token", "client_credentials"},
-		ResponseTypes:           []string{"code"},
-		RedirectURIs:            []string{"https://example.com/callback"},
+		GrantTypes:              pq.StringArray{"authorization_code", "refresh_token", "client_credentials"},
+		ResponseTypes:           pq.StringArray{"code"},
+		RedirectURIs:            pq.StringArray{"https://example.com/callback"},
 	}
 	require.NoError(t, db.Create(app).Error)
 

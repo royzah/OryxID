@@ -6,6 +6,7 @@ import (
 
 	"github.com/gin-gonic/gin"
 	"github.com/google/uuid"
+	"github.com/lib/pq"
 	"github.com/tiiuae/oryxid/internal/database"
 	"github.com/tiiuae/oryxid/internal/tokens"
 	"github.com/tiiuae/oryxid/pkg/crypto"
@@ -96,10 +97,10 @@ func (h *AdminHandler) CreateApplication(c *gin.Context) {
 		ClientID:           clientID,
 		HashedClientSecret: hashedSecret,
 		ClientType:         req.ClientType,
-		GrantTypes:         req.GrantTypes,
-		ResponseTypes:      req.ResponseTypes,
-		RedirectURIs:       req.RedirectURIs,
-		PostLogoutURIs:     req.PostLogoutURIs,
+		GrantTypes:         pq.StringArray(req.GrantTypes),
+		ResponseTypes:      pq.StringArray(req.ResponseTypes),
+		RedirectURIs:       pq.StringArray(req.RedirectURIs),
+		PostLogoutURIs:     pq.StringArray(req.PostLogoutURIs),
 		SkipAuthorization:  req.SkipAuthorization,
 	}
 
