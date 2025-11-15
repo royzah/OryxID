@@ -16,8 +16,11 @@ import (
 func Connect(cfg *config.Config) (*gorm.DB, error) {
 	dsn := config.GetDSN()
 
-	// TEMPORARY: Force debug mode to see all SQL
-	gormLogger := logger.Default.LogMode(logger.Info)
+	// Configure GORM logger
+	gormLogger := logger.Default
+	if cfg.Server.Mode == "release" {
+		gormLogger = logger.Default.LogMode(logger.Silent)
+	}
 
 	db, err := gorm.Open(postgres.Open(dsn), &gorm.Config{
 		Logger: gormLogger,
