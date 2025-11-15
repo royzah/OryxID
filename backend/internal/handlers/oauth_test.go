@@ -1,10 +1,7 @@
 package handlers
 
 import (
-	"bytes"
-	"encoding/base64"
 	"encoding/json"
-	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
@@ -521,10 +518,4 @@ func BenchmarkDiscoveryEndpoint(b *testing.B) {
 		w := httptest.NewRecorder()
 		router.ServeHTTP(w, req)
 	}
-}
-
-// Helper function for Basic Auth
-func basicAuth(username, password string) string {
-	auth := username + ":" + password
-	return "Basic " + base64.StdEncoding.EncodeToString([]byte(auth))
 }
