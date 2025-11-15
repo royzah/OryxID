@@ -348,8 +348,10 @@ func Migrate(db *gorm.DB) error {
 			application_id UUID REFERENCES applications(id) ON DELETE CASCADE,
 			user_id UUID REFERENCES users(id) ON DELETE CASCADE,
 			scope TEXT,
+			audience TEXT,
 			expires_at TIMESTAMP WITH TIME ZONE NOT NULL,
-			revoked BOOLEAN DEFAULT FALSE
+			revoked BOOLEAN DEFAULT FALSE,
+			revoked_at TIMESTAMP WITH TIME ZONE
 		)
 	`).Error; err != nil {
 		return fmt.Errorf("failed to create tokens table: %w", err)

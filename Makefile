@@ -304,7 +304,12 @@ test-integration: ## Run integration tests (requires services to be running)
 		make up; \
 		sleep 10; \
 	fi
-	@cd backend && go test -v ./tests/integration/...
+	@echo "${CYAN}Setting up test credentials...${RESET}"
+	@chmod +x backend/scripts/get_test_credentials.sh
+	@eval $$(backend/scripts/get_test_credentials.sh) && \
+		cd backend && \
+		TEST_CLIENT_ID=$$TEST_CLIENT_ID TEST_CLIENT_SECRET=$$TEST_CLIENT_SECRET \
+		go test -v ./tests/integration/...
 	@echo "${GREEN}✅ Integration tests completed${RESET}"
 
 .PHONY: test-security

@@ -85,3 +85,29 @@ BEGIN
         RAISE NOTICE 'Audit_logs table already has correct schema or does not exist';
     END IF;
 END $$;
+
+-- Add missing columns to tokens table
+DO $$
+BEGIN
+    -- Add audience column if it doesn't exist
+    IF NOT EXISTS (
+        SELECT 1 FROM information_schema.columns
+        WHERE table_name = 'tokens'
+        AND column_name = 'audience'
+    ) THEN
+        ALTER TABLE tokens ADD COLUMN audience TEXT;
+        RAISE NOTICE 'Added audience column to tokens table';
+    END IF;
+
+    -- Add revoked_at column if it doesn't exist
+    IF NOT EXISTS (
+        SELECT 1 FROM information_schema.columns
+        WHERE table_name = 'tokens'
+        AND column_name = 'revoked_at'
+    ) THEN
+        ALTER TABLE tokens ADD COLUMN revoked_at TIMESTAMP WITH TIME ZONE;
+        RAISE NOTICE 'Added revoked_at column to tokens table';
+    END IF;
+
+    RAISE NOTICE 'Tokens table schema is up to date';
+END $$;
