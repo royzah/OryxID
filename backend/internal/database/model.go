@@ -68,10 +68,10 @@ type Application struct {
 	TokenEndpointAuthMethod  string      `gorm:"default:'client_secret_basic'" json:"token_endpoint_auth_method"` // client_secret_basic, client_secret_post, private_key_jwt
 	PublicKeyPEM             string      `gorm:"type:text" json:"public_key_pem,omitempty"` // For private_key_jwt authentication
 	JWKSURI                  string      `json:"jwks_uri,omitempty"` // Alternative to PublicKeyPEM - fetch keys from URL
-	GrantTypes               StringArray `gorm:"type:text" json:"grant_types"`
-	ResponseTypes            StringArray `gorm:"type:text" json:"response_types"`
-	RedirectURIs             StringArray `gorm:"type:text" json:"redirect_uris"`
-	PostLogoutURIs           StringArray `gorm:"type:text" json:"post_logout_uris"`
+	GrantTypes               StringArray `json:"grant_types"`
+	ResponseTypes            StringArray `json:"response_types"`
+	RedirectURIs             StringArray `json:"redirect_uris"`
+	PostLogoutURIs           StringArray `json:"post_logout_uris"`
 	Scopes                   []Scope     `gorm:"many2many:application_scopes;" json:"scopes,omitempty"`
 	Audiences                []Audience  `gorm:"many2many:application_audiences;" json:"audiences,omitempty"`
 	SkipAuthorization        bool        `gorm:"default:false" json:"skip_authorization"`
