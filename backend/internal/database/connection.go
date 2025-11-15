@@ -59,21 +59,58 @@ func Migrate(db *gorm.DB) error {
 		return fmt.Errorf("failed to create uuid extension: %w", err)
 	}
 
-	// Auto migrate all models
-	// Note: Pass all models at once to AutoMigrate so GORM can handle
-	// circular many-to-many relationships correctly (e.g., User <-> Role)
+	// First migrate models that don't reference Application
 	if err := db.AutoMigrate(
 		&User{},
 		&Role{},
 		&Permission{},
-		&Application{},
+		&SigningKey{},
+		&Session{},
+	); err != nil {
+		return fmt.Errorf("failed to migrate base models: %w", err)
+	}
+
+	// Manually create applications table (GORM can't handle pq.StringArray in AutoMigrate)
+	if err := db.Exec(`
+		CREATE TABLE IF NOT EXISTS applications (
+			id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+			created_at TIMESTAMP WITH TIME ZONE,
+			updated_at TIMESTAMP WITH TIME ZONE,
+			deleted_at TIMESTAMP WITH TIME ZONE,
+			name TEXT NOT NULL,
+			description TEXT,
+			client_id TEXT UNIQUE NOT NULL,
+			hashed_client_secret TEXT NOT NULL,
+			client_type TEXT NOT NULL DEFAULT 'confidential',
+			token_endpoint_auth_method TEXT DEFAULT 'client_secret_basic',
+			public_key_pem TEXT,
+			jwks_uri TEXT,
+			grant_types TEXT[],
+			response_types TEXT[],
+			redirect_uris TEXT[],
+			post_logout_uris TEXT[],
+			skip_authorization BOOLEAN DEFAULT FALSE,
+			access_token_lifespan INTEGER,
+			refresh_token_lifespan INTEGER,
+			owner_id UUID REFERENCES users(id),
+			metadata JSONB
+		)
+	`).Error; err != nil {
+		return fmt.Errorf("failed to create applications table: %w", err)
+	}
+
+	// Create deleted_at index for soft deletes
+	if err := db.Exec(`CREATE INDEX IF NOT EXISTS idx_applications_deleted_at ON applications(deleted_at)`).Error; err != nil {
+		return fmt.Errorf("failed to create applications index: %w", err)
+	}
+
+	// Now migrate models that reference Application
+	if err := db.AutoMigrate(
 		&Scope{},
 		&Audience{},
 		&AuthorizationCode{},
 		&Token{},
-		&Session{},
 		&AuditLog{},
-		&SigningKey{},
 		&PushedAuthorizationRequest{},
 	); err != nil {
 		return fmt.Errorf("failed to migrate models: %w", err)
