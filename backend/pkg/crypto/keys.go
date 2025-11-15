@@ -166,3 +166,72 @@ func GenerateSecureToken(length int) (string, error) {
 	}
 	return string(b), nil
 }
+
+// PrivateKeyToPEM converts an RSA private key to PEM format
+func PrivateKeyToPEM(privateKey *rsa.PrivateKey) ([]byte, error) {
+	privateKeyBytes := x509.MarshalPKCS1PrivateKey(privateKey)
+	privateKeyPEM := &pem.Block{
+		Type:  "RSA PRIVATE KEY",
+		Bytes: privateKeyBytes,
+	}
+	return pem.EncodeToMemory(privateKeyPEM), nil
+}
+
+// PublicKeyToPEM converts an RSA public key to PEM format
+func PublicKeyToPEM(publicKey *rsa.PublicKey) ([]byte, error) {
+	publicKeyBytes, err := x509.MarshalPKIXPublicKey(publicKey)
+	if err != nil {
+		return nil, err
+	}
+
+	publicKeyPEM := &pem.Block{
+		Type:  "PUBLIC KEY",
+		Bytes: publicKeyBytes,
+	}
+	return pem.EncodeToMemory(publicKeyPEM), nil
+}
+
+// PrivateKeyFromPEM parses an RSA private key from PEM format
+func PrivateKeyFromPEM(pemData []byte) (*rsa.PrivateKey, error) {
+	block, _ := pem.Decode(pemData)
+	if block == nil {
+		return nil, fmt.Errorf("failed to decode PEM block containing private key")
+	}
+
+	switch block.Type {
+	case "RSA PRIVATE KEY":
+		return x509.ParsePKCS1PrivateKey(block.Bytes)
+	case "PRIVATE KEY":
+		key, err := x509.ParsePKCS8PrivateKey(block.Bytes)
+		if err != nil {
+			return nil, err
+		}
+		rsaKey, ok := key.(*rsa.PrivateKey)
+		if !ok {
+			return nil, fmt.Errorf("not an RSA private key")
+		}
+		return rsaKey, nil
+	default:
+		return nil, fmt.Errorf("unsupported key type: %s", block.Type)
+	}
+}
+
+// PublicKeyFromPEM parses an RSA public key from PEM format
+func PublicKeyFromPEM(pemData []byte) (*rsa.PublicKey, error) {
+	block, _ := pem.Decode(pemData)
+	if block == nil {
+		return nil, fmt.Errorf("failed to decode PEM block containing public key")
+	}
+
+	pub, err := x509.ParsePKIXPublicKey(block.Bytes)
+	if err != nil {
+		return nil, err
+	}
+
+	rsaKey, ok := pub.(*rsa.PublicKey)
+	if !ok {
+		return nil, fmt.Errorf("not an RSA public key")
+	}
+
+	return rsaKey, nil
+}

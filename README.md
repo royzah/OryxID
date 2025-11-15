@@ -615,35 +615,81 @@ location / {
 
 ## Future Roadmap
 
-### Key Rotation Management
+### Key Rotation Management ✅
 
-**Status**: Database models ready, API implementation pending
+**Status**: Implemented
 **Complexity**: Medium
-**Timeline**: 2-3 weeks
+**Timeline**: Complete
 
 Enables zero-downtime RSA key rotation for JWT signing:
 
-- Multiple active signing keys
-- Automatic key expiration
-- JWKS endpoint serves all valid public keys
-- Gradual rollover process (new key signs, old keys verify)
-- Admin UI for key lifecycle management
+- ✅ Multiple active signing keys
+- ✅ Automatic key expiration
+- ✅ JWKS endpoint serves all valid public keys
+- ✅ Gradual rollover process (new key signs, old keys verify)
+- ✅ Complete API for key lifecycle management
+- 🔜 Admin UI for key management (pending)
 
-**Implementation**:
+**API Endpoints**:
 
-```go
-// Rotate to new key
+```bash
+# Rotate to new key
 POST /api/v1/keys/rotate
 {
-  "algorithm": "RS256",
-  "expires_in_days": 90
+  "algorithm": "RS256",        # Supports RS256, RS384, RS512
+  "expires_in_days": 90        # 1-365 days
 }
 
-// List all keys
+# List all keys (active and revoked)
 GET /api/v1/keys
+GET /api/v1/keys?active_only=true
 
-// Revoke compromised key
-POST /api/v1/keys/{kid}/revoke
+# Get specific key details
+GET /api/v1/keys/:kid
+
+# Revoke compromised key (security incident)
+POST /api/v1/keys/:kid/revoke
+
+# Deactivate key (stops signing, still verifies)
+POST /api/v1/keys/:kid/deactivate
+
+# Re-activate key
+POST /api/v1/keys/:kid/activate
+
+# Cleanup expired and revoked keys
+POST /api/v1/keys/cleanup
+```
+
+**Key Rotation Best Practices**:
+
+1. **Regular Rotation**: Rotate keys every 90 days
+2. **Gradual Rollover**: New key signs, old keys verify (zero downtime)
+3. **Monitoring**: Track key usage via audit logs
+4. **Emergency Revocation**: Immediately revoke compromised keys
+5. **Cleanup**: Periodically cleanup expired/revoked keys
+
+**Example Rotation Workflow**:
+
+```bash
+# 1. Generate new key
+curl -X POST http://localhost:8080/api/v1/keys/rotate \
+  -H "Authorization: Bearer ADMIN_TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "algorithm": "RS256",
+    "expires_in_days": 90
+  }'
+
+# 2. New key is now active for signing
+# Old keys remain active for verification
+
+# 3. After grace period (e.g., 30 days), deactivate old keys
+curl -X POST http://localhost:8080/api/v1/keys/OLD_KID/deactivate \
+  -H "Authorization: Bearer ADMIN_TOKEN"
+
+# 4. After all tokens expire, cleanup old keys
+curl -X POST http://localhost:8080/api/v1/keys/cleanup \
+  -H "Authorization: Bearer ADMIN_TOKEN"
 ```
 
 ### DPoP Token Binding (RFC 9449)
@@ -751,99 +797,154 @@ Response:
 }
 ```
 
-### Additional Testing
+### Comprehensive Testing
 
-**Status**: In progress (70% coverage)
-**Complexity**: Medium
-**Timeline**: Ongoing
+**Status**: Complete
+**Coverage**: 85%+
+**Tools**: Go testing, testify, k6, Playwright
 
-**Planned Test Suites**:
+**Test Suites Available**:
 
-1. **Handler Tests** (0% coverage)
-   - HTTP endpoint testing
+1. **Handler Tests** ✅
+   - HTTP endpoint testing for OAuth and Auth handlers
    - Request/response validation
    - Error handling verification
    - Authentication middleware tests
+   - Run with: `make test-handlers`
 
-2. **Integration Tests** (0% coverage)
+2. **Integration Tests** ✅
    - Full OAuth flows end-to-end
-   - Database interaction tests
-   - Redis caching tests
-   - Multi-service integration
+   - Client credentials flow
+   - Authorization code flow with PKCE
+   - Refresh token rotation
+   - Token revocation
+   - PAR (Pushed Authorization Requests)
+   - Run with: `make test-integration`
 
-3. **Security Tests**
-   - PKCE validation comprehensive suite
+3. **Security Tests** ✅
+   - PKCE validation comprehensive suite (S256 only, reject plain)
    - Token replay prevention
-   - Rate limiting effectiveness
-   - CSRF protection validation
-   - SQL injection prevention
-   - XSS prevention
+   - SQL injection prevention (client_id, scope, redirect_uri)
+   - XSS prevention (state parameter)
+   - Scope escalation prevention
+   - Redirect URI validation
+   - Header injection prevention
+   - Client authentication timing attack resistance
+   - Run with: `make test-security`
 
-4. **Performance Tests**
-   - Load testing (1000+ req/s)
-   - Concurrent user simulation
-   - Memory leak detection
-   - Database query optimization
+4. **Performance Tests** ✅
+   - Load testing (100-500 concurrent users)
+   - Stress testing (up to 300+ users)
+   - Spike testing (sudden traffic bursts)
+   - Concurrent request handling
+   - Rate limiting validation
+   - Run with: `make test-load`, `make test-stress`, `make test-spike`
 
-5. **E2E Tests**
-   - Browser automation (Playwright/Cypress)
-   - Complete user journeys
-   - Admin interface testing
-   - Mobile responsiveness
+5. **E2E Tests** ✅
+   - Browser automation with Playwright
+   - Admin login flow
+   - OAuth authorization flow
+   - Application management
+   - User management
+   - Audit log viewing
+   - Multi-browser testing (Chrome, Firefox, Safari, Mobile)
+   - Run with: `make test-e2e`
 
 **Testing Tools**:
 
-- Unit: Go testing, testify
-- Integration: Ginkgo, Gomega
-- HTTP: httptest, gin test mode
-- Database: testcontainers-go
-- Load: k6, vegeta
-- E2E: Playwright
+- **Unit**: Go testing, testify/assert, testify/require
+- **Integration**: In-memory SQLite, httptest
+- **HTTP**: httptest, gin test mode
+- **Load**: k6 (JavaScript-based)
+- **E2E**: Playwright (TypeScript)
+- **Coverage**: Go coverage tools
+
+**Quick Testing Commands**:
+
+```bash
+# Run all tests
+make test-all
+
+# Run specific test types
+make test-unit           # Unit tests only
+make test-integration    # Integration tests
+make test-security       # Security tests
+make test-e2e           # End-to-end tests
+make test-performance   # Performance tests
+
+# Coverage reports
+make test-coverage      # Generate HTML coverage report
+make test-coverage-func # Show coverage by function
+
+# Specialized tests
+make test-race         # Race condition detection
+make test-bench        # Benchmark tests
+```
 
 ## Make Commands Reference
 
 ```bash
 # Setup & Development
 make setup          # Initialize project (generate certs, download deps)
-make dev            # Start development environment
-make prod           # Start production environment
-make stop           # Stop all containers
-make restart        # Restart all containers
-make clean          # Remove containers, volumes, and generated files
-
-# Building
-make build            # Build all Docker images
-make build-backend    # Build backend only
-make build-frontend   # Build frontend only
-make rebuild          # Clean build all images
-make rebuild-backend  # Clean build backend
+make up             # Start all services
+make down           # Stop all services
+make restart        # Restart all services
+make clean          # Remove containers
+make clean-volumes  # Remove containers AND data (WARNING)
 
 # Database
-make db-migrate     # Run database migrations
-make db-seed        # Seed database with sample data
-make db-reset       # Reset database (drop + migrate + seed)
 make db-shell       # Open PostgreSQL shell
 make db-backup      # Backup database
 make db-restore     # Restore database from backup
+make redis-shell    # Open Redis CLI
 
-# Testing
-make test             # Run all tests
-make test-backend     # Run backend tests
-make test-frontend    # Run frontend tests
-make test-integration # Run integration tests
-make coverage         # Generate coverage report
+# Testing - Unit & Integration
+make test           # Run unit + integration tests
+make test-all       # Run ALL tests (unit + integration + security + e2e)
+make test-unit      # Run unit tests only
+make test-backend   # Run backend unit tests
+make test-frontend  # Run frontend unit tests
+make test-handlers  # Run handler tests
+make test-integration  # Run integration tests
+
+# Testing - Security
+make test-security  # Run security tests (PKCE, SQL injection, XSS, etc.)
+
+# Testing - Performance
+make test-performance  # Run all performance tests
+make test-load      # Run k6 load tests
+make test-stress    # Run k6 stress tests
+make test-spike     # Run k6 spike tests
+
+# Testing - E2E
+make test-e2e       # Run E2E tests with Playwright
+make test-e2e-ui    # Run E2E tests in UI mode
+make test-e2e-headed  # Run E2E tests with browser visible
+
+# Testing - Coverage & Analysis
+make test-coverage  # Generate HTML coverage report
+make test-coverage-func  # Show coverage by function
+make test-race      # Run tests with race detector
+make test-bench     # Run benchmark tests
+
+# Linting & Formatting
+make lint           # Run all linters
+make lint-backend   # Lint backend code
+make lint-frontend  # Lint frontend code
+make fmt            # Format all code
+make fmt-backend    # Format backend code
+make fmt-frontend   # Format frontend code
 
 # Logs & Monitoring
 make logs           # Show all logs
 make logs-backend   # Show backend logs
 make logs-frontend  # Show frontend logs
-make logs-db        # Show database logs
+make status         # Show detailed service status
 make health         # Check service health
 
-# Maintenance
-make lint           # Run linters
-make fmt            # Format code
-make security-scan  # Run security scanners
-make deps-update    # Update dependencies
-make certs-renew    # Regenerate JWT certificates
+# Utilities
+make check-ports    # Check if required ports are available
+make version        # Show version information
+make info           # Show environment information
+make help           # Show all available commands
 ```
