@@ -9,6 +9,7 @@ import (
 	"encoding/pem"
 	"errors"
 	"fmt"
+	"slices"
 	"strings"
 	"time"
 
@@ -562,7 +563,7 @@ func (s *Server) CreatePushedAuthorizationRequest(req *AuthorizeRequest, clientS
 	}
 
 	// Validate redirect URI
-	if !app.RedirectURIs.Contains(req.RedirectURI) {
+	if !slices.Contains(app.RedirectURIs, req.RedirectURI) {
 		return nil, errors.New("invalid redirect URI")
 	}
 
