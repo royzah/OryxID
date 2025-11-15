@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"net/http"
 	"net/url"
+	"os"
 	"strings"
 	"testing"
 	"time"
@@ -18,19 +19,31 @@ import (
 // Integration tests require the full stack to be running
 // Run with: make test-integration
 //
-// IMPORTANT: These tests require a test OAuth application to be registered:
+// IMPORTANT: These tests require a test OAuth application to be registered.
+//
+// Option 1 - Use the automated setup script (recommended):
+//   ./backend/scripts/setup_test_app.sh
+//   export TEST_CLIENT_ID="<client-id-from-script>"
+//   export TEST_CLIENT_SECRET="<client-secret-from-script>"
+//
+// Option 2 - Manually create application with these exact credentials:
 //   Client ID: test-client-id
-//   Client Secret: test-secret (hashed with bcrypt)
+//   Client Secret: test-secret
 //   Grant Types: client_credentials, authorization_code, refresh_token
 //   Redirect URIs: https://example.com/callback
-//
-// To set up the test application, run the backend and use the admin API or database migration.
 
-const (
-	baseURL      = "http://localhost:8080"
-	testClientID = "test-client-id"
-	testSecret   = "test-secret"
+var (
+	baseURL      = getEnv("API_URL", "http://localhost:8080")
+	testClientID = getEnv("TEST_CLIENT_ID", "test-client-id")
+	testSecret   = getEnv("TEST_CLIENT_SECRET", "test-secret")
 )
+
+func getEnv(key, defaultValue string) string {
+	if value := os.Getenv(key); value != "" {
+		return value
+	}
+	return defaultValue
+}
 
 // verifyTestClientExists checks if the test OAuth application is configured
 func verifyTestClientExists(t *testing.T) {

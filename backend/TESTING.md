@@ -110,17 +110,32 @@ These tests verify:
 
 ### 4. E2E Tests
 
-E2E tests require Playwright to be installed:
+E2E tests require Playwright to be installed. First install dependencies:
 
 ```bash
 cd tests/e2e
 npm install
-npx playwright install
+npm run install-browsers
+```
+
+Or if you prefer, install system dependencies too:
+```bash
+sudo npx playwright install-deps  # Linux only, installs system packages
 ```
 
 Then run:
 ```bash
+cd ../..  # Return to project root
 make test-e2e
+```
+
+Or run tests directly:
+```bash
+cd tests/e2e
+npm test              # Run all tests headless
+npm run test:headed   # Run with browser visible
+npm run test:ui       # Run in UI mode for debugging
+npm run test:debug    # Run in debug mode
 ```
 
 ## Troubleshooting
@@ -166,7 +181,49 @@ This has been fixed in the latest version. If you still see it:
 
 **Message:** `Test OAuth application not configured`
 
-**Solution:** Run the setup script as described in Integration Tests section above.
+**Solution:** The integration tests need valid OAuth client credentials. You have two options:
+
+**Option 1 - Use Environment Variables (Recommended):**
+
+1. Run the setup script to create a test application:
+   ```bash
+   ./backend/scripts/setup_test_app.sh
+   ```
+
+2. Export the credentials shown by the script:
+   ```bash
+   export TEST_CLIENT_ID="<client-id-from-script>"
+   export TEST_CLIENT_SECRET="<client-secret-from-script>"
+   ```
+
+3. Run the tests:
+   ```bash
+   make test-integration
+   ```
+
+**Option 2 - Use Hardcoded Values:**
+
+Manually create an application with these exact credentials:
+- Client ID: `test-client-id`
+- Client Secret: `test-secret` (plaintext, will be hashed)
+- Grant Types: `client_credentials`, `authorization_code`, `refresh_token`
+- Redirect URIs: `https://example.com/callback`
+
+Then run tests without environment variables.
+
+### E2E Tests Fail
+
+**Error:** `Cannot find module '@playwright/test'`
+
+**Solution:** Install the npm dependencies in the e2e directory:
+
+```bash
+cd tests/e2e
+npm install
+npm run install-browsers
+```
+
+The package.json was added in the latest version. If you don't see it, pull the latest changes.
 
 ### JSONB Serialization Errors
 
