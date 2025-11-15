@@ -172,6 +172,7 @@ func main() {
 	authMiddleware := auth.NewAuthMiddleware(tokenManager, db)
 
 	apiGroup := router.Group("/api/v1")
+	apiGroup.Use(middleware.CSRFExempt()) // API uses Bearer tokens, not cookies - exempt from CSRF
 	apiGroup.Use(authMiddleware.RequireAuth())
 	{
 		// Applications
