@@ -60,7 +60,9 @@ func Migrate(db *gorm.DB) error {
 	}
 
 	// Auto migrate all models
-	models := []interface{}{
+	// Note: Pass all models at once to AutoMigrate so GORM can handle
+	// circular many-to-many relationships correctly (e.g., User <-> Role)
+	if err := db.AutoMigrate(
 		&User{},
 		&Role{},
 		&Permission{},
@@ -73,12 +75,8 @@ func Migrate(db *gorm.DB) error {
 		&AuditLog{},
 		&SigningKey{},
 		&PushedAuthorizationRequest{},
-	}
-
-	for _, model := range models {
-		if err := db.AutoMigrate(model); err != nil {
-			return fmt.Errorf("failed to migrate %T: %w", model, err)
-		}
+	); err != nil {
+		return fmt.Errorf("failed to migrate models: %w", err)
 	}
 
 	// Create indexes
