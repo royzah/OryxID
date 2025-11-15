@@ -4,6 +4,7 @@ import (
 	"crypto/rand"
 	"encoding/base64"
 	"net/http"
+	"strings"
 
 	"github.com/gin-gonic/gin"
 	"github.com/tiiuae/oryxid/internal/redis"
@@ -61,7 +62,13 @@ func CSRF(config CSRFConfig) gin.HandlerFunc {
 
 		// Skip CSRF check for certain paths
 		for _, path := range config.SkipPaths {
-			if c.Request.URL.Path == path {
+			// Support both exact match and prefix match (paths ending with *)
+			if strings.HasSuffix(path, "*") {
+				if strings.HasPrefix(c.Request.URL.Path, strings.TrimSuffix(path, "*")) {
+					c.Next()
+					return
+				}
+			} else if c.Request.URL.Path == path {
 				c.Next()
 				return
 			}
