@@ -135,7 +135,8 @@ func (s *Server) GenerateAuthorizationCode(app *database.Application, user *data
 		authCode.UserID = &user.ID
 	}
 
-	if err := s.db.Create(authCode).Error; err != nil {
+	// Use Table() to bypass GORM model introspection issues with pq.StringArray in Application
+	if err := s.db.Table("authorization_codes").Create(authCode).Error; err != nil {
 		return "", err
 	}
 
@@ -523,7 +524,8 @@ func (s *Server) storeTokens(app *database.Application, user *database.User, acc
 		if user != nil {
 			token.UserID = &user.ID
 		}
-		s.db.Create(token)
+		// Use Table() to bypass GORM model introspection issues with pq.StringArray in Application
+		s.db.Table("tokens").Create(token)
 	}
 
 	if refreshToken != "" {
@@ -537,7 +539,8 @@ func (s *Server) storeTokens(app *database.Application, user *database.User, acc
 		if user != nil {
 			token.UserID = &user.ID
 		}
-		s.db.Create(token)
+		// Use Table() to bypass GORM model introspection issues with pq.StringArray in Application
+		s.db.Table("tokens").Create(token)
 	}
 }
 
