@@ -348,8 +348,14 @@ func (s *Server) RefreshTokenGrant(req *TokenRequest) (*tokens.TokenResponse, er
 		requestedScope = req.Scope
 	}
 
+	// Extract audience (if present)
+	audience := ""
+	if len(claims.Audience) > 0 {
+		audience = claims.Audience[0]
+	}
+
 	// Generate new access token with potentially downscaled scope
-	accessToken, err := s.TokenManager.GenerateAccessToken(&app, user, requestedScope, claims.Audience[0], nil)
+	accessToken, err := s.TokenManager.GenerateAccessToken(&app, user, requestedScope, audience, nil)
 	if err != nil {
 		return nil, err
 	}

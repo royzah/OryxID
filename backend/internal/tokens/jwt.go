@@ -210,6 +210,12 @@ func (tm *TokenManager) IntrospectToken(tokenString string) (*IntrospectionRespo
 		return &IntrospectionResponse{Active: false}, nil
 	}
 
+	// Extract audience (if present)
+	aud := ""
+	if len(claims.Audience) > 0 {
+		aud = claims.Audience[0]
+	}
+
 	return &IntrospectionResponse{
 		Active:    true,
 		Scope:     claims.Scope,
@@ -220,7 +226,7 @@ func (tm *TokenManager) IntrospectToken(tokenString string) (*IntrospectionRespo
 		Iat:       claims.IssuedAt.Unix(),
 		Nbf:       claims.NotBefore.Unix(),
 		Sub:       claims.Subject,
-		Aud:       claims.Audience[0],
+		Aud:       aud,
 		Iss:       claims.Issuer,
 		Jti:       claims.ID,
 	}, nil
