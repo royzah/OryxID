@@ -185,7 +185,7 @@ func (h *SessionHandler) CleanupExpiredSessions() error {
 		audit := database.AuditLog{
 			Action:   "session.cleanup",
 			Resource: "session",
-			Metadata: database.JSONB{
+			Metadata: map[string]interface{}{
 				"deleted_count": result.RowsAffected,
 			},
 		}
@@ -287,7 +287,7 @@ func (h *SessionHandler) logAudit(c *gin.Context, action, resource, resourceID s
 		IPAddress:  c.ClientIP(),
 		UserAgent:  c.GetHeader("User-Agent"),
 		StatusCode: c.Writer.Status(),
-		Metadata: database.JSONB{
+		Metadata: map[string]interface{}{
 			"method": c.Request.Method,
 			"path":   c.Request.URL.Path,
 		},

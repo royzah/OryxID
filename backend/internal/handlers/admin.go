@@ -880,7 +880,7 @@ func (h *AdminHandler) logAudit(c *gin.Context, action, resource, resourceID str
 		IPAddress:  c.ClientIP(),
 		UserAgent:  c.GetHeader("User-Agent"),
 		StatusCode: statusCode,
-		Metadata: database.JSONB{
+		Metadata: map[string]interface{}{
 			"method": c.Request.Method,
 			"path":   c.Request.URL.Path,
 		},

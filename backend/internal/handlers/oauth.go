@@ -581,7 +581,7 @@ func (h *OAuthHandler) logAudit(c *gin.Context, app *database.Application, actio
 		IPAddress:     c.ClientIP(),
 		UserAgent:     c.GetHeader("User-Agent"),
 		StatusCode:    c.Writer.Status(),
-		Metadata: database.JSONB{
+		Metadata: map[string]interface{}{
 			"method":    c.Request.Method,
 			"path":      c.Request.URL.Path,
 			"client_id": app.ClientID,
