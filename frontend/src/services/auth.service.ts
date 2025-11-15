@@ -9,7 +9,7 @@ export const authService = {
       token: data.token,
       refreshToken: data.refresh_token || data.refreshToken,
       user: data.user,
-      expiresIn: data.expiresIn || 3600 // Default to 1 hour if not provided
+      expiresIn: data.expiresIn || 3600, // Default to 1 hour if not provided
     };
   },
 
@@ -24,14 +24,14 @@ export const authService = {
 
   refreshToken: async (refreshToken: string): Promise<AuthResponse> => {
     const { data } = await apiClient.post('/auth/refresh', {
-      refresh_token: refreshToken // Backend expects refresh_token, not refreshToken
+      refresh_token: refreshToken, // Backend expects refresh_token, not refreshToken
     });
 
     return {
       token: data.token,
       refreshToken: data.refresh_token || data.refreshToken,
       user: data.user,
-      expiresIn: data.expiresIn || 3600
+      expiresIn: data.expiresIn || 3600,
     };
   },
 };

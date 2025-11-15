@@ -48,12 +48,17 @@ export const useAuthStore = create<AuthState>()(
             let timer = null;
             if (response.expiresIn && response.expiresIn > 0) {
               const expiresIn = response.expiresIn * 1000; // Convert to milliseconds
-              timer = setTimeout(() => {
-                get().refreshTokenAction().catch(() => {
-                  // If refresh fails, clear auth state
-                  get().logout();
-                });
-              }, Math.max(expiresIn - 60000, 10000)); // Refresh at least 10 seconds before expiry
+              timer = setTimeout(
+                () => {
+                  get()
+                    .refreshTokenAction()
+                    .catch(() => {
+                      // If refresh fails, clear auth state
+                      get().logout();
+                    });
+                },
+                Math.max(expiresIn - 60000, 10000),
+              ); // Refresh at least 10 seconds before expiry
             }
 
             set({
@@ -116,7 +121,7 @@ export const useAuthStore = create<AuthState>()(
 
         refreshTokenAction: async () => {
           const state = get();
-          
+
           // Prevent refresh if already logging out
           if (!state.isAuthenticated || !state.refreshToken) {
             return;
@@ -134,11 +139,16 @@ export const useAuthStore = create<AuthState>()(
             let timer = null;
             if (response.expiresIn && response.expiresIn > 0) {
               const expiresIn = response.expiresIn * 1000;
-              timer = setTimeout(() => {
-                get().refreshTokenAction().catch(() => {
-                  get().logout();
-                });
-              }, Math.max(expiresIn - 60000, 10000));
+              timer = setTimeout(
+                () => {
+                  get()
+                    .refreshTokenAction()
+                    .catch(() => {
+                      get().logout();
+                    });
+                },
+                Math.max(expiresIn - 60000, 10000),
+              );
             }
 
             set({
@@ -154,7 +164,7 @@ export const useAuthStore = create<AuthState>()(
 
         checkAuth: async () => {
           const state = get();
-          
+
           if (!state.token) {
             set({ isAuthenticated: false });
             return;

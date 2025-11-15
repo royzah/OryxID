@@ -70,6 +70,7 @@ sequenceDiagram
 ## Security Features
 
 ### OAuth 2.1 Compliance
+
 - PKCE with S256 (plain method rejected)
 - Refresh token rotation (old tokens immediately revoked)
 - Access token revocation enforcement
@@ -77,6 +78,7 @@ sequenceDiagram
 - Secure token storage (bcrypt hashing)
 
 ### OpenID Connect 1.0
+
 - ID tokens with all required claims
 - email_verified claim support
 - UserInfo endpoint
@@ -84,6 +86,7 @@ sequenceDiagram
 - JWKS endpoint (/.well-known/jwks.json)
 
 ### Advanced Security
+
 - **PAR (RFC 9126)**: Pushed Authorization Requests prevent parameter tampering
 - **private_key_jwt (RFC 7523)**: Asymmetric client authentication
 - **Scope Downscaling**: Request fewer permissions on token refresh
@@ -100,13 +103,14 @@ sequenceDiagram
 | PostgreSQL | 5432 | 5432 | Database |
 | Redis | 6379 | 6379 | Cache |
 
-**Production Access**: Use http://localhost:8080 (Nginx proxy)
-**Development API**: http://localhost:9000 (backend direct)
-**Development UI**: http://localhost:3000 (frontend direct)
+**Production Access**: Use <http://localhost:8080> (Nginx proxy)
+**Development API**: <http://localhost:9000> (backend direct)
+**Development UI**: <http://localhost:3000> (frontend direct)
 
 ## Testing Locally
 
 ### Prerequisites
+
 - Go 1.21+
 - Node.js 20+
 - PostgreSQL 16+
@@ -317,6 +321,7 @@ graph TB
 ```
 
 **Infrastructure Requirements**:
+
 - VPC with private and public subnets
 - Application Load Balancer
 - RDS PostgreSQL (Multi-AZ)
@@ -326,6 +331,7 @@ graph TB
 - CloudWatch for logging/monitoring
 
 **Scaling Configuration**:
+
 ```bash
 # Auto-scaling based on CPU
 aws application-autoscaling put-scaling-policy \
@@ -422,6 +428,7 @@ gcloud compute backend-services create oryxid-backend-service \
 ```
 
 **Infrastructure**:
+
 - Cloud SQL (PostgreSQL)
 - Memorystore (Redis)
 - Cloud Storage (static assets)
@@ -609,11 +616,13 @@ location / {
 ## Future Roadmap
 
 ### Key Rotation Management
+
 **Status**: Database models ready, API implementation pending
 **Complexity**: Medium
 **Timeline**: 2-3 weeks
 
 Enables zero-downtime RSA key rotation for JWT signing:
+
 - Multiple active signing keys
 - Automatic key expiration
 - JWKS endpoint serves all valid public keys
@@ -621,6 +630,7 @@ Enables zero-downtime RSA key rotation for JWT signing:
 - Admin UI for key lifecycle management
 
 **Implementation**:
+
 ```go
 // Rotate to new key
 POST /api/v1/keys/rotate
@@ -637,11 +647,13 @@ POST /api/v1/keys/{kid}/revoke
 ```
 
 ### DPoP Token Binding (RFC 9449)
+
 **Status**: Not started
 **Complexity**: High
 **Timeline**: 4-6 weeks
 
 Binds tokens to specific devices using proof-of-possession:
+
 - Prevents token replay attacks
 - Mobile app and SPA security enhancement
 - Client generates key pair per device
@@ -649,11 +661,13 @@ Binds tokens to specific devices using proof-of-possession:
 - Server validates DPoP proof on each request
 
 **Benefits**:
+
 - Stolen tokens unusable without private key
 - Network eavesdropping protection
 - Phishing attack mitigation
 
 **Implementation**:
+
 ```http
 POST /oauth/token
 DPoP: eyJ0eXAiOiJkcG9wK2p3dCIsImFsZyI6IkVTMjU2IiwiandrIjp7Imt0eSI6Ik...
@@ -671,23 +685,27 @@ DPoP: PROOF_JWT
 ```
 
 ### Client Initiated Backchannel Authentication (CIBA)
+
 **Status**: Not started
 **Complexity**: High
 **Timeline**: 6-8 weeks
 
 Out-of-band authentication for decoupled devices:
+
 - QR code scanning
 - Mobile app push notifications
 - Banking-grade authentication
 - Ping, poll, and push modes
 
 **Use Cases**:
+
 - Smart TV login via phone
 - ATM authentication
 - Point-of-sale authorization
 - Secure transaction approval
 
 **Flow**:
+
 ```mermaid
 sequenceDiagram
     participant Client as Consumption Device
@@ -703,17 +721,20 @@ sequenceDiagram
 ```
 
 ### Device Authorization Flow (RFC 8628)
+
 **Status**: Not started
 **Complexity**: Medium
 **Timeline**: 3-4 weeks
 
 For input-constrained devices (smart TVs, IoT):
+
 - Display short user code
 - User visits verification URL
 - Polls for authorization
 - No redirect required
 
 **Implementation**:
+
 ```http
 POST /oauth/device
 {
@@ -731,6 +752,7 @@ Response:
 ```
 
 ### Additional Testing
+
 **Status**: In progress (70% coverage)
 **Complexity**: Medium
 **Timeline**: Ongoing
@@ -770,6 +792,7 @@ Response:
    - Mobile responsiveness
 
 **Testing Tools**:
+
 - Unit: Go testing, testify
 - Integration: Ginkgo, Gomega
 - HTTP: httptest, gin test mode
@@ -789,11 +812,11 @@ make restart        # Restart all containers
 make clean          # Remove containers, volumes, and generated files
 
 # Building
-make build          # Build all Docker images
-make build-backend  # Build backend only
-make build-frontend # Build frontend only
-make rebuild        # Clean build all images
-make rebuild-backend # Clean build backend
+make build            # Build all Docker images
+make build-backend    # Build backend only
+make build-frontend   # Build frontend only
+make rebuild          # Clean build all images
+make rebuild-backend  # Clean build backend
 
 # Database
 make db-migrate     # Run database migrations
@@ -804,11 +827,11 @@ make db-backup      # Backup database
 make db-restore     # Restore database from backup
 
 # Testing
-make test           # Run all tests
-make test-backend   # Run backend tests
-make test-frontend  # Run frontend tests
+make test             # Run all tests
+make test-backend     # Run backend tests
+make test-frontend    # Run frontend tests
 make test-integration # Run integration tests
-make coverage       # Generate coverage report
+make coverage         # Generate coverage report
 
 # Logs & Monitoring
 make logs           # Show all logs
@@ -824,15 +847,3 @@ make security-scan  # Run security scanners
 make deps-update    # Update dependencies
 make certs-renew    # Regenerate JWT certificates
 ```
-
-## License
-
-Apache License 2.0
-
-## Contributing
-
-Contributions welcome. Please follow standard Go and React conventions.
-
-## Support
-
-For issues and questions, open a GitHub issue.
