@@ -32,13 +32,12 @@ func setupTestEnvironment(t *testing.T) (*gin.Engine, *gorm.DB, *tokens.TokenMan
 	db, err := gorm.Open(sqlite.Open(":memory:"), &gorm.Config{})
 	require.NoError(t, err)
 
-	// Migrate models (excluding those with pq.StringArray issues)
+	// Migrate models (excluding Application/AuditLog/Scope/Audience due to pq.StringArray compatibility issues with SQLite)
+	// Scope and Audience have many-to-many relationships with Application, which triggers GORM to parse Application
 	err = db.AutoMigrate(
 		&database.User{},
 		&database.Role{},
 		&database.Permission{},
-		&database.Scope{},
-		&database.Audience{},
 		&database.AuthorizationCode{},
 		&database.Token{},
 		&database.Session{},
@@ -73,6 +72,44 @@ func setupTestEnvironment(t *testing.T) (*gin.Engine, *gorm.DB, *tokens.TokenMan
 			metadata TEXT
 		)
 	`).Error
+	require.NoError(t, err)
+
+	// Manually create Scope table
+	err = db.Exec(`
+		CREATE TABLE IF NOT EXISTS scopes (
+			id TEXT PRIMARY KEY,
+			created_at DATETIME,
+			updated_at DATETIME,
+			deleted_at DATETIME,
+			name TEXT UNIQUE NOT NULL,
+			description TEXT,
+			is_default BOOLEAN DEFAULT 0
+		)
+	`).Error
+	require.NoError(t, err)
+
+	// Manually create Audience table
+	err = db.Exec(`
+		CREATE TABLE IF NOT EXISTS audiences (
+			id TEXT PRIMARY KEY,
+			created_at DATETIME,
+			updated_at DATETIME,
+			deleted_at DATETIME,
+			identifier TEXT UNIQUE NOT NULL,
+			name TEXT NOT NULL,
+			description TEXT
+		)
+	`).Error
+	require.NoError(t, err)
+
+	// Create many-to-many join tables
+	err = db.Exec(`CREATE TABLE IF NOT EXISTS application_scopes (application_id TEXT, scope_id TEXT, PRIMARY KEY (application_id, scope_id))`).Error
+	require.NoError(t, err)
+
+	err = db.Exec(`CREATE TABLE IF NOT EXISTS audience_scopes (audience_id TEXT, scope_id TEXT, PRIMARY KEY (audience_id, scope_id))`).Error
+	require.NoError(t, err)
+
+	err = db.Exec(`CREATE TABLE IF NOT EXISTS application_audiences (application_id TEXT, audience_id TEXT, PRIMARY KEY (application_id, audience_id))`).Error
 	require.NoError(t, err)
 
 	// Generate test RSA keys
