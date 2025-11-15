@@ -27,12 +27,10 @@ func setupAuthTestEnvironment(t *testing.T) (*gin.Engine, *gorm.DB, *tokens.Toke
 	db, err := gorm.Open(sqlite.Open(":memory:"), &gorm.Config{})
 	require.NoError(t, err)
 
-	// Migrate models
+	// Migrate models (excluding Application/AuditLog due to pq.StringArray compatibility issues with SQLite)
 	err = db.AutoMigrate(
 		&database.User{},
 		&database.Role{},
-		&database.Application{},
-		&database.AuditLog{},
 	)
 	require.NoError(t, err)
 
