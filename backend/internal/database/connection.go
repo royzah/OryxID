@@ -59,15 +59,30 @@ func Migrate(db *gorm.DB) error {
 		return fmt.Errorf("failed to create uuid extension: %w", err)
 	}
 
-	// First migrate models that don't reference Application
-	if err := db.AutoMigrate(
-		&User{},
-		&Role{},
-		&Permission{},
-		&SigningKey{},
-		&Session{},
-	); err != nil {
-		return fmt.Errorf("failed to migrate base models: %w", err)
+	// Migrate models individually to isolate which one fails
+	log.Println("Migrating SigningKey...")
+	if err := db.AutoMigrate(&SigningKey{}); err != nil {
+		return fmt.Errorf("failed to migrate SigningKey: %w", err)
+	}
+
+	log.Println("Migrating Permission...")
+	if err := db.AutoMigrate(&Permission{}); err != nil {
+		return fmt.Errorf("failed to migrate Permission: %w", err)
+	}
+
+	log.Println("Migrating Role...")
+	if err := db.AutoMigrate(&Role{}); err != nil {
+		return fmt.Errorf("failed to migrate Role: %w", err)
+	}
+
+	log.Println("Migrating User...")
+	if err := db.AutoMigrate(&User{}); err != nil {
+		return fmt.Errorf("failed to migrate User: %w", err)
+	}
+
+	log.Println("Migrating Session...")
+	if err := db.AutoMigrate(&Session{}); err != nil {
+		return fmt.Errorf("failed to migrate Session: %w", err)
 	}
 
 	// Manually create applications table (GORM can't handle pq.StringArray in AutoMigrate)
