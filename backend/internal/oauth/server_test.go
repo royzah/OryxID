@@ -41,8 +41,8 @@ func setupTestDB(t *testing.T) *gorm.DB {
 }
 
 func createTestTokenManager(t *testing.T) *tokens.TokenManager {
-	// Load test JWT private key
-	privateKey, err := crypto.LoadPrivateKey("./testdata/test_private_key.pem")
+	// Generate test RSA key pair in memory (faster than file I/O)
+	privateKey, err := crypto.GenerateRSAKeyPair(2048)
 	require.NoError(t, err)
 
 	// Create JWT config
