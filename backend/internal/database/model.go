@@ -102,9 +102,9 @@ type Application struct {
 	SkipAuthorization        bool        `gorm:"default:false" json:"skip_authorization"`
 	AccessTokenLifespan      int         `json:"access_token_lifespan"`  // seconds, 0 means use default
 	RefreshTokenLifespan     int         `json:"refresh_token_lifespan"` // seconds, 0 means use default
-	Owner                    *User                  `gorm:"foreignKey:OwnerID" json:"owner,omitempty"`
-	OwnerID                  *uuid.UUID             `json:"owner_id,omitempty"`
-	Metadata                 map[string]interface{} `gorm:"type:jsonb" json:"metadata,omitempty"`
+	Owner                    *User      `gorm:"foreignKey:OwnerID" json:"owner,omitempty"`
+	OwnerID                  *uuid.UUID `json:"owner_id,omitempty"`
+	Metadata                 JSONB      `gorm:"type:jsonb" json:"metadata,omitempty"`
 }
 
 // Scope represents OAuth2 scopes
@@ -183,10 +183,10 @@ type AuditLog struct {
 	Action        string       `gorm:"not null" json:"action"`
 	Resource      string       `json:"resource"`
 	ResourceID    string       `json:"resource_id"`
-	IPAddress     string                 `json:"ip_address"`
-	UserAgent     string                 `json:"user_agent"`
-	StatusCode    int                    `json:"status_code"`
-	Metadata      map[string]interface{} `gorm:"type:jsonb" json:"metadata,omitempty"`
+	IPAddress     string `json:"ip_address"`
+	UserAgent     string `json:"user_agent"`
+	StatusCode    int    `json:"status_code"`
+	Metadata      JSONB  `gorm:"type:jsonb" json:"metadata,omitempty"`
 }
 
 // JSONB is a custom type for PostgreSQL JSONB support

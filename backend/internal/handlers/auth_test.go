@@ -27,10 +27,20 @@ func setupAuthTestEnvironment(t *testing.T) (*gin.Engine, *gorm.DB, *tokens.Toke
 	db, err := gorm.Open(sqlite.Open(":memory:"), &gorm.Config{})
 	require.NoError(t, err)
 
-	// Migrate models (excluding Application/AuditLog due to database.StringArray compatibility issues with SQLite)
+	// Now using custom StringArray type with JSONB, GORM AutoMigrate works perfectly
 	err = db.AutoMigrate(
 		&database.User{},
 		&database.Role{},
+		&database.Permission{},
+		&database.Application{},
+		&database.Scope{},
+		&database.Audience{},
+		&database.AuthorizationCode{},
+		&database.Token{},
+		&database.Session{},
+		&database.AuditLog{},
+		&database.SigningKey{},
+		&database.PushedAuthorizationRequest{},
 	)
 	require.NoError(t, err)
 
