@@ -12,7 +12,6 @@ import (
 
 	"github.com/gin-gonic/gin"
 	"github.com/golang-jwt/jwt/v5"
-	"github.com/lib/pq"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"github.com/tiiuae/oryxid/internal/config"
@@ -32,83 +31,14 @@ func setupSecurityTestEnv(t *testing.T) (*gin.Engine, *gorm.DB, *oauth.Server, *
 	db, err := gorm.Open(sqlite.Open(":memory:"), &gorm.Config{})
 	require.NoError(t, err)
 
-	// Migrate models (excluding those that reference Application due to pq.StringArray compatibility issues with SQLite)
-	// AuthorizationCode and Token have foreign key relationships with Application
+	// Now using custom StringArray type with JSONB, GORM AutoMigrate works perfectly
 	err = db.AutoMigrate(
 		&database.User{},
+		&database.Application{},
+		&database.AuthorizationCode{},
+		&database.Token{},
 		&database.PushedAuthorizationRequest{},
 	)
-	require.NoError(t, err)
-
-	// Manually create Application table (SQLite doesn't support TEXT[] arrays, use TEXT for JSON storage)
-	err = db.Exec(`
-		CREATE TABLE IF NOT EXISTS applications (
-			id TEXT PRIMARY KEY,
-			created_at DATETIME,
-			updated_at DATETIME,
-			deleted_at DATETIME,
-			name TEXT NOT NULL,
-			description TEXT,
-			client_id TEXT UNIQUE NOT NULL,
-			hashed_client_secret TEXT NOT NULL,
-			client_type TEXT NOT NULL,
-			token_endpoint_auth_method TEXT,
-			public_key_pem TEXT,
-			jwks_uri TEXT,
-			grant_types TEXT,
-			response_types TEXT,
-			redirect_uris TEXT,
-			post_logout_uris TEXT,
-			skip_authorization BOOLEAN DEFAULT 0,
-			access_token_lifespan INTEGER,
-			refresh_token_lifespan INTEGER,
-			owner_id TEXT,
-			metadata TEXT
-		)
-	`).Error
-	require.NoError(t, err)
-
-	// Manually create AuthorizationCode table
-	err = db.Exec(`
-		CREATE TABLE IF NOT EXISTS authorization_codes (
-			id TEXT PRIMARY KEY,
-			created_at DATETIME,
-			updated_at DATETIME,
-			deleted_at DATETIME,
-			code TEXT UNIQUE NOT NULL,
-			application_id TEXT NOT NULL,
-			user_id TEXT,
-			redirect_uri TEXT,
-			scope TEXT,
-			audience TEXT,
-			state TEXT,
-			nonce TEXT,
-			code_challenge TEXT,
-			code_challenge_method TEXT,
-			expires_at DATETIME,
-			used BOOLEAN DEFAULT 0
-		)
-	`).Error
-	require.NoError(t, err)
-
-	// Manually create Token table
-	err = db.Exec(`
-		CREATE TABLE IF NOT EXISTS tokens (
-			id TEXT PRIMARY KEY,
-			created_at DATETIME,
-			updated_at DATETIME,
-			deleted_at DATETIME,
-			token_hash TEXT UNIQUE NOT NULL,
-			token_type TEXT NOT NULL,
-			application_id TEXT NOT NULL,
-			user_id TEXT,
-			scope TEXT,
-			audience TEXT,
-			expires_at DATETIME,
-			revoked BOOLEAN DEFAULT 0,
-			revoked_at DATETIME
-		)
-	`).Error
 	require.NoError(t, err)
 
 	privateKey, err := crypto.GenerateRSAKeyPair(2048)
@@ -141,12 +71,12 @@ func setupSecurityTestEnv(t *testing.T) (*gin.Engine, *gorm.DB, *oauth.Server, *
 		HashedClientSecret:      string(hashedSecret),
 		ClientType:              "confidential",
 		TokenEndpointAuthMethod: "client_secret_basic",
-		GrantTypes:              pq.StringArray{"authorization_code", "client_credentials"},
-		ResponseTypes:           pq.StringArray{"code"},
-		RedirectURIs:            pq.StringArray{"https://example.com/callback"},
+		GrantTypes:              database.StringArray{"authorization_code", "client_credentials"},
+		ResponseTypes:           database.StringArray{"code"},
+		RedirectURIs:            database.StringArray{"https://example.com/callback"},
 	}
 	// Use Table() to explicitly specify table name and bypass some GORM model introspection
-	require.NoError(t, db.Table("applications").Create(app).Error)
+	require.NoError(t, db.Create(app).Error)
 
 	return router, db, server, app
 }

@@ -27,7 +27,7 @@ func setupAuthTestEnvironment(t *testing.T) (*gin.Engine, *gorm.DB, *tokens.Toke
 	db, err := gorm.Open(sqlite.Open(":memory:"), &gorm.Config{})
 	require.NoError(t, err)
 
-	// Migrate models (excluding Application/AuditLog due to pq.StringArray compatibility issues with SQLite)
+	// Migrate models (excluding Application/AuditLog due to database.StringArray compatibility issues with SQLite)
 	err = db.AutoMigrate(
 		&database.User{},
 		&database.Role{},
@@ -264,7 +264,7 @@ func TestRefreshToken_Success(t *testing.T) {
 		Name:     "Admin Panel",
 	}
 	// Use Table() to explicitly specify table name and bypass some GORM model introspection
-	require.NoError(t, db.Table("applications").Create(app).Error)
+	require.NoError(t, db.Create(app).Error)
 
 	// Generate refresh token
 	refreshToken, err := tm.GenerateRefreshToken(app, user, "openid profile")
@@ -324,7 +324,7 @@ func TestRefreshToken_AccessTokenInsteadOfRefresh(t *testing.T) {
 		Name:     "Admin Panel",
 	}
 	// Use Table() to explicitly specify table name and bypass some GORM model introspection
-	require.NoError(t, db.Table("applications").Create(app).Error)
+	require.NoError(t, db.Create(app).Error)
 
 	// Generate ACCESS token instead of refresh token
 	accessToken, err := tm.GenerateAccessToken(app, user, "openid profile", "admin-panel", nil)
