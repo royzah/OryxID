@@ -16,11 +16,8 @@ import (
 func Connect(cfg *config.Config) (*gorm.DB, error) {
 	dsn := config.GetDSN()
 
-	// Configure GORM logger
-	gormLogger := logger.Default
-	if cfg.Server.Mode == "release" {
-		gormLogger = logger.Default.LogMode(logger.Silent)
-	}
+	// TEMPORARY: Force debug mode to see all SQL
+	gormLogger := logger.Default.LogMode(logger.Info)
 
 	db, err := gorm.Open(postgres.Open(dsn), &gorm.Config{
 		Logger: gormLogger,
@@ -88,10 +85,28 @@ func Migrate(db *gorm.DB) error {
 		return fmt.Errorf("failed to create signing_keys is_active index: %w", err)
 	}
 
+	// DEBUG: Test if AutoMigrate works at all with a simple struct
+	type SimpleTest struct {
+		ID   uint   `gorm:"primaryKey"`
+		Name string `gorm:"not null"`
+	}
+	log.Println("DEBUG: Testing AutoMigrate with simple struct...")
+	if err := db.AutoMigrate(&SimpleTest{}); err != nil {
+		log.Printf("DEBUG: Simple AutoMigrate FAILED: %v", err)
+	} else {
+		log.Println("DEBUG: Simple AutoMigrate SUCCEEDED")
+		db.Migrator().DropTable(&SimpleTest{})
+	}
+
 	log.Println("Migrating Permission...")
+	log.Printf("DEBUG: Permission model fields: %+v", Permission{})
+	log.Println("DEBUG: About to call db.AutoMigrate(&Permission{})")
 	if err := db.AutoMigrate(&Permission{}); err != nil {
+		log.Printf("DEBUG: AutoMigrate failed with error: %v", err)
+		log.Printf("DEBUG: Error type: %T", err)
 		return fmt.Errorf("failed to migrate Permission: %w", err)
 	}
+	log.Println("DEBUG: Permission migration succeeded")
 
 	log.Println("Migrating Role...")
 	if err := db.AutoMigrate(&Role{}); err != nil {
