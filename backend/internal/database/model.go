@@ -66,7 +66,7 @@ type Application struct {
 	HashedClientSecret       string     `gorm:"not null" json:"-"`                                  // Only store hashed secret
 	ClientType               string     `gorm:"not null" json:"client_type"` // confidential, public
 	TokenEndpointAuthMethod  string     `json:"token_endpoint_auth_method"` // client_secret_basic, client_secret_post, private_key_jwt
-	PublicKeyPEM             string         `gorm:"type:text" json:"public_key_pem,omitempty"` // For private_key_jwt authentication
+	PublicKeyPEM             string         `json:"public_key_pem,omitempty"` // For private_key_jwt authentication
 	JWKSURI                  string         `json:"jwks_uri,omitempty"` // Alternative to PublicKeyPEM - fetch keys from URL
 	GrantTypes               pq.StringArray `json:"grant_types"`
 	ResponseTypes            pq.StringArray `json:"response_types"`
@@ -264,8 +264,8 @@ type SigningKey struct {
 	BaseModel
 	KeyID         string     `gorm:"uniqueIndex;not null" json:"key_id"`        // kid claim
 	Algorithm     string     `gorm:"not null" json:"algorithm"` // Signing algorithm
-	PrivateKeyPEM string     `gorm:"type:text;not null" json:"-"`               // PEM-encoded private key (never exposed)
-	PublicKeyPEM  string     `gorm:"type:text;not null" json:"public_key_pem"`  // PEM-encoded public key
+	PrivateKeyPEM string     `gorm:"not null" json:"-"`               // PEM-encoded private key (never exposed)
+	PublicKeyPEM  string     `gorm:"not null" json:"public_key_pem"`  // PEM-encoded public key
 	IsActive      bool       `gorm:"default:true;index" json:"is_active"`       // Currently used for signing
 	ActivatedAt   time.Time  `gorm:"not null" json:"activated_at"`              // When this key became active
 	ExpiresAt     *time.Time `json:"expires_at,omitempty"`                      // Optional expiration (for key rotation)
