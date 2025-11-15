@@ -190,15 +190,16 @@ func TestScopeDownscaling(t *testing.T) {
 	tm := createTestTokenManager(t)
 	server := NewServer(db, tm)
 
-	// Generate refresh token with full scope
 	originalScope := "openid profile email offline_access"
-	refreshToken, err := tm.GenerateRefreshToken(app, user, originalScope)
-	require.NoError(t, err)
-
-	// Store the refresh token
-	server.storeTokens(app, user, "", refreshToken)
 
 	t.Run("Downscale to subset of scopes", func(t *testing.T) {
+		// Generate fresh refresh token for this test
+		refreshToken, err := tm.GenerateRefreshToken(app, user, originalScope)
+		require.NoError(t, err)
+
+		// Store the refresh token
+		server.storeTokens(app, user, "", refreshToken)
+
 		req := &TokenRequest{
 			GrantType:    "refresh_token",
 			ClientID:     app.ClientID,
@@ -213,6 +214,13 @@ func TestScopeDownscaling(t *testing.T) {
 	})
 
 	t.Run("Reject scope escalation", func(t *testing.T) {
+		// Generate fresh refresh token for this test
+		refreshToken, err := tm.GenerateRefreshToken(app, user, originalScope)
+		require.NoError(t, err)
+
+		// Store the refresh token
+		server.storeTokens(app, user, "", refreshToken)
+
 		req := &TokenRequest{
 			GrantType:    "refresh_token",
 			ClientID:     app.ClientID,
@@ -221,7 +229,7 @@ func TestScopeDownscaling(t *testing.T) {
 			Scope:        "openid profile email admin", // Trying to add 'admin' scope
 		}
 
-		_, err := server.RefreshTokenGrant(req)
+		_, err = server.RefreshTokenGrant(req)
 		assert.Error(t, err)
 		assert.Contains(t, err.Error(), "exceeds granted scope")
 	})
