@@ -186,7 +186,7 @@ type AuditLog struct {
 	IPAddress     string                 `json:"ip_address"`
 	UserAgent     string                 `json:"user_agent"`
 	StatusCode    int                    `json:"status_code"`
-	Metadata      map[string]interface{} `json:"metadata,omitempty"`
+	Metadata      map[string]interface{} `gorm:"type:jsonb" json:"metadata,omitempty"`
 }
 
 // JSONB is a custom type for PostgreSQL JSONB support
