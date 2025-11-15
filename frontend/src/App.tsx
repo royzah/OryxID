@@ -70,7 +70,12 @@ const PageLoader = () => (
 function App() {
   return (
     <QueryClientProvider client={queryClient}>
-      <Router>
+      <Router
+        future={{
+          v7_startTransition: true,
+          v7_relativeSplatPath: true,
+        }}
+      >
         <AuthGuard>
           <Suspense fallback={<PageLoader />}>
             <Routes>

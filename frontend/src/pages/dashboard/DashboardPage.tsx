@@ -100,12 +100,12 @@ export const DashboardPage = () => {
             </div>
           ) : (
             <div className="space-y-4">
-              {auditLogs?.items.length === 0 ? (
+              {(auditLogs?.items || []).length === 0 ? (
                 <p className="py-8 text-center text-sm text-gray-500">
                   No recent activity
                 </p>
               ) : (
-                auditLogs?.items.map((log) => (
+                (auditLogs?.items || []).map((log) => (
                   <div
                     key={log.id}
                     className="flex items-start space-x-4 rounded-lg p-3 transition-colors hover:bg-gray-50"

@@ -14,21 +14,30 @@ import (
 
 // Base model with common fields
 type BaseModel struct {
-	ID        uuid.UUID      `gorm:"type:uuid;primary_key;default:gen_random_uuid()" json:"id"`
+	ID        uuid.UUID      `gorm:"type:uuid;primary_key" json:"id"`
 	CreatedAt time.Time      `json:"created_at"`
 	UpdatedAt time.Time      `json:"updated_at"`
 	DeletedAt gorm.DeletedAt `gorm:"index" json:"-"`
 }
 
+// BeforeCreate hook to generate UUID before creating record
+func (b *BaseModel) BeforeCreate(tx *gorm.DB) error {
+	if b.ID == uuid.Nil {
+		b.ID = uuid.New()
+	}
+	return nil
+}
+
 // User represents a system user (admin)
 type User struct {
 	BaseModel
-	Username string `gorm:"uniqueIndex;not null" json:"username"`
-	Email    string `gorm:"uniqueIndex;not null" json:"email"`
-	Password string `gorm:"not null" json:"-"`
-	IsActive bool   `gorm:"default:true" json:"is_active"`
-	IsAdmin  bool   `gorm:"default:false" json:"is_admin"`
-	Roles    []Role `gorm:"many2many:user_roles;" json:"roles,omitempty"`
+	Username      string `gorm:"uniqueIndex;not null" json:"username"`
+	Email         string `gorm:"uniqueIndex;not null" json:"email"`
+	EmailVerified bool   `gorm:"default:false" json:"email_verified"`
+	Password      string `gorm:"not null" json:"-"`
+	IsActive      bool   `gorm:"default:true" json:"is_active"`
+	IsAdmin       bool   `gorm:"default:false" json:"is_admin"`
+	Roles         []Role `gorm:"many2many:user_roles;" json:"roles,omitempty"`
 }
 
 // Role represents user roles
@@ -51,23 +60,26 @@ type Permission struct {
 // Application represents an OAuth2 client
 type Application struct {
 	BaseModel
-	Name                 string      `gorm:"not null" json:"name"`
-	Description          string      `json:"description"`
-	ClientID             string      `gorm:"uniqueIndex;not null" json:"client_id"`
-	HashedClientSecret   string      `gorm:"not null" json:"-"`                                  // Only store hashed secret
-	ClientType           string      `gorm:"not null;default:'confidential'" json:"client_type"` // confidential, public
-	GrantTypes           StringArray `gorm:"type:text[]" json:"grant_types"`
-	ResponseTypes        StringArray `gorm:"type:text[]" json:"response_types"`
-	RedirectURIs         StringArray `gorm:"type:text[]" json:"redirect_uris"`
-	PostLogoutURIs       StringArray `gorm:"type:text[]" json:"post_logout_uris"`
-	Scopes               []Scope     `gorm:"many2many:application_scopes;" json:"scopes,omitempty"`
-	Audiences            []Audience  `gorm:"many2many:application_audiences;" json:"audiences,omitempty"`
-	SkipAuthorization    bool        `gorm:"default:false" json:"skip_authorization"`
-	AccessTokenLifespan  int         `json:"access_token_lifespan"`  // seconds, 0 means use default
-	RefreshTokenLifespan int         `json:"refresh_token_lifespan"` // seconds, 0 means use default
-	Owner                *User       `gorm:"foreignKey:OwnerID" json:"owner,omitempty"`
-	OwnerID              *uuid.UUID  `json:"owner_id,omitempty"`
-	Metadata             JSONB       `gorm:"type:jsonb" json:"metadata,omitempty"`
+	Name                     string      `gorm:"not null" json:"name"`
+	Description              string      `json:"description"`
+	ClientID                 string      `gorm:"uniqueIndex;not null" json:"client_id"`
+	HashedClientSecret       string      `gorm:"not null" json:"-"`                                  // Only store hashed secret
+	ClientType               string      `gorm:"not null;default:'confidential'" json:"client_type"` // confidential, public
+	TokenEndpointAuthMethod  string      `gorm:"default:'client_secret_basic'" json:"token_endpoint_auth_method"` // client_secret_basic, client_secret_post, private_key_jwt
+	PublicKeyPEM             string      `gorm:"type:text" json:"public_key_pem,omitempty"` // For private_key_jwt authentication
+	JWKSURI                  string      `json:"jwks_uri,omitempty"` // Alternative to PublicKeyPEM - fetch keys from URL
+	GrantTypes               StringArray `gorm:"type:text" json:"grant_types"`
+	ResponseTypes            StringArray `gorm:"type:text" json:"response_types"`
+	RedirectURIs             StringArray `gorm:"type:text" json:"redirect_uris"`
+	PostLogoutURIs           StringArray `gorm:"type:text" json:"post_logout_uris"`
+	Scopes                   []Scope     `gorm:"many2many:application_scopes;" json:"scopes,omitempty"`
+	Audiences                []Audience  `gorm:"many2many:application_audiences;" json:"audiences,omitempty"`
+	SkipAuthorization        bool        `gorm:"default:false" json:"skip_authorization"`
+	AccessTokenLifespan      int         `json:"access_token_lifespan"`  // seconds, 0 means use default
+	RefreshTokenLifespan     int         `json:"refresh_token_lifespan"` // seconds, 0 means use default
+	Owner                    *User       `gorm:"foreignKey:OwnerID" json:"owner,omitempty"`
+	OwnerID                  *uuid.UUID  `json:"owner_id,omitempty"`
+	Metadata                 JSONB       `gorm:"type:jsonb" json:"metadata,omitempty"`
 }
 
 // Scope represents OAuth2 scopes
@@ -160,7 +172,8 @@ func (s StringArray) Value() (driver.Value, error) {
 	if s == nil {
 		return nil, nil
 	}
-	return pq.Array(s).Value()
+	// Use JSON encoding for cross-database compatibility (PostgreSQL, SQLite, MySQL)
+	return json.Marshal([]string(s))
 }
 
 // Scan converts database value to StringArray
@@ -169,7 +182,26 @@ func (s *StringArray) Scan(value interface{}) error {
 		*s = nil
 		return nil
 	}
-	return pq.Array(s).Scan(value)
+
+	// Try JSON unmarshaling first (works for SQLite and PostgreSQL with JSON storage)
+	var bytes []byte
+	switch v := value.(type) {
+	case []byte:
+		bytes = v
+	case string:
+		bytes = []byte(v)
+	default:
+		// Fallback to PostgreSQL array type
+		return pq.Array(s).Scan(value)
+	}
+
+	var arr []string
+	if err := json.Unmarshal(bytes, &arr); err != nil {
+		// If JSON fails, try pq.Array as fallback
+		return pq.Array(s).Scan(value)
+	}
+	*s = StringArray(arr)
+	return nil
 }
 
 // MarshalJSON custom JSON marshaling
@@ -225,4 +257,34 @@ func (j *JSONB) Scan(value interface{}) error {
 		return errors.New("failed to scan JSONB")
 	}
 	return json.Unmarshal(bytes, j)
+}
+
+// SigningKey represents a cryptographic key for JWT signing (key rotation support)
+type SigningKey struct {
+	BaseModel
+	KeyID         string     `gorm:"uniqueIndex;not null" json:"key_id"`        // kid claim
+	Algorithm     string     `gorm:"not null;default:'RS256'" json:"algorithm"` // Signing algorithm
+	PrivateKeyPEM string     `gorm:"type:text;not null" json:"-"`               // PEM-encoded private key (never exposed)
+	PublicKeyPEM  string     `gorm:"type:text;not null" json:"public_key_pem"`  // PEM-encoded public key
+	IsActive      bool       `gorm:"default:true;index" json:"is_active"`       // Currently used for signing
+	ActivatedAt   time.Time  `gorm:"not null" json:"activated_at"`              // When this key became active
+	ExpiresAt     *time.Time `json:"expires_at,omitempty"`                      // Optional expiration (for key rotation)
+	RevokedAt     *time.Time `json:"revoked_at,omitempty"`                      // If key compromised
+}
+
+// PushedAuthorizationRequest represents a PAR object (RFC 9126)
+type PushedAuthorizationRequest struct {
+	BaseModel
+	RequestURI          string    `gorm:"uniqueIndex;not null" json:"request_uri"` // urn:ietf:params:oauth:request_uri:<value>
+	ApplicationID       uuid.UUID `gorm:"type:uuid;not null;index" json:"application_id"`
+	ResponseType        string    `gorm:"not null" json:"response_type"`
+	ClientID            string    `gorm:"not null" json:"client_id"`
+	RedirectURI         string    `gorm:"not null" json:"redirect_uri"`
+	Scope               string    `json:"scope,omitempty"`
+	State               string    `json:"state,omitempty"`
+	Nonce               string    `json:"nonce,omitempty"`
+	CodeChallenge       string    `json:"code_challenge,omitempty"`
+	CodeChallengeMethod string    `json:"code_challenge_method,omitempty"`
+	ExpiresAt           time.Time `gorm:"not null;index" json:"expires_at"` // PAR requests expire quickly (typically 90 seconds)
+	Used                bool      `gorm:"default:false;index" json:"used"`  // One-time use
 }

@@ -155,9 +155,10 @@ func main() {
 		oauthGroup.POST("/token", oauthHandler.TokenHandler)
 		oauthGroup.POST("/introspect", oauthHandler.IntrospectHandler)
 		oauthGroup.POST("/revoke", oauthHandler.RevokeHandler)
+		oauthGroup.POST("/par", oauthHandler.PARHandler) // RFC 9126 - Pushed Authorization Requests
 
 		// Protected endpoints
-		authMiddleware := auth.NewAuthMiddleware(tokenManager)
+		authMiddleware := auth.NewAuthMiddleware(tokenManager, db)
 		oauthGroup.GET("/userinfo", authMiddleware.RequireAuth(), oauthHandler.UserInfoHandler)
 		oauthGroup.POST("/userinfo", authMiddleware.RequireAuth(), oauthHandler.UserInfoHandler)
 	}
@@ -168,7 +169,7 @@ func main() {
 
 	// Admin API endpoints
 	adminHandler := handlers.NewAdminHandler(db, tokenManager)
-	authMiddleware := auth.NewAuthMiddleware(tokenManager)
+	authMiddleware := auth.NewAuthMiddleware(tokenManager, db)
 
 	apiGroup := router.Group("/api/v1")
 	apiGroup.Use(authMiddleware.RequireAuth())

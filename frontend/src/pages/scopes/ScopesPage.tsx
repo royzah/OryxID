@@ -88,7 +88,7 @@ export const ScopesPage = () => {
               </CardContent>
             </Card>
           ))
-        ) : data?.items.length === 0 ? (
+        ) : (data?.items || []).length === 0 ? (
           <div className="col-span-full py-12 text-center">
             <Key className="mx-auto h-12 w-12 text-gray-400" />
             <h3 className="mt-2 text-sm font-semibold text-gray-900">
@@ -105,7 +105,7 @@ export const ScopesPage = () => {
             </div>
           </div>
         ) : (
-          data?.items.map((scope) => (
+          (data?.items || []).map((scope) => (
             <Card
               key={scope.id}
               className="group transition-shadow hover:shadow-md"

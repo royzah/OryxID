@@ -207,7 +207,7 @@ export const SettingsPage = () => {
                   <h3 className="text-lg font-semibold">{user?.name}</h3>
                   <p className="text-sm text-gray-500">@{user?.username}</p>
                   <div className="mt-2 flex gap-2">
-                    {user?.roles.map((role) => (
+                    {(user?.roles || []).map((role) => (
                       <Badge key={role} variant="secondary">
                         {role}
                       </Badge>

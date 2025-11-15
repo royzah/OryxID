@@ -46,11 +46,12 @@ up: ## Start all services (frontend + backend + database)
 	@echo ""
 	@echo "${GREEN}✅ OryxID is running!${RESET}"
 	@echo ""
-	@echo "  ${CYAN}Admin Panel:${RESET} http://localhost:3000"
-	@echo "  ${CYAN}API Server:${RESET}  http://localhost:9000"
-	@echo "  ${CYAN}Nginx Proxy:${RESET} http://localhost:8080"
+	@echo "  ${CYAN}🌐 Application:${RESET} http://localhost:8080"
+	@echo "  ${CYAN}📡 API Direct:${RESET}  http://localhost:9000 (for testing)"
+	@echo "  ${CYAN}⚛️  Frontend Direct:${RESET} http://localhost:3000 (dev only)"
 	@echo ""
-	@echo "  ${YELLOW}Login:${RESET} Check ADMIN_USERNAME and ADMIN_PASSWORD in .env"
+	@echo "  ${YELLOW}👤 Login:${RESET} Check ADMIN_USERNAME and ADMIN_PASSWORD in .env"
+	@echo "  ${YELLOW}💡 Tip:${RESET} Access via http://localhost:8080 (Nginx proxy)"
 	@echo ""
 
 .PHONY: down

@@ -37,16 +37,17 @@ RUN npx vite build || npm run build
 # Production Stage
 FROM nginx:alpine AS production
 
-# Copy built files
-COPY --from=build /app/dist /usr/share/nginx/html
+# Install Node.js for serving via http-server (lighter than custom nginx config)
+RUN apk add --no-cache nodejs npm && npm install -g http-server
 
-# Copy nginx configuration
-COPY nginx.conf /etc/nginx/conf.d/default.conf
+# Copy built files
+COPY --from=build /app/dist /app/dist
 
 # Add health check
 HEALTHCHECK --interval=30s --timeout=3s --start-period=5s --retries=3 \
-    CMD wget --no-verbose --tries=1 --spider http://localhost/health || exit 1
+    CMD wget --no-verbose --tries=1 --spider http://localhost:3000/health || exit 1
 
-EXPOSE 80
+EXPOSE 3000
 
-CMD ["nginx", "-g", "daemon off;"]
+WORKDIR /app/dist
+CMD ["http-server", "-p", "3000", "-c-1", "--cors"]

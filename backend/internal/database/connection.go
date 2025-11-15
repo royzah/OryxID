@@ -71,6 +71,8 @@ func Migrate(db *gorm.DB) error {
 		&Token{},
 		&Session{},
 		&AuditLog{},
+		&SigningKey{},
+		&PushedAuthorizationRequest{},
 	}
 
 	for _, model := range models {

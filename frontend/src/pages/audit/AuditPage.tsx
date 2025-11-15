@@ -232,7 +232,7 @@ export const AuditPage = () => {
               </CardContent>
             </Card>
           ))
-        ) : data?.items.length === 0 ? (
+        ) : (data?.items || []).length === 0 ? (
           <Card>
             <CardContent className="py-12 text-center">
               <p className="text-gray-500">
@@ -245,7 +245,7 @@ export const AuditPage = () => {
             {/* Timeline line */}
             <div className="absolute top-0 bottom-0 left-6 w-0.5 bg-gray-200" />
 
-            {data?.items.map((log) => (
+            {(data?.items || []).map((log) => (
               <div key={log.id} className="relative flex gap-4 pb-8 last:pb-0">
                 {/* Timeline dot */}
                 <div className="relative z-10 flex h-12 w-12 items-center justify-center rounded-full border-2 border-gray-200 bg-white">

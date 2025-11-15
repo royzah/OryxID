@@ -21,15 +21,16 @@ type TokenManager struct {
 
 type CustomClaims struct {
 	jwt.RegisteredClaims
-	Scope    string                 `json:"scope,omitempty"`
-	ClientID string                 `json:"client_id,omitempty"`
-	Username string                 `json:"username,omitempty"`
-	Email    string                 `json:"email,omitempty"`
-	Roles    []string               `json:"roles,omitempty"`
-	Type     string                 `json:"typ,omitempty"`
-	Nonce    string                 `json:"nonce,omitempty"`
-	AuthTime int64                  `json:"auth_time,omitempty"`
-	Extra    map[string]interface{} `json:"ext,omitempty"`
+	Scope         string                 `json:"scope,omitempty"`
+	ClientID      string                 `json:"client_id,omitempty"`
+	Username      string                 `json:"username,omitempty"`
+	Email         string                 `json:"email,omitempty"`
+	EmailVerified bool                   `json:"email_verified,omitempty"`
+	Roles         []string               `json:"roles,omitempty"`
+	Type          string                 `json:"typ,omitempty"`
+	Nonce         string                 `json:"nonce,omitempty"`
+	AuthTime      int64                  `json:"auth_time,omitempty"`
+	Extra         map[string]interface{} `json:"ext,omitempty"`
 }
 
 type TokenResponse struct {
@@ -155,11 +156,12 @@ func (tm *TokenManager) GenerateIDToken(app *database.Application, user *databas
 			IssuedAt:  jwt.NewNumericDate(now),
 			NotBefore: jwt.NewNumericDate(now),
 		},
-		Username: user.Username,
-		Email:    user.Email,
-		Nonce:    nonce,
-		AuthTime: authTime.Unix(),
-		Type:     "ID",
+		Username:      user.Username,
+		Email:         user.Email,
+		EmailVerified: user.EmailVerified,
+		Nonce:         nonce,
+		AuthTime:      authTime.Unix(),
+		Type:          "ID",
 	}
 
 	// Add roles
@@ -208,6 +210,12 @@ func (tm *TokenManager) IntrospectToken(tokenString string) (*IntrospectionRespo
 		return &IntrospectionResponse{Active: false}, nil
 	}
 
+	// Extract audience (if present)
+	aud := ""
+	if len(claims.Audience) > 0 {
+		aud = claims.Audience[0]
+	}
+
 	return &IntrospectionResponse{
 		Active:    true,
 		Scope:     claims.Scope,
@@ -218,7 +226,7 @@ func (tm *TokenManager) IntrospectToken(tokenString string) (*IntrospectionRespo
 		Iat:       claims.IssuedAt.Unix(),
 		Nbf:       claims.NotBefore.Unix(),
 		Sub:       claims.Subject,
-		Aud:       claims.Audience[0],
+		Aud:       aud,
 		Iss:       claims.Issuer,
 		Jti:       claims.ID,
 	}, nil

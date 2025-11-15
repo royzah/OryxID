@@ -112,7 +112,7 @@ export const ApplicationsPage = () => {
                   </TableCell>
                 </TableRow>
               ))
-            ) : data?.items.length === 0 ? (
+            ) : (data?.items || []).length === 0 ? (
               <TableRow>
                 <TableCell
                   colSpan={5}
@@ -122,7 +122,7 @@ export const ApplicationsPage = () => {
                 </TableCell>
               </TableRow>
             ) : (
-              data?.items.map((app) => (
+              (data?.items || []).map((app) => (
                 <TableRow key={app.id} className="hover:bg-gray-50">
                   <TableCell className="font-medium">
                     <div className="flex items-center gap-2">
