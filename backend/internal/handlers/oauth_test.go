@@ -7,6 +7,7 @@ import (
 	"net/url"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/gin-gonic/gin"
 	"github.com/golang-jwt/jwt/v5"
@@ -383,6 +384,7 @@ func TestPKCEValidation(t *testing.T) {
 		Scope:               "openid profile",
 		CodeChallenge:       codeChallenge,
 		CodeChallengeMethod: "S256",
+		ExpiresAt:           time.Now().Add(10 * time.Minute),
 		Used:                false,
 	}
 	require.NoError(t, db.Create(authCode).Error)
@@ -426,6 +428,7 @@ func TestPKCEValidation_WrongVerifier(t *testing.T) {
 		Scope:               "openid profile",
 		CodeChallenge:       codeChallenge,
 		CodeChallengeMethod: "S256",
+		ExpiresAt:           time.Now().Add(10 * time.Minute),
 		Used:                false,
 	}
 	require.NoError(t, db.Create(authCode).Error)

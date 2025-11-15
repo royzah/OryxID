@@ -619,5 +619,10 @@ func getBaseURL(c *gin.Context) string {
 		host = forwardedHost
 	}
 
+	// Default to localhost for testing when host is empty
+	if host == "" {
+		host = "localhost"
+	}
+
 	return scheme + "://" + host
 }

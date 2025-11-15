@@ -189,10 +189,13 @@ func TestLogin_InactiveUser(t *testing.T) {
 		Email:         "inactive@example.com",
 		EmailVerified: true,
 		Password:      string(hashedPassword),
-		IsActive:      false, // Inactive
+		IsActive:      true, // Create as active first
 		IsAdmin:       false,
 	}
 	require.NoError(t, db.Create(inactiveUser).Error)
+
+	// Then explicitly update to inactive
+	require.NoError(t, db.Model(inactiveUser).Update("is_active", false).Error)
 
 	loginReq := LoginRequest{
 		Username: "inactive",
