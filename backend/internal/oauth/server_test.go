@@ -4,11 +4,13 @@ import (
 	"testing"
 	"time"
 
+	"github.com/golang-jwt/jwt/v5"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"github.com/tiiuae/oryxid/internal/config"
 	"github.com/tiiuae/oryxid/internal/database"
 	"github.com/tiiuae/oryxid/internal/tokens"
+	"github.com/tiiuae/oryxid/pkg/crypto"
 	"golang.org/x/crypto/bcrypt"
 	"gorm.io/driver/sqlite"
 	"gorm.io/gorm"
@@ -39,12 +41,20 @@ func setupTestDB(t *testing.T) *gorm.DB {
 }
 
 func createTestTokenManager(t *testing.T) *tokens.TokenManager {
-	// Load test JWT config
-	cfg, err := config.LoadJWTConfig("./testdata/test_private_key.pem", "./testdata/test_public_key.pem")
+	// Load test JWT private key
+	privateKey, err := crypto.LoadPrivateKey("./testdata/test_private_key.pem")
 	require.NoError(t, err)
 
+	// Create JWT config
+	jwtConfig := &config.JWTConfig{
+		PrivateKey:    privateKey,
+		PublicKey:     &privateKey.PublicKey,
+		Kid:           "test-key-id",
+		SigningMethod: jwt.SigningMethodRS256,
+	}
+
 	// Create token manager
-	tm, err := tokens.NewTokenManager(cfg, "http://localhost:8080")
+	tm, err := tokens.NewTokenManager(jwtConfig, "http://localhost:8080")
 	require.NoError(t, err)
 
 	return tm
@@ -321,7 +331,7 @@ func TestPARExpiration(t *testing.T) {
 		Used:                false,
 	}
 
-	err = db.Create(parRequest).Error
+	err := db.Create(parRequest).Error
 	require.NoError(t, err)
 
 	// Try to validate expired PAR
