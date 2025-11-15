@@ -59,10 +59,33 @@ func Migrate(db *gorm.DB) error {
 		return fmt.Errorf("failed to create uuid extension: %w", err)
 	}
 
-	// Migrate models individually to isolate which one fails
-	log.Println("Migrating SigningKey...")
-	if err := db.AutoMigrate(&SigningKey{}); err != nil {
-		return fmt.Errorf("failed to migrate SigningKey: %w", err)
+	// Manually create signing_keys table (GORM AutoMigrate has parsing issues)
+	log.Println("Creating signing_keys table...")
+	if err := db.Exec(`
+		CREATE TABLE IF NOT EXISTS signing_keys (
+			id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+			created_at TIMESTAMP WITH TIME ZONE,
+			updated_at TIMESTAMP WITH TIME ZONE,
+			deleted_at TIMESTAMP WITH TIME ZONE,
+			key_id TEXT UNIQUE NOT NULL,
+			algorithm TEXT NOT NULL,
+			private_key_pem TEXT NOT NULL,
+			public_key_pem TEXT NOT NULL,
+			is_active BOOLEAN DEFAULT TRUE,
+			activated_at TIMESTAMP WITH TIME ZONE NOT NULL,
+			expires_at TIMESTAMP WITH TIME ZONE,
+			revoked_at TIMESTAMP WITH TIME ZONE
+		)
+	`).Error; err != nil {
+		return fmt.Errorf("failed to create signing_keys table: %w", err)
+	}
+
+	// Create indexes for signing_keys
+	if err := db.Exec(`CREATE INDEX IF NOT EXISTS idx_signing_keys_deleted_at ON signing_keys(deleted_at)`).Error; err != nil {
+		return fmt.Errorf("failed to create signing_keys deleted_at index: %w", err)
+	}
+	if err := db.Exec(`CREATE INDEX IF NOT EXISTS idx_signing_keys_is_active ON signing_keys(is_active)`).Error; err != nil {
+		return fmt.Errorf("failed to create signing_keys is_active index: %w", err)
 	}
 
 	log.Println("Migrating Permission...")
