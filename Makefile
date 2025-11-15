@@ -35,8 +35,9 @@ help: ## Show this help message
 .PHONY: up
 up: ## Start all services (frontend + backend + database)
 	@echo "${GREEN}Starting OryxID...${RESET}"
-	@docker-compose up -d
-	@if [ $? -ne 0 ]; then \
+	@docker-compose up -d; \
+	exit_code=$$?; \
+	if [ $$exit_code -ne 0 ]; then \
 		echo ""; \
 		echo "${YELLOW}⚠️  Build failed. This might be due to npm dependency issues.${RESET}"; \
 		echo "${YELLOW}   Try running: ${CYAN}make fix-deps${YELLOW} then ${CYAN}make up${RESET}"; \

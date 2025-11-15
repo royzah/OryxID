@@ -79,7 +79,7 @@ type Application struct {
 	RefreshTokenLifespan     int         `json:"refresh_token_lifespan"` // seconds, 0 means use default
 	Owner                    *User       `gorm:"foreignKey:OwnerID" json:"owner,omitempty"`
 	OwnerID                  *uuid.UUID  `json:"owner_id,omitempty"`
-	Metadata                 JSONB       `gorm:"type:jsonb" json:"metadata,omitempty"`
+	Metadata                 JSONB       `json:"metadata,omitempty"`
 }
 
 // Scope represents OAuth2 scopes
@@ -161,7 +161,7 @@ type AuditLog struct {
 	IPAddress     string       `json:"ip_address"`
 	UserAgent     string       `json:"user_agent"`
 	StatusCode    int          `json:"status_code"`
-	Metadata      JSONB        `gorm:"type:jsonb" json:"metadata,omitempty"`
+	Metadata      JSONB        `json:"metadata,omitempty"`
 }
 
 // StringArray is a custom type for PostgreSQL text[] support
