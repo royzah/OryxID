@@ -102,14 +102,13 @@ func (h *KeyManagementHandler) RotateKey(c *gin.Context) {
 
 	// Create signing key record
 	signingKey := &database.SigningKey{
-		Kid:           kid,
+		KeyID:         kid,
 		Algorithm:     req.Algorithm,
-		KeyType:       "RSA",
-		Use:           "sig",
-		PrivateKey:    string(privateKeyPEM),
-		PublicKey:     string(publicKeyPEM),
-		Active:        true,
-		ExpiresAt:     expiresAt,
+		PrivateKeyPEM: string(privateKeyPEM),
+		PublicKeyPEM:  string(publicKeyPEM),
+		IsActive:      true,
+		ActivatedAt:   time.Now(),
+		ExpiresAt:     &expiresAt,
 	}
 
 	// Start transaction
@@ -122,7 +121,7 @@ func (h *KeyManagementHandler) RotateKey(c *gin.Context) {
 
 	// Optional: Mark old keys as inactive (gradual rollover)
 	// Uncomment the following to immediately deactivate old keys
-	// if err := tx.Model(&database.SigningKey{}).Where("active = ?", true).Update("active", false).Error; err != nil {
+	// if err := tx.Model(&database.SigningKey{}).Where("is_active = ?", true).Update("is_active", false).Error; err != nil {
 	// 	tx.Rollback()
 	// 	c.JSON(http.StatusInternalServerError, gin.H{
 	// 		"error": "server_error",
@@ -156,13 +155,14 @@ func (h *KeyManagementHandler) RotateKey(c *gin.Context) {
 		Message: "Key rotated successfully. New key is now active for signing. Old keys remain valid for verification.",
 		Key: KeyResponse{
 			ID:        signingKey.ID.String(),
-			Kid:       signingKey.Kid,
+			Kid:       signingKey.KeyID,
 			Algorithm: signingKey.Algorithm,
-			KeyType:   signingKey.KeyType,
-			Use:       signingKey.Use,
-			Active:    signingKey.Active,
+			KeyType:   "RSA",
+			Use:       "sig",
+			Active:    signingKey.IsActive,
 			CreatedAt: signingKey.CreatedAt,
-			ExpiresAt: signingKey.ExpiresAt,
+			ExpiresAt: *signingKey.ExpiresAt,
+			RevokedAt: signingKey.RevokedAt,
 		},
 	})
 }
@@ -176,7 +176,7 @@ func (h *KeyManagementHandler) ListKeys(c *gin.Context) {
 
 	// Optional filters
 	if activeOnly := c.Query("active_only"); activeOnly == "true" {
-		query = query.Where("active = ? AND revoked_at IS NULL", true)
+		query = query.Where("is_active = ? AND revoked_at IS NULL", true)
 	}
 
 	if err := query.Find(&keys).Error; err != nil {
@@ -188,15 +188,19 @@ func (h *KeyManagementHandler) ListKeys(c *gin.Context) {
 
 	response := make([]KeyResponse, len(keys))
 	for i, key := range keys {
+		var expiresAt time.Time
+		if key.ExpiresAt != nil {
+			expiresAt = *key.ExpiresAt
+		}
 		response[i] = KeyResponse{
 			ID:        key.ID.String(),
-			Kid:       key.Kid,
+			Kid:       key.KeyID,
 			Algorithm: key.Algorithm,
-			KeyType:   key.KeyType,
-			Use:       key.Use,
-			Active:    key.Active,
+			KeyType:   "RSA",
+			Use:       "sig",
+			Active:    key.IsActive,
 			CreatedAt: key.CreatedAt,
-			ExpiresAt: key.ExpiresAt,
+			ExpiresAt: expiresAt,
 			RevokedAt: key.RevokedAt,
 		}
 	}
@@ -212,7 +216,7 @@ func (h *KeyManagementHandler) GetKey(c *gin.Context) {
 	kid := c.Param("kid")
 
 	var key database.SigningKey
-	if err := h.db.Where("kid = ?", kid).First(&key).Error; err != nil {
+	if err := h.db.Where("key_id = ?", kid).First(&key).Error; err != nil {
 		if err == gorm.ErrRecordNotFound {
 			c.JSON(http.StatusNotFound, gin.H{
 				"error": "key_not_found",
@@ -225,15 +229,20 @@ func (h *KeyManagementHandler) GetKey(c *gin.Context) {
 		return
 	}
 
+	var expiresAt time.Time
+	if key.ExpiresAt != nil {
+		expiresAt = *key.ExpiresAt
+	}
+
 	c.JSON(http.StatusOK, KeyResponse{
 		ID:        key.ID.String(),
-		Kid:       key.Kid,
+		Kid:       key.KeyID,
 		Algorithm: key.Algorithm,
-		KeyType:   key.KeyType,
-		Use:       key.Use,
-		Active:    key.Active,
+		KeyType:   "RSA",
+		Use:       "sig",
+		Active:    key.IsActive,
 		CreatedAt: key.CreatedAt,
-		ExpiresAt: key.ExpiresAt,
+		ExpiresAt: expiresAt,
 		RevokedAt: key.RevokedAt,
 	})
 }
@@ -244,7 +253,7 @@ func (h *KeyManagementHandler) RevokeKey(c *gin.Context) {
 	kid := c.Param("kid")
 
 	var key database.SigningKey
-	if err := h.db.Where("kid = ?", kid).First(&key).Error; err != nil {
+	if err := h.db.Where("key_id = ?", kid).First(&key).Error; err != nil {
 		if err == gorm.ErrRecordNotFound {
 			c.JSON(http.StatusNotFound, gin.H{
 				"error": "key_not_found",
@@ -269,7 +278,7 @@ func (h *KeyManagementHandler) RevokeKey(c *gin.Context) {
 	// Revoke the key
 	now := time.Now()
 	if err := h.db.Model(&key).Updates(map[string]interface{}{
-		"active":     false,
+		"is_active":  false,
 		"revoked_at": now,
 	}).Error; err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{
@@ -295,7 +304,7 @@ func (h *KeyManagementHandler) DeactivateKey(c *gin.Context) {
 	kid := c.Param("kid")
 
 	var key database.SigningKey
-	if err := h.db.Where("kid = ?", kid).First(&key).Error; err != nil {
+	if err := h.db.Where("key_id = ?", kid).First(&key).Error; err != nil {
 		if err == gorm.ErrRecordNotFound {
 			c.JSON(http.StatusNotFound, gin.H{
 				"error": "key_not_found",
@@ -309,7 +318,7 @@ func (h *KeyManagementHandler) DeactivateKey(c *gin.Context) {
 	}
 
 	// Deactivate the key (but don't revoke)
-	if err := h.db.Model(&key).Update("active", false).Error; err != nil {
+	if err := h.db.Model(&key).Update("is_active", false).Error; err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{
 			"error":             "server_error",
 			"error_description": "Failed to deactivate key",
@@ -332,7 +341,7 @@ func (h *KeyManagementHandler) ActivateKey(c *gin.Context) {
 	kid := c.Param("kid")
 
 	var key database.SigningKey
-	if err := h.db.Where("kid = ?", kid).First(&key).Error; err != nil {
+	if err := h.db.Where("key_id = ?", kid).First(&key).Error; err != nil {
 		if err == gorm.ErrRecordNotFound {
 			c.JSON(http.StatusNotFound, gin.H{
 				"error": "key_not_found",
@@ -355,7 +364,7 @@ func (h *KeyManagementHandler) ActivateKey(c *gin.Context) {
 	}
 
 	// Check if key is expired
-	if time.Now().After(key.ExpiresAt) {
+	if key.ExpiresAt != nil && time.Now().After(*key.ExpiresAt) {
 		c.JSON(http.StatusBadRequest, gin.H{
 			"error":             "key_expired",
 			"error_description": "Cannot activate an expired key",
@@ -364,7 +373,7 @@ func (h *KeyManagementHandler) ActivateKey(c *gin.Context) {
 	}
 
 	// Activate the key
-	if err := h.db.Model(&key).Update("active", true).Error; err != nil {
+	if err := h.db.Model(&key).Update("is_active", true).Error; err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{
 			"error":             "server_error",
 			"error_description": "Failed to activate key",
