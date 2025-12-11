@@ -130,11 +130,11 @@ A collection of potential improvements and feature ideas for the OryxID OAuth2/O
 - [x] Update ESLint to v9 (removes deprecation warnings)
 - [x] Replace console logging with structured logger (backend)
 - [ ] Increase test coverage to >80%
-- [ ] Remove unused dependencies
-- [ ] Optimize database queries with indexes
-- [ ] Add proper error boundaries in frontend
+- [x] Remove unused dependencies (removed 6 unused npm packages)
+- [x] Optimize database queries with indexes (added 10 new indexes)
+- [x] Add proper error boundaries in frontend (+error.svelte, ErrorBoundary component)
 - [x] Implement structured logging (JSON format)
-- [ ] Add request ID correlation across services
+- [x] Add request ID correlation across services (Logger, Recovery middleware)
 
 ## Notes
 
