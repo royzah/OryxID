@@ -128,6 +128,7 @@ A collection of potential improvements and feature ideas for the OryxID OAuth2/O
 - [x] Add ESLint configuration for frontend
 - [x] Fix npm vulnerabilities (cookie, esbuild via overrides)
 - [x] Update ESLint to v9 (removes deprecation warnings)
+- [x] Replace console logging with structured logger (backend)
 - [ ] Increase test coverage to >80%
 - [ ] Remove unused dependencies
 - [ ] Optimize database queries with indexes
