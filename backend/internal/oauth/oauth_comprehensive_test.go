@@ -1,6 +1,8 @@
 package oauth
 
 import (
+	"crypto/sha256"
+	"encoding/base64"
 	"encoding/json"
 	"testing"
 	"time"
@@ -1089,4 +1091,549 @@ func TestPKCERequired(t *testing.T) {
 	_, err := server.ValidateAuthorizationRequest(req)
 	assert.Error(t, err)
 	assert.Contains(t, err.Error(), "PKCE")
+}
+
+// =============================================================================
+// Critical Edge Cases and Security Tests
+// =============================================================================
+
+func TestDeviceCode_InvalidUserCode(t *testing.T) {
+	db := setupTestDB(t)
+	tm := createTestTokenManager(t)
+	server := NewServer(db, tm)
+
+	// Setup
+	hashedSecret, _ := bcrypt.GenerateFromPassword([]byte("test-secret"), bcrypt.DefaultCost)
+	app := &database.Application{
+		Name:               "Device App",
+		ClientID:           "device-client",
+		HashedClientSecret: string(hashedSecret),
+		ClientType:         "public",
+		GrantTypes:         database.StringArray{"urn:ietf:params:oauth:grant-type:device_code"},
+		RedirectURIs:       database.StringArray{"https://example.com/callback"},
+	}
+	db.Create(app)
+
+	scope := &database.Scope{Name: "openid", IsDefault: true}
+	db.Create(scope)
+	db.Model(app).Association("Scopes").Append(scope)
+
+	user := createTestUser(t, db)
+
+	// Try to authorize with invalid user code
+	err := server.AuthorizeDeviceCode("INVALID-CODE", user)
+	assert.Error(t, err)
+	assert.Contains(t, err.Error(), "invalid")
+}
+
+func TestDeviceCode_AlreadyAuthorized(t *testing.T) {
+	db := setupTestDB(t)
+	tm := createTestTokenManager(t)
+	server := NewServer(db, tm)
+
+	// Setup
+	hashedSecret, _ := bcrypt.GenerateFromPassword([]byte("test-secret"), bcrypt.DefaultCost)
+	app := &database.Application{
+		Name:               "Device App",
+		ClientID:           "device-client",
+		HashedClientSecret: string(hashedSecret),
+		ClientType:         "public",
+		GrantTypes:         database.StringArray{"urn:ietf:params:oauth:grant-type:device_code"},
+		RedirectURIs:       database.StringArray{"https://example.com/callback"},
+	}
+	db.Create(app)
+
+	scope := &database.Scope{Name: "openid", IsDefault: true}
+	db.Create(scope)
+	db.Model(app).Association("Scopes").Append(scope)
+
+	user := createTestUser(t, db)
+
+	// Create device authorization
+	req := &DeviceAuthorizationRequest{
+		ClientID: app.ClientID,
+		Scope:    "openid",
+	}
+	devResp, err := server.CreateDeviceAuthorization(req, "https://example.com/device", "192.168.1.1")
+	require.NoError(t, err)
+
+	// Authorize once
+	err = server.AuthorizeDeviceCode(devResp.UserCode, user)
+	require.NoError(t, err)
+
+	// Try to authorize again - should fail
+	err = server.AuthorizeDeviceCode(devResp.UserCode, user)
+	assert.Error(t, err)
+}
+
+func TestDeviceCode_PollingTooFast(t *testing.T) {
+	db := setupTestDB(t)
+	tm := createTestTokenManager(t)
+	server := NewServer(db, tm)
+
+	// Setup
+	hashedSecret, _ := bcrypt.GenerateFromPassword([]byte("test-secret"), bcrypt.DefaultCost)
+	app := &database.Application{
+		Name:               "Device App",
+		ClientID:           "device-client",
+		HashedClientSecret: string(hashedSecret),
+		ClientType:         "public",
+		GrantTypes:         database.StringArray{"urn:ietf:params:oauth:grant-type:device_code"},
+		RedirectURIs:       database.StringArray{"https://example.com/callback"},
+	}
+	db.Create(app)
+
+	scope := &database.Scope{Name: "openid", IsDefault: true}
+	db.Create(scope)
+	db.Model(app).Association("Scopes").Append(scope)
+
+	// Create device authorization
+	req := &DeviceAuthorizationRequest{
+		ClientID: app.ClientID,
+		Scope:    "openid",
+	}
+	devResp, err := server.CreateDeviceAuthorization(req, "https://example.com/device", "192.168.1.1")
+	require.NoError(t, err)
+
+	// Poll immediately
+	tokenReq := &TokenRequest{
+		GrantType:  "urn:ietf:params:oauth:grant-type:device_code",
+		ClientID:   app.ClientID,
+		DeviceCode: devResp.DeviceCode,
+	}
+
+	// First poll - should get authorization_pending
+	_, err = server.DeviceCodeGrant(tokenReq)
+	require.Error(t, err)
+	dcErr, ok := err.(*DeviceCodeError)
+	require.True(t, ok)
+	assert.Equal(t, "authorization_pending", dcErr.Code)
+
+	// Poll again immediately - should get slow_down
+	_, err = server.DeviceCodeGrant(tokenReq)
+	require.Error(t, err)
+	dcErr, ok = err.(*DeviceCodeError)
+	require.True(t, ok)
+	assert.Equal(t, "slow_down", dcErr.Code)
+}
+
+func TestTokenExchange_InvalidSubjectToken(t *testing.T) {
+	db := setupTestDB(t)
+	tm := createTestTokenManager(t)
+	server := NewServer(db, tm)
+
+	// Setup
+	hashedSecret, _ := bcrypt.GenerateFromPassword([]byte("test-secret"), bcrypt.DefaultCost)
+	app := &database.Application{
+		Name:               "Test App",
+		ClientID:           "test-client",
+		HashedClientSecret: string(hashedSecret),
+		ClientType:         "confidential",
+		GrantTypes:         database.StringArray{"urn:ietf:params:oauth:grant-type:token-exchange"},
+		RedirectURIs:       database.StringArray{"https://example.com/callback"},
+	}
+	db.Create(app)
+
+	scope := &database.Scope{Name: "openid", IsDefault: true}
+	db.Create(scope)
+	db.Model(app).Association("Scopes").Append(scope)
+
+	// Try token exchange with invalid subject token
+	req := &TokenRequest{
+		GrantType:        "urn:ietf:params:oauth:grant-type:token-exchange",
+		ClientID:         app.ClientID,
+		ClientSecret:     "test-secret",
+		SubjectToken:     "invalid.jwt.token",
+		SubjectTokenType: "urn:ietf:params:oauth:token-type:access_token",
+	}
+
+	_, err := server.TokenExchangeGrant(req)
+	assert.Error(t, err)
+}
+
+func TestTokenExchange_MissingSubjectToken(t *testing.T) {
+	db := setupTestDB(t)
+	tm := createTestTokenManager(t)
+	server := NewServer(db, tm)
+
+	// Setup
+	hashedSecret, _ := bcrypt.GenerateFromPassword([]byte("test-secret"), bcrypt.DefaultCost)
+	app := &database.Application{
+		Name:               "Test App",
+		ClientID:           "test-client",
+		HashedClientSecret: string(hashedSecret),
+		ClientType:         "confidential",
+		GrantTypes:         database.StringArray{"urn:ietf:params:oauth:grant-type:token-exchange"},
+		RedirectURIs:       database.StringArray{"https://example.com/callback"},
+	}
+	db.Create(app)
+
+	// Try token exchange without subject token
+	req := &TokenRequest{
+		GrantType:        "urn:ietf:params:oauth:grant-type:token-exchange",
+		ClientID:         app.ClientID,
+		ClientSecret:     "test-secret",
+		SubjectTokenType: "urn:ietf:params:oauth:token-type:access_token",
+		// Missing SubjectToken
+	}
+
+	_, err := server.TokenExchangeGrant(req)
+	assert.Error(t, err)
+	assert.Contains(t, err.Error(), "subject_token")
+}
+
+func TestCIBA_ExpiredRequest(t *testing.T) {
+	// This test verifies that expired CIBA requests are rejected
+	// The actual expiration check happens in CIBAGrant when the request is polled
+	db := setupTestDB(t)
+	tm := createTestTokenManager(t)
+	server := NewServer(db, tm)
+
+	// Setup app with CIBA grant
+	hashedSecret, _ := bcrypt.GenerateFromPassword([]byte("test-secret"), bcrypt.DefaultCost)
+	app := &database.Application{
+		Name:               "CIBA App",
+		ClientID:           "ciba-client",
+		HashedClientSecret: string(hashedSecret),
+		ClientType:         "confidential",
+		GrantTypes:         database.StringArray{"urn:ietf:params:oauth:grant-type:ciba"},
+		RedirectURIs:       database.StringArray{"https://example.com/callback"},
+	}
+	db.Create(app)
+
+	scope := &database.Scope{Name: "openid", IsDefault: true}
+	db.Create(scope)
+	db.Model(app).Association("Scopes").Append(scope)
+
+	user := createTestUser(t, db)
+
+	// Create CIBA request directly in database with expired time
+	cibaRequest := &database.CIBAAuthenticationRequest{
+		AuthReqID:     "test-expired-req",
+		ApplicationID: app.ID,
+		UserID:        &user.ID,
+		Scope:         "openid",
+		Status:        "pending",
+		ExpiresAt:     time.Now().Add(-1 * time.Hour), // Already expired
+		Interval:      5,
+	}
+	db.Create(cibaRequest)
+
+	// Try to poll - should fail because expired
+	tokenReq := &TokenRequest{
+		GrantType:    "urn:ietf:params:oauth:grant-type:ciba",
+		ClientID:     app.ClientID,
+		ClientSecret: "test-secret",
+		AuthReqID:    "test-expired-req",
+	}
+	_, err := server.CIBAGrant(tokenReq)
+	assert.Error(t, err)
+	assert.Contains(t, err.Error(), "expired")
+}
+
+func TestCIBA_InvalidAuthReqID(t *testing.T) {
+	db := setupTestDB(t)
+	tm := createTestTokenManager(t)
+	server := NewServer(db, tm)
+
+	// Setup
+	hashedSecret, _ := bcrypt.GenerateFromPassword([]byte("test-secret"), bcrypt.DefaultCost)
+	app := &database.Application{
+		Name:               "CIBA App",
+		ClientID:           "ciba-client",
+		HashedClientSecret: string(hashedSecret),
+		ClientType:         "confidential",
+		GrantTypes:         database.StringArray{"urn:ietf:params:oauth:grant-type:ciba"},
+		RedirectURIs:       database.StringArray{"https://example.com/callback"},
+	}
+	db.Create(app)
+
+	// Try to poll with invalid auth_req_id
+	tokenReq := &TokenRequest{
+		GrantType: "urn:ietf:params:oauth:grant-type:ciba",
+		ClientID:  app.ClientID,
+		AuthReqID: "invalid-auth-req-id",
+	}
+	_, err := server.CIBAGrant(tokenReq)
+	assert.Error(t, err)
+}
+
+func TestAuthorizationCode_ExpiredCode(t *testing.T) {
+	db := setupTestDB(t)
+	tm := createTestTokenManager(t)
+	server := NewServer(db, tm)
+
+	// Setup
+	hashedSecret, _ := bcrypt.GenerateFromPassword([]byte("test-secret"), bcrypt.DefaultCost)
+	app := &database.Application{
+		Name:               "Test App",
+		ClientID:           "test-client",
+		HashedClientSecret: string(hashedSecret),
+		ClientType:         "confidential",
+		GrantTypes:         database.StringArray{"authorization_code"},
+		ResponseTypes:      database.StringArray{"code"},
+		RedirectURIs:       database.StringArray{"https://example.com/callback"},
+	}
+	db.Create(app)
+
+	scope := &database.Scope{Name: "openid", IsDefault: true}
+	db.Create(scope)
+	db.Model(app).Association("Scopes").Append(scope)
+
+	user := createTestUser(t, db)
+
+	// Create authorization code
+	codeVerifier := "dBjftJeZ4CVP-mB92K27uhbUJU1p1r_wW1gFWFOEjXk"
+	codeChallenge := generateTestCodeChallenge(codeVerifier)
+
+	authReq := &AuthorizeRequest{
+		ResponseType:        "code",
+		ClientID:            app.ClientID,
+		RedirectURI:         "https://example.com/callback",
+		Scope:               "openid",
+		CodeChallenge:       codeChallenge,
+		CodeChallengeMethod: "S256",
+	}
+
+	code, err := server.GenerateAuthorizationCode(app, user, authReq)
+	require.NoError(t, err)
+
+	// Manually expire the code by updating the database
+	db.Model(&database.AuthorizationCode{}).
+		Where("code = ?", code).
+		Update("expires_at", time.Now().Add(-1*time.Hour))
+
+	// Try to exchange - should fail
+	tokenReq := &TokenRequest{
+		GrantType:    "authorization_code",
+		ClientID:     app.ClientID,
+		ClientSecret: "test-secret",
+		Code:         code,
+		RedirectURI:  "https://example.com/callback",
+		CodeVerifier: codeVerifier,
+	}
+	_, err = server.ExchangeAuthorizationCode(tokenReq)
+	assert.Error(t, err)
+	assert.Contains(t, err.Error(), "expired")
+}
+
+func TestRefreshToken_RevokedToken(t *testing.T) {
+	// This test verifies that revoked refresh tokens cannot be used
+	// The refresh token rotation already tests this - see TestRefreshTokenRotation in server_test.go
+	db := setupTestDB(t)
+	tm := createTestTokenManager(t)
+	server := NewServer(db, tm)
+
+	// Setup user and app with password grant (which provides refresh tokens)
+	hashedSecret, _ := bcrypt.GenerateFromPassword([]byte("test-secret"), bcrypt.DefaultCost)
+	app := &database.Application{
+		Name:               "Test App",
+		ClientID:           "test-client",
+		HashedClientSecret: string(hashedSecret),
+		ClientType:         "confidential",
+		GrantTypes:         database.StringArray{"password", "refresh_token"},
+		RedirectURIs:       database.StringArray{"https://example.com/callback"},
+	}
+	db.Create(app)
+
+	scope := &database.Scope{Name: "openid", IsDefault: true}
+	offlineScope := &database.Scope{Name: "offline_access", IsDefault: false}
+	db.Create(scope)
+	db.Create(offlineScope)
+	db.Model(app).Association("Scopes").Append(scope, offlineScope)
+
+	user := createTestUser(t, db)
+
+	// Get initial tokens via password grant
+	tokenReq := &TokenRequest{
+		GrantType:    "password",
+		ClientID:     app.ClientID,
+		ClientSecret: "test-secret",
+		Username:     user.Username,
+		Password:     "password123",
+		Scope:        "openid offline_access",
+	}
+	tokenResp, err := server.PasswordGrant(tokenReq)
+	require.NoError(t, err)
+	require.NotEmpty(t, tokenResp.RefreshToken)
+
+	// Manually revoke the refresh token in database
+	db.Model(&database.Token{}).
+		Where("token_type = ? AND application_id = ?", "refresh", app.ID).
+		Update("revoked", true)
+
+	// Try to use revoked refresh token
+	refreshReq := &TokenRequest{
+		GrantType:    "refresh_token",
+		ClientID:     app.ClientID,
+		ClientSecret: "test-secret",
+		RefreshToken: tokenResp.RefreshToken,
+	}
+	_, err = server.RefreshTokenGrant(refreshReq)
+	assert.Error(t, err)
+}
+
+func TestRedirectURI_PathTraversal(t *testing.T) {
+	db := setupTestDB(t)
+	tm := createTestTokenManager(t)
+	server := NewServer(db, tm)
+
+	// Setup
+	app := &database.Application{
+		Name:          "Test App",
+		ClientID:      "test-client",
+		ClientType:    "public",
+		GrantTypes:    database.StringArray{"authorization_code"},
+		ResponseTypes: database.StringArray{"code"},
+		RedirectURIs:  database.StringArray{"https://example.com/callback"},
+	}
+	db.Create(app)
+
+	scope := &database.Scope{Name: "openid", IsDefault: true}
+	db.Create(scope)
+	db.Model(app).Association("Scopes").Append(scope)
+
+	codeChallenge := generateTestCodeChallenge("test-verifier-1234567890123456789012345678901234567890")
+
+	// Test path traversal attack
+	maliciousURIs := []string{
+		"https://example.com/callback/../evil",
+		"https://example.com/callback/..%2Fevil",
+		"https://evil.com/callback",
+		"https://example.com.evil.com/callback",
+		"javascript:alert(1)",
+		"data:text/html,<script>alert(1)</script>",
+	}
+
+	for _, uri := range maliciousURIs {
+		req := &AuthorizeRequest{
+			ResponseType:        "code",
+			ClientID:            app.ClientID,
+			RedirectURI:         uri,
+			Scope:               "openid",
+			CodeChallenge:       codeChallenge,
+			CodeChallengeMethod: "S256",
+		}
+
+		_, err := server.ValidateAuthorizationRequest(req)
+		assert.Error(t, err, "Should reject malicious URI: %s", uri)
+	}
+}
+
+func TestScope_InvalidScope(t *testing.T) {
+	// This test verifies that requesting invalid/unauthorized scopes is handled properly
+	// Note: The server validates scopes in ValidateAuthorizationRequest for auth code flow
+	db := setupTestDB(t)
+	tm := createTestTokenManager(t)
+	server := NewServer(db, tm)
+
+	// Setup
+	app := &database.Application{
+		Name:          "Test App",
+		ClientID:      "test-client",
+		ClientType:    "public",
+		GrantTypes:    database.StringArray{"authorization_code"},
+		ResponseTypes: database.StringArray{"code"},
+		RedirectURIs:  database.StringArray{"https://example.com/callback"},
+	}
+	db.Create(app)
+
+	// Only allow "openid" scope
+	scope := &database.Scope{Name: "openid", IsDefault: true}
+	db.Create(scope)
+	db.Model(app).Association("Scopes").Append(scope)
+
+	codeChallenge := generateTestCodeChallenge("test-verifier-1234567890123456789012345678901234567890")
+
+	// Try to request unauthorized scope in authorization request
+	req := &AuthorizeRequest{
+		ResponseType:        "code",
+		ClientID:            app.ClientID,
+		RedirectURI:         "https://example.com/callback",
+		Scope:               "admin superuser", // Unauthorized scopes
+		CodeChallenge:       codeChallenge,
+		CodeChallengeMethod: "S256",
+	}
+
+	_, err := server.ValidateAuthorizationRequest(req)
+	assert.Error(t, err)
+	assert.Contains(t, err.Error(), "scope")
+}
+
+func TestClientAuthentication_WrongClient(t *testing.T) {
+	db := setupTestDB(t)
+	tm := createTestTokenManager(t)
+	server := NewServer(db, tm)
+
+	// Setup two applications
+	hashedSecret1, _ := bcrypt.GenerateFromPassword([]byte("secret1"), bcrypt.DefaultCost)
+	hashedSecret2, _ := bcrypt.GenerateFromPassword([]byte("secret2"), bcrypt.DefaultCost)
+
+	app1 := &database.Application{
+		Name:               "App 1",
+		ClientID:           "client-1",
+		HashedClientSecret: string(hashedSecret1),
+		ClientType:         "confidential",
+		GrantTypes:         database.StringArray{"authorization_code"},
+		ResponseTypes:      database.StringArray{"code"},
+		RedirectURIs:       database.StringArray{"https://app1.com/callback"},
+	}
+	app2 := &database.Application{
+		Name:               "App 2",
+		ClientID:           "client-2",
+		HashedClientSecret: string(hashedSecret2),
+		ClientType:         "confidential",
+		GrantTypes:         database.StringArray{"authorization_code"},
+		ResponseTypes:      database.StringArray{"code"},
+		RedirectURIs:       database.StringArray{"https://app2.com/callback"},
+	}
+	db.Create(app1)
+	db.Create(app2)
+
+	scope := &database.Scope{Name: "openid", IsDefault: true}
+	db.Create(scope)
+	db.Model(app1).Association("Scopes").Append(scope)
+	db.Model(app2).Association("Scopes").Append(scope)
+
+	user := createTestUser(t, db)
+
+	// Generate code for app1
+	codeVerifier := "dBjftJeZ4CVP-mB92K27uhbUJU1p1r_wW1gFWFOEjXk"
+	codeChallenge := generateTestCodeChallenge(codeVerifier)
+
+	authReq := &AuthorizeRequest{
+		ResponseType:        "code",
+		ClientID:            app1.ClientID,
+		RedirectURI:         "https://app1.com/callback",
+		Scope:               "openid",
+		CodeChallenge:       codeChallenge,
+		CodeChallengeMethod: "S256",
+	}
+
+	code, err := server.GenerateAuthorizationCode(app1, user, authReq)
+	require.NoError(t, err)
+
+	// Try to exchange using app2's credentials - should fail
+	tokenReq := &TokenRequest{
+		GrantType:    "authorization_code",
+		ClientID:     app2.ClientID, // Wrong client!
+		ClientSecret: "secret2",
+		Code:         code,
+		RedirectURI:  "https://app1.com/callback",
+		CodeVerifier: codeVerifier,
+	}
+	_, err = server.ExchangeAuthorizationCode(tokenReq)
+	assert.Error(t, err)
+}
+
+// Helper function for generating test code challenge
+func generateTestCodeChallenge(verifier string) string {
+	h := sha256.Sum256([]byte(verifier))
+	return base64.RawURLEncoding.EncodeToString(h[:])
+}
+
+// Helper function for hashing codes (same as server implementation)
+func hashCode(code string) string {
+	h := sha256.Sum256([]byte(code))
+	return base64.RawURLEncoding.EncodeToString(h[:])
 }
