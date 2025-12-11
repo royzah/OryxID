@@ -64,23 +64,42 @@ func TestDeviceAuthorizationEndpoint(t *testing.T) {
 	}
 }
 
-func TestDeviceVerificationPage(t *testing.T) {
+func TestDeviceVerifyEndpoint(t *testing.T) {
 	if testing.Short() {
 		t.Skip("Skipping integration test in short mode")
 	}
 
 	client := &http.Client{Timeout: 10 * time.Second}
 
-	// GET the device verification page
-	resp, err := client.Get(baseURL + "/oauth/device")
+	// Test the device verify API endpoint with an invalid code
+	// This endpoint is used by the frontend to validate user codes
+	data := url.Values{}
+	data.Set("user_code", "INVALID-CODE")
+
+	req, err := http.NewRequest("POST", baseURL+"/oauth/device/verify", strings.NewReader(data.Encode()))
+	if err != nil {
+		t.Skipf("Cannot create request: %v", err)
+		return
+	}
+	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+
+	resp, err := client.Do(req)
 	if err != nil {
 		t.Skipf("Cannot connect to server: %v", err)
 		return
 	}
 	defer resp.Body.Close()
 
-	// Should return HTML page or JSON error if not configured
-	assert.True(t, resp.StatusCode == http.StatusOK || resp.StatusCode == http.StatusNotFound)
+	// Should return 400 Bad Request for invalid code, or 404 if endpoint not configured
+	assert.True(t, resp.StatusCode == http.StatusBadRequest || resp.StatusCode == http.StatusNotFound,
+		"Expected 400 or 404, got %d", resp.StatusCode)
+
+	if resp.StatusCode == http.StatusBadRequest {
+		var errResp map[string]string
+		json.NewDecoder(resp.Body).Decode(&errResp)
+		assert.NotEmpty(t, errResp["error"], "Expected error in response")
+		t.Logf("Device verify error response: %s", errResp["error"])
+	}
 }
 
 // =============================================================================
