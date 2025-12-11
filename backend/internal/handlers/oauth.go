@@ -3,7 +3,6 @@ package handlers
 import (
 	"crypto/sha256"
 	"encoding/base64"
-	"log"
 	"net/http"
 	"strings"
 	"time"
@@ -11,6 +10,7 @@ import (
 	"github.com/gin-gonic/gin"
 	"github.com/google/uuid"
 	"github.com/tiiuae/oryxid/internal/database"
+	"github.com/tiiuae/oryxid/internal/logger"
 	"github.com/tiiuae/oryxid/internal/oauth"
 	"golang.org/x/crypto/bcrypt"
 	"gorm.io/gorm"
@@ -599,7 +599,7 @@ func (h *OAuthHandler) logAudit(c *gin.Context, app *database.Application, actio
 	}
 
 	if err := h.db.Create(&audit).Error; err != nil {
-		log.Printf("failed to create audit log: %v", err)
+		logger.Error("failed to create audit log", "error", err, "action", action)
 	}
 }
 

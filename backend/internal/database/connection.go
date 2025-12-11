@@ -2,10 +2,10 @@ package database
 
 import (
 	"fmt"
-	"log"
 	"time"
 
 	"github.com/tiiuae/oryxid/internal/config"
+	applogger "github.com/tiiuae/oryxid/internal/logger"
 	"golang.org/x/crypto/bcrypt"
 	"gorm.io/driver/postgres"
 	"gorm.io/gorm"
@@ -48,7 +48,7 @@ func Connect(cfg *config.Config) (*gorm.DB, error) {
 		return nil, fmt.Errorf("failed to ping database: %w", err)
 	}
 
-	log.Println("Successfully connected to database")
+	applogger.Info("Successfully connected to database")
 	return db, nil
 }
 
@@ -59,7 +59,7 @@ func Migrate(db *gorm.DB) error {
 		return fmt.Errorf("failed to create uuid extension: %w", err)
 	}
 
-	log.Println("Creating all tables manually...")
+	applogger.Debug("Creating all tables manually...")
 
 	// Create permissions table
 	if err := db.Exec(`
@@ -435,7 +435,7 @@ func Migrate(db *gorm.DB) error {
 		return fmt.Errorf("failed to create pushed_authorization_requests index: %w", err)
 	}
 
-	log.Println("All tables created successfully")
+	applogger.Debug("All tables created successfully")
 	return nil
 }
 
@@ -474,7 +474,7 @@ func CreateIndexes(db *gorm.DB) error {
 
 	for _, idx := range indexes {
 		if err := db.Exec(idx).Error; err != nil {
-			log.Printf("Failed to create index: %s - %v", idx, err)
+			applogger.Warn("Failed to create index", "index", idx, "error", err)
 		}
 	}
 
@@ -495,7 +495,7 @@ func InitializeDefaultData(db *gorm.DB, cfg *config.Config) error {
 			if err := db.Create(&role).Error; err != nil {
 				return fmt.Errorf("failed to create role %s: %w", role.Name, err)
 			}
-			log.Printf("Created role: %s", role.Name)
+			applogger.Debug("Created role", "role", role.Name)
 		}
 	}
 
@@ -516,7 +516,7 @@ func InitializeDefaultData(db *gorm.DB, cfg *config.Config) error {
 			if err := db.Create(&perm).Error; err != nil {
 				return fmt.Errorf("failed to create permission %s: %w", perm.Name, err)
 			}
-			log.Printf("Created permission: %s", perm.Name)
+			applogger.Debug("Created permission", "permission", perm.Name)
 		}
 	}
 
@@ -528,9 +528,9 @@ func InitializeDefaultData(db *gorm.DB, cfg *config.Config) error {
 			return fmt.Errorf("failed to find permissions: %w", err)
 		}
 		if err := db.Model(&adminRole).Association("Permissions").Replace(allPerms); err != nil {
-			log.Printf("Failed to assign permissions to admin role: %v", err)
+			applogger.Warn("Failed to assign permissions to admin role", "error", err)
 		}
-		log.Println("Assigned all permissions to admin role")
+		applogger.Debug("Assigned all permissions to admin role")
 	}
 
 	// Create admin user only if configured
@@ -558,7 +558,7 @@ func InitializeDefaultData(db *gorm.DB, cfg *config.Config) error {
 			if err := db.Model(&adminUser).Association("Roles").Append(&adminRole); err != nil {
 				return fmt.Errorf("failed to assign admin role to user: %w", err)
 			}
-			log.Printf("Created admin user: %s", cfg.Admin.Username)
+			applogger.Info("Created admin user", "username", cfg.Admin.Username)
 		}
 	}
 
@@ -576,7 +576,7 @@ func InitializeDefaultData(db *gorm.DB, cfg *config.Config) error {
 			if err := db.Create(&scope).Error; err != nil {
 				return fmt.Errorf("failed to create scope %s: %w", scope.Name, err)
 			}
-			log.Printf("Created scope: %s", scope.Name)
+			applogger.Debug("Created scope", "scope", scope.Name)
 		}
 	}
 

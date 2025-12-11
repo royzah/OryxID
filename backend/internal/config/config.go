@@ -8,6 +8,7 @@ import (
 
 	"github.com/golang-jwt/jwt/v5"
 	"github.com/spf13/viper"
+	"github.com/tiiuae/oryxid/internal/logger"
 )
 
 type Config struct {
@@ -211,7 +212,7 @@ func bindEnvVars() {
 	for _, key := range envKeys {
 		if err := viper.BindEnv(key); err != nil {
 			// Log but don't fail - some keys might not be needed
-			fmt.Printf("Warning: failed to bind env var %s: %v\n", key, err)
+			logger.Warn("failed to bind env var", "key", key, "error", err)
 		}
 	}
 }
