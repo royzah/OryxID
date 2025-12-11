@@ -3,6 +3,8 @@ package handlers
 import (
 	"net/http"
 	"strconv"
+	"strings"
+	"time"
 
 	"github.com/gin-gonic/gin"
 	"github.com/google/uuid"
@@ -31,9 +33,10 @@ func (h *AdminHandler) ListApplications(c *gin.Context) {
 	var apps []database.Application
 	query := h.db.Preload("Scopes").Preload("Audiences")
 
-	// Optional filtering
+	// Optional filtering (using LOWER for cross-database compatibility)
 	if search := c.Query("search"); search != "" {
-		query = query.Where("name ILIKE ? OR client_id ILIKE ?", "%"+search+"%", "%"+search+"%")
+		searchLower := "%" + strings.ToLower(search) + "%"
+		query = query.Where("LOWER(name) LIKE ? OR LOWER(client_id) LIKE ?", searchLower, searchLower)
 	}
 
 	if err := query.Find(&apps).Error; err != nil {
@@ -599,9 +602,10 @@ func (h *AdminHandler) ListUsers(c *gin.Context) {
 	var users []database.User
 	query := h.db.Preload("Roles")
 
-	// Optional filtering
+	// Optional filtering (using LOWER for cross-database compatibility)
 	if search := c.Query("search"); search != "" {
-		query = query.Where("username ILIKE ? OR email ILIKE ?", "%"+search+"%", "%"+search+"%")
+		searchLower := "%" + strings.ToLower(search) + "%"
+		query = query.Where("LOWER(username) LIKE ? OR LOWER(email) LIKE ?", searchLower, searchLower)
 	}
 
 	if err := query.Find(&users).Error; err != nil {
@@ -868,7 +872,7 @@ func (h *AdminHandler) GetStatistics(c *gin.Context) {
 	h.db.Model(&database.User{}).Count(&stats.Users)
 	h.db.Model(&database.Scope{}).Count(&stats.Scopes)
 	h.db.Model(&database.Audience{}).Count(&stats.Audiences)
-	h.db.Model(&database.Token{}).Where("expires_at > NOW() AND revoked = false").Count(&stats.ActiveTokens)
+	h.db.Model(&database.Token{}).Where("expires_at > ? AND revoked = false", time.Now()).Count(&stats.ActiveTokens)
 
 	c.JSON(http.StatusOK, stats)
 }

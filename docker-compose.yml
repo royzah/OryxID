@@ -47,42 +47,29 @@ services:
     ports:
       - "${SERVER_PORT}:9000"
     environment:
-      # Server Configuration
       ORYXID_SERVER_HOST: 0.0.0.0
       ORYXID_SERVER_PORT: ${SERVER_PORT}
       ORYXID_SERVER_MODE: ${SERVER_MODE}
-
-      # Database Configuration
       ORYXID_DATABASE_HOST: postgres
       ORYXID_DATABASE_PORT: 5432
       ORYXID_DATABASE_USER: ${DB_USER}
       ORYXID_DATABASE_PASSWORD: ${DB_PASSWORD}
       ORYXID_DATABASE_NAME: ${DB_NAME}
       ORYXID_DATABASE_SSLMODE: ${DB_SSL_MODE}
-
-      # Redis Configuration
       ORYXID_REDIS_HOST: redis
       ORYXID_REDIS_PORT: 6379
       ORYXID_REDIS_PASSWORD: ${REDIS_PASSWORD}
-
-      # OAuth Configuration
       ORYXID_OAUTH_ISSUER: ${OAUTH_ISSUER}
       ORYXID_OAUTH_ACCESSTOKENLIFESPAN: ${OAUTH_ACCESS_TOKEN_LIFESPAN}
       ORYXID_OAUTH_REFRESHTOKENLIFESPAN: ${OAUTH_REFRESH_TOKEN_LIFESPAN}
       ORYXID_OAUTH_AUTHORIZATIONCODELIFESPAN: ${OAUTH_AUTHORIZATION_CODE_LIFESPAN}
       ORYXID_OAUTH_ALLOWEDORIGINS: "*"
-
-      # Admin Configuration
       ORYXID_ADMIN_USERNAME: ${ADMIN_USERNAME}
       ORYXID_ADMIN_EMAIL: ${ADMIN_EMAIL}
       ORYXID_ADMIN_PASSWORD: ${ADMIN_PASSWORD}
-
-      # JWT Configuration
       ORYXID_JWT_PRIVATEKEYPATH: /app/certs/private_key.pem
       ORYXID_JWT_PUBLICKEYPATH: /app/certs/public_key.pem
       ORYXID_JWT_KID: ${JWT_KID}
-
-      # Security Configuration
       ORYXID_SECURITY_BCRYPTCOST: ${SECURITY_BCRYPT_COST}
       ORYXID_SECURITY_RATELIMITENABLED: ${SECURITY_RATE_LIMIT_ENABLED}
       ORYXID_SECURITY_RATELIMITRPS: ${SECURITY_RATE_LIMIT_RPS}
@@ -110,31 +97,15 @@ services:
     depends_on:
       - backend
     environment:
-      VITE_API_URL: ${VITE_API_URL}
+      NODE_ENV: ${NODE_ENV:-production}
+      ORIGIN: ${ORIGIN:-http://localhost:3000}
+      PUBLIC_API_URL: ${PUBLIC_API_URL:-http://backend:9000}
     ports:
       - "${FRONTEND_PORT}:3000"
-    volumes:
-      # Mount source code for hot-reload in development mode
-      - ./frontend/src:/app/src:ro
-      - ./frontend/public:/app/public:ro
-      - ./frontend/index.html:/app/index.html:ro
-      - ./frontend/vite.config.ts:/app/vite.config.ts:ro
-      - ./frontend/tsconfig.json:/app/tsconfig.json:ro
-      - ./frontend/tsconfig.node.json:/app/tsconfig.node.json:ro
-      - ./frontend/tailwind.config.js:/app/tailwind.config.js:ro
-      - ./frontend/postcss.config.cjs:/app/postcss.config.cjs:ro
     networks:
       - oryxid-network
     healthcheck:
-      test:
-        [
-          "CMD",
-          "wget",
-          "--no-verbose",
-          "--tries=1",
-          "--spider",
-          "http://localhost:3000",
-        ]
+      test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://localhost:3000/health"]
       interval: 30s
       timeout: 10s
       retries: 3
@@ -157,15 +128,7 @@ services:
     networks:
       - oryxid-network
     healthcheck:
-      test:
-        [
-          "CMD",
-          "wget",
-          "--no-verbose",
-          "--tries=1",
-          "--spider",
-          "http://localhost/health",
-        ]
+      test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://localhost/health"]
       interval: 30s
       timeout: 10s
       retries: 3

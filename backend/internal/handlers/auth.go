@@ -1,13 +1,13 @@
 package handlers
 
 import (
-	"fmt"
 	"net/http"
 	"strings"
 	"time"
 
 	"github.com/gin-gonic/gin"
 	"github.com/tiiuae/oryxid/internal/database"
+	"github.com/tiiuae/oryxid/internal/logger"
 	"github.com/tiiuae/oryxid/internal/tokens"
 	"golang.org/x/crypto/bcrypt"
 	"gorm.io/gorm"
@@ -278,7 +278,7 @@ func (h *AuthHandler) logAudit(user *database.User, app *database.Application, a
 
 	if err := h.db.Create(&audit).Error; err != nil {
 		// Log the error, but don't block the request
-		fmt.Printf("Failed to log audit event: %v\n", err)
+		logger.Error("failed to log audit event", "error", err, "action", action)
 	}
 }
 

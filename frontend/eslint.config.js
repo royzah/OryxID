@@ -1,73 +1,100 @@
-import path from 'path';
-import { fileURLToPath } from 'url';
 import js from '@eslint/js';
+import ts from '@typescript-eslint/eslint-plugin';
+import tsParser from '@typescript-eslint/parser';
+import svelte from 'eslint-plugin-svelte';
+import svelteParser from 'svelte-eslint-parser';
+import prettier from 'eslint-config-prettier';
 import globals from 'globals';
-import parser from '@typescript-eslint/parser';
-import deprecation from 'eslint-plugin-deprecation';
-import tseslint from '@typescript-eslint/eslint-plugin';
-import { fixupPluginRules } from '@eslint/compat';
 
-const __filename = fileURLToPath(import.meta.url);
-const __dirname = path.dirname(__filename);
-
+/** @type {import('eslint').Linter.FlatConfig[]} */
 export default [
-  // 1. ESLint core recommended rules
-  js.configs.recommended,
-
-  // 2. Ignore build outputs & generated UI components
-  {
-    ignores: [
-      'dist/**',
-      'build/**',
-      'node_modules/**',
-      'src/components/ui/**',
-      '*.min.js',
-      '*.min.css',
-      'vite.config.ts',
-      'tailwind.config.js',
-      'postcss.config.cjs',
-      'src/vite-env.d.ts',
-    ],
-  },
-
-  // 3. TS/TSX override: set parser + globals
-  {
-    files: ['**/*.{ts,tsx}'],
-    languageOptions: {
-      parser,
-      parserOptions: {
-        project: ['./tsconfig.app.json', './tsconfig.node.json'],
-        tsconfigRootDir: __dirname,
-        ecmaVersion: 2020,
-        sourceType: 'module',
-        ecmaFeatures: { jsx: true },
-      },
-      globals: {
-        ...globals.browser,
-        ...globals.node,
-      },
-    },
-    // 4. Register plugins
-    plugins: {
-      '@typescript-eslint': tseslint,
-      deprecation: fixupPluginRules(deprecation),
-    },
-    // 5. Rules configuration
-    rules: {
-      // Disable base rule and use TypeScript-aware version
-      'no-unused-vars': 'off',
-      '@typescript-eslint/no-unused-vars': [
-        'error',
-        {
-          args: 'all',
-          argsIgnorePattern: '^_',
-          varsIgnorePattern: '^_',
-          caughtErrorsIgnorePattern: '^_',
-        },
-      ],
-
-      // Deprecation warnings
-      'deprecation/deprecation': 'warn',
-    },
-  },
+	js.configs.recommended,
+	prettier,
+	{
+		ignores: [
+			'.svelte-kit/**',
+			'build/**',
+			'node_modules/**',
+			'dist/**',
+			'.env',
+			'.env.*',
+			'vite.config.ts.timestamp-*'
+		]
+	},
+	{
+		files: ['**/*.ts', '**/*.tsx'],
+		languageOptions: {
+			parser: tsParser,
+			parserOptions: {
+				ecmaVersion: 2022,
+				sourceType: 'module',
+				project: './tsconfig.json'
+			},
+			globals: {
+				...globals.browser,
+				...globals.node
+			}
+		},
+		plugins: {
+			'@typescript-eslint': ts
+		},
+		rules: {
+			...ts.configs.recommended.rules,
+			'@typescript-eslint/no-unused-vars': [
+				'warn',
+				{ argsIgnorePattern: '^_', varsIgnorePattern: '^_' }
+			],
+			'@typescript-eslint/no-explicit-any': 'warn',
+			'@typescript-eslint/explicit-function-return-type': 'off',
+			'@typescript-eslint/explicit-module-boundary-types': 'off',
+			'no-console': ['warn', { allow: ['warn', 'error'] }]
+		}
+	},
+	{
+		files: ['**/*.svelte'],
+		languageOptions: {
+			parser: svelteParser,
+			parserOptions: {
+				parser: tsParser,
+				extraFileExtensions: ['.svelte']
+			},
+			globals: {
+				...globals.browser
+			}
+		},
+		plugins: {
+			svelte,
+			'@typescript-eslint': ts
+		},
+		rules: {
+			...svelte.configs.recommended.rules,
+			...ts.configs.recommended.rules,
+			'@typescript-eslint/no-unused-vars': [
+				'warn',
+				{ argsIgnorePattern: '^_', varsIgnorePattern: '^(_|\\$\\$Props|\\$\\$Events|\\$\\$Slots)' }
+			],
+			'@typescript-eslint/no-explicit-any': 'warn',
+			'no-console': ['warn', { allow: ['warn', 'error'] }],
+			'svelte/no-at-html-tags': 'warn',
+			'svelte/valid-compile': 'error'
+		}
+	},
+	{
+		files: ['**/*.test.ts', '**/*.spec.ts'],
+		languageOptions: {
+			globals: {
+				...globals.node,
+				describe: 'readonly',
+				it: 'readonly',
+				expect: 'readonly',
+				beforeEach: 'readonly',
+				afterEach: 'readonly',
+				vi: 'readonly'
+			}
+		},
+		rules: {
+			'@typescript-eslint/no-explicit-any': 'off',
+			'no-console': 'off'
+		}
+	}
 ];

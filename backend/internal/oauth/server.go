@@ -26,16 +26,17 @@ type Server struct {
 }
 
 type AuthorizeRequest struct {
-	ResponseType        string
-	ClientID            string
-	RedirectURI         string
-	Scope               string
-	State               string
-	Nonce               string
-	CodeChallenge       string
-	CodeChallengeMethod string
-	Audience            string
-	RequestURI          string // For PAR (RFC 9126)
+	ResponseType         string
+	ClientID             string
+	RedirectURI          string
+	Scope                string
+	State                string
+	Nonce                string
+	CodeChallenge        string
+	CodeChallengeMethod  string
+	Audience             string
+	RequestURI           string // For PAR (RFC 9126)
+	AuthorizationDetails string // For RAR (RFC 9396) - JSON array of authorization details
 }
 
 type TokenRequest struct {
@@ -50,6 +51,81 @@ type TokenRequest struct {
 	CodeVerifier string
 	Username     string
 	Password     string
+	DeviceCode   string // For device authorization grant (RFC 8628)
+	// Token Exchange (RFC 8693) parameters
+	SubjectToken       string // The token being exchanged
+	SubjectTokenType   string // urn:ietf:params:oauth:token-type:access_token, etc.
+	ActorToken         string // Optional actor token for delegation
+	ActorTokenType     string // Type of actor token
+	RequestedTokenType string // Type of token to return
+	Resource           string // Target resource/API
+	// CIBA parameters
+	AuthReqID string // For CIBA grant type
+}
+
+// DeviceAuthorizationRequest represents a device authorization request (RFC 8628)
+type DeviceAuthorizationRequest struct {
+	ClientID string
+	Scope    string
+	Audience string
+}
+
+// DeviceAuthorizationResponse represents the response from device authorization (RFC 8628)
+type DeviceAuthorizationResponse struct {
+	DeviceCode              string `json:"device_code"`
+	UserCode                string `json:"user_code"`
+	VerificationURI         string `json:"verification_uri"`
+	VerificationURIComplete string `json:"verification_uri_complete,omitempty"`
+	ExpiresIn               int    `json:"expires_in"`
+	Interval                int    `json:"interval"`
+}
+
+// Token type URNs for RFC 8693 Token Exchange
+const (
+	TokenTypeAccessToken  = "urn:ietf:params:oauth:token-type:access_token"
+	TokenTypeRefreshToken = "urn:ietf:params:oauth:token-type:refresh_token"
+	TokenTypeIDToken      = "urn:ietf:params:oauth:token-type:id_token"
+	TokenTypeJWT          = "urn:ietf:params:oauth:token-type:jwt"
+)
+
+// TokenExchangeResponse represents the response from token exchange (RFC 8693)
+type TokenExchangeResponse struct {
+	AccessToken     string `json:"access_token"`
+	IssuedTokenType string `json:"issued_token_type"`
+	TokenType       string `json:"token_type"`
+	ExpiresIn       int    `json:"expires_in,omitempty"`
+	Scope           string `json:"scope,omitempty"`
+	RefreshToken    string `json:"refresh_token,omitempty"`
+}
+
+// CIBAAuthenticationRequest represents a CIBA backchannel authentication request
+type CIBAAuthenticationRequest struct {
+	ClientID          string
+	Scope             string
+	ACRValues         string
+	LoginHint         string
+	LoginHintToken    string
+	IDTokenHint       string
+	BindingMessage    string
+	ClientNotifyToken string
+	RequestedExpiry   int
+}
+
+// CIBAAuthenticationResponse represents the response from CIBA authentication initiation
+type CIBAAuthenticationResponse struct {
+	AuthReqID string `json:"auth_req_id"`
+	ExpiresIn int    `json:"expires_in"`
+	Interval  int    `json:"interval,omitempty"`
+}
+
+// CIBAError represents an error during CIBA flow
+type CIBAError struct {
+	Code        string
+	Description string
+}
+
+func (e *CIBAError) Error() string {
+	return e.Description
 }
 
 func NewServer(db *gorm.DB, tm *tokens.TokenManager) *Server {
@@ -119,16 +195,17 @@ func (s *Server) GenerateAuthorizationCode(app *database.Application, user *data
 	}
 
 	authCode := &database.AuthorizationCode{
-		Code:                code,
-		ApplicationID:       app.ID,
-		RedirectURI:         req.RedirectURI,
-		Scope:               req.Scope,
-		Audience:            req.Audience,
-		State:               req.State,
-		Nonce:               req.Nonce,
-		CodeChallenge:       req.CodeChallenge,
-		CodeChallengeMethod: req.CodeChallengeMethod,
-		ExpiresAt:           time.Now().Add(10 * time.Minute),
+		Code:                 code,
+		ApplicationID:        app.ID,
+		RedirectURI:          req.RedirectURI,
+		Scope:                req.Scope,
+		Audience:             req.Audience,
+		AuthorizationDetails: req.AuthorizationDetails, // RAR (RFC 9396)
+		State:                req.State,
+		Nonce:                req.Nonce,
+		CodeChallenge:        req.CodeChallenge,
+		CodeChallengeMethod:  req.CodeChallengeMethod,
+		ExpiresAt:            time.Now().Add(10 * time.Minute),
 	}
 
 	if user != nil {
@@ -200,11 +277,12 @@ func (s *Server) ExchangeAuthorizationCode(req *TokenRequest) (*tokens.TokenResp
 	}
 
 	response := &tokens.TokenResponse{
-		AccessToken:  accessToken,
-		TokenType:    "Bearer",
-		ExpiresIn:    3600,
-		RefreshToken: refreshToken,
-		Scope:        authCode.Scope,
+		AccessToken:          accessToken,
+		TokenType:            "Bearer",
+		ExpiresIn:            3600,
+		RefreshToken:         refreshToken,
+		Scope:                authCode.Scope,
+		AuthorizationDetails: authCode.AuthorizationDetails, // RAR (RFC 9396)
 	}
 
 	// Generate ID token if openid scope is present
@@ -216,8 +294,8 @@ func (s *Server) ExchangeAuthorizationCode(req *TokenRequest) (*tokens.TokenResp
 		response.IDToken = idToken
 	}
 
-	// Store tokens in database
-	s.storeTokens(&app, authCode.User, accessToken, refreshToken)
+	// Store tokens in database with authorization_details
+	s.storeTokensWithAuthDetails(&app, authCode.User, accessToken, refreshToken, authCode.AuthorizationDetails)
 
 	return response, nil
 }
@@ -378,7 +456,7 @@ func (s *Server) RefreshTokenGrant(req *TokenRequest) (*tokens.TokenResponse, er
 		TokenType:    "Bearer",
 		ExpiresIn:    3600,
 		RefreshToken: newRefreshToken, // Return new refresh token (OAuth 2.1 best practice)
-		Scope:        requestedScope,   // Return actual scope (might be downscaled)
+		Scope:        requestedScope,  // Return actual scope (might be downscaled)
 	}
 
 	// Store new access token and new refresh token
@@ -512,14 +590,20 @@ func (s *Server) verifyClientSecret(app *database.Application, providedSecret st
 }
 
 func (s *Server) storeTokens(app *database.Application, user *database.User, accessToken, refreshToken string) {
+	s.storeTokensWithAuthDetails(app, user, accessToken, refreshToken, "")
+}
+
+// storeTokensWithAuthDetails stores tokens with optional authorization_details (RAR - RFC 9396)
+func (s *Server) storeTokensWithAuthDetails(app *database.Application, user *database.User, accessToken, refreshToken, authorizationDetails string) {
 	// Hash tokens before storing
 	if accessToken != "" {
 		h := sha256.Sum256([]byte(accessToken))
 		token := &database.Token{
-			TokenHash:     base64.URLEncoding.EncodeToString(h[:]),
-			TokenType:     "access",
-			ApplicationID: app.ID,
-			ExpiresAt:     time.Now().Add(time.Hour),
+			TokenHash:            base64.URLEncoding.EncodeToString(h[:]),
+			TokenType:            "access",
+			ApplicationID:        app.ID,
+			ExpiresAt:            time.Now().Add(time.Hour),
+			AuthorizationDetails: authorizationDetails,
 		}
 		if user != nil {
 			token.UserID = &user.ID
@@ -531,10 +615,11 @@ func (s *Server) storeTokens(app *database.Application, user *database.User, acc
 	if refreshToken != "" {
 		h := sha256.Sum256([]byte(refreshToken))
 		token := &database.Token{
-			TokenHash:     base64.URLEncoding.EncodeToString(h[:]),
-			TokenType:     "refresh",
-			ApplicationID: app.ID,
-			ExpiresAt:     time.Now().Add(30 * 24 * time.Hour),
+			TokenHash:            base64.URLEncoding.EncodeToString(h[:]),
+			TokenType:            "refresh",
+			ApplicationID:        app.ID,
+			ExpiresAt:            time.Now().Add(30 * 24 * time.Hour),
+			AuthorizationDetails: authorizationDetails,
 		}
 		if user != nil {
 			token.UserID = &user.ID
@@ -590,18 +675,19 @@ func (s *Server) CreatePushedAuthorizationRequest(req *AuthorizeRequest, clientS
 
 	// Store PAR with 90 second expiration (RFC 9126 recommendation)
 	par := &database.PushedAuthorizationRequest{
-		RequestURI:          requestURI,
-		ApplicationID:       app.ID,
-		ResponseType:        req.ResponseType,
-		ClientID:            req.ClientID,
-		RedirectURI:         req.RedirectURI,
-		Scope:               req.Scope,
-		State:               req.State,
-		Nonce:               req.Nonce,
-		CodeChallenge:       req.CodeChallenge,
-		CodeChallengeMethod: req.CodeChallengeMethod,
-		ExpiresAt:           time.Now().Add(90 * time.Second),
-		Used:                false,
+		RequestURI:           requestURI,
+		ApplicationID:        app.ID,
+		ResponseType:         req.ResponseType,
+		ClientID:             req.ClientID,
+		RedirectURI:          req.RedirectURI,
+		Scope:                req.Scope,
+		State:                req.State,
+		Nonce:                req.Nonce,
+		CodeChallenge:        req.CodeChallenge,
+		CodeChallengeMethod:  req.CodeChallengeMethod,
+		AuthorizationDetails: req.AuthorizationDetails, // RAR (RFC 9396)
+		ExpiresAt:            time.Now().Add(90 * time.Second),
+		Used:                 false,
 	}
 
 	if err := s.db.Create(par).Error; err != nil {
@@ -753,4 +839,810 @@ func (s *Server) ValidatePrivateKeyJWT(clientAssertion, clientID, tokenEndpoint 
 	// TODO: Implement jti replay prevention cache
 
 	return nil
+}
+
+// CreateDeviceAuthorization creates a new device authorization request (RFC 8628)
+func (s *Server) CreateDeviceAuthorization(req *DeviceAuthorizationRequest, verificationURI, clientIP string) (*DeviceAuthorizationResponse, error) {
+	// Validate client
+	var app database.Application
+	if err := s.db.Preload("Scopes").Where("client_id = ?", req.ClientID).First(&app).Error; err != nil {
+		return nil, errors.New("invalid client")
+	}
+
+	// Validate grant type is allowed for this client
+	grantAllowed := false
+	for _, grant := range app.GrantTypes {
+		if grant == "urn:ietf:params:oauth:grant-type:device_code" {
+			grantAllowed = true
+			break
+		}
+	}
+	if !grantAllowed {
+		return nil, errors.New("device_code grant type not allowed for this client")
+	}
+
+	// Validate scopes if provided
+	scope := req.Scope
+	if scope == "" {
+		// Use default scopes
+		scopes := []string{}
+		for _, s := range app.Scopes {
+			if s.IsDefault {
+				scopes = append(scopes, s.Name)
+			}
+		}
+		scope = strings.Join(scopes, " ")
+	} else {
+		// Validate requested scopes
+		requestedScopes := strings.Split(scope, " ")
+		validScopes := make(map[string]bool)
+		for _, s := range app.Scopes {
+			validScopes[s.Name] = true
+		}
+		for _, s := range requestedScopes {
+			if !validScopes[s] {
+				return nil, fmt.Errorf("invalid scope: %s", s)
+			}
+		}
+	}
+
+	// Generate device code (32 bytes = 256 bits of entropy)
+	deviceCode, err := generateSecureToken(32)
+	if err != nil {
+		return nil, fmt.Errorf("failed to generate device code: %w", err)
+	}
+
+	// Generate user-friendly code (8 characters, easy to type)
+	userCode, err := generateUserCode()
+	if err != nil {
+		return nil, fmt.Errorf("failed to generate user code: %w", err)
+	}
+
+	// RFC 8628 recommends expiration between 10-30 minutes
+	expiresIn := 1800 // 30 minutes
+	interval := 5     // 5 seconds between polls
+
+	// Store device code
+	dc := &database.DeviceCode{
+		DeviceCode:      deviceCode,
+		UserCode:        userCode,
+		ApplicationID:   app.ID,
+		Scope:           scope,
+		Audience:        req.Audience,
+		VerificationURI: verificationURI,
+		ExpiresAt:       time.Now().Add(time.Duration(expiresIn) * time.Second),
+		Interval:        interval,
+		Status:          "pending",
+		ClientIP:        clientIP,
+	}
+
+	if err := s.db.Create(dc).Error; err != nil {
+		return nil, fmt.Errorf("failed to store device code: %w", err)
+	}
+
+	return &DeviceAuthorizationResponse{
+		DeviceCode:              deviceCode,
+		UserCode:                userCode,
+		VerificationURI:         verificationURI,
+		VerificationURIComplete: verificationURI + "?user_code=" + userCode,
+		ExpiresIn:               expiresIn,
+		Interval:                interval,
+	}, nil
+}
+
+// DeviceCodeGrant handles the device code grant flow (RFC 8628)
+func (s *Server) DeviceCodeGrant(req *TokenRequest) (*tokens.TokenResponse, error) {
+	// Validate client credentials
+	var app database.Application
+	if err := s.db.Preload("Scopes").Where("client_id = ?", req.ClientID).First(&app).Error; err != nil {
+		return nil, errors.New("invalid client")
+	}
+
+	// Verify client secret (for confidential clients)
+	if err := s.verifyClientSecret(&app, req.ClientSecret); err != nil {
+		return nil, errors.New("invalid client credentials")
+	}
+
+	// Find device code
+	var dc database.DeviceCode
+	if err := s.db.Preload("User").Where("device_code = ? AND application_id = ?", req.DeviceCode, app.ID).First(&dc).Error; err != nil {
+		return nil, errors.New("invalid device code")
+	}
+
+	// Check expiration
+	if time.Now().After(dc.ExpiresAt) {
+		// Mark as expired
+		s.db.Model(&dc).Update("status", "expired")
+		return nil, &DeviceCodeError{Code: "expired_token", Description: "device code has expired"}
+	}
+
+	// Check polling rate (slow_down error per RFC 8628)
+	if dc.LastPollAt != nil {
+		timeSinceLastPoll := time.Since(*dc.LastPollAt)
+		if timeSinceLastPoll < time.Duration(dc.Interval)*time.Second {
+			return nil, &DeviceCodeError{Code: "slow_down", Description: "polling too frequently"}
+		}
+	}
+
+	// Update last poll time
+	now := time.Now()
+	s.db.Model(&dc).Update("last_poll_at", now)
+
+	// Check status
+	switch dc.Status {
+	case "pending":
+		return nil, &DeviceCodeError{Code: "authorization_pending", Description: "user has not yet authorized"}
+	case "denied":
+		return nil, &DeviceCodeError{Code: "access_denied", Description: "user denied the authorization request"}
+	case "authorized":
+		// Continue to token generation
+	default:
+		return nil, errors.New("invalid device code status")
+	}
+
+	// Get the authorized user
+	var user *database.User
+	if dc.UserID != nil {
+		user = &database.User{}
+		if err := s.db.Preload("Roles").Where("id = ?", dc.UserID).First(user).Error; err != nil {
+			return nil, errors.New("user not found")
+		}
+	}
+
+	// Generate tokens
+	accessToken, err := s.TokenManager.GenerateAccessToken(&app, user, dc.Scope, dc.Audience, nil)
+	if err != nil {
+		return nil, err
+	}
+
+	refreshToken, err := s.TokenManager.GenerateRefreshToken(&app, user, dc.Scope)
+	if err != nil {
+		return nil, err
+	}
+
+	response := &tokens.TokenResponse{
+		AccessToken:  accessToken,
+		TokenType:    "Bearer",
+		ExpiresIn:    3600,
+		RefreshToken: refreshToken,
+		Scope:        dc.Scope,
+	}
+
+	// Generate ID token if openid scope is present
+	if strings.Contains(dc.Scope, "openid") && user != nil {
+		idToken, err := s.TokenManager.GenerateIDToken(&app, user, "", *dc.AuthorizedAt)
+		if err != nil {
+			return nil, err
+		}
+		response.IDToken = idToken
+	}
+
+	// Store tokens
+	s.storeTokens(&app, user, accessToken, refreshToken)
+
+	// Mark device code as used (delete or mark consumed)
+	s.db.Delete(&dc)
+
+	return response, nil
+}
+
+// AuthorizeDeviceCode authorizes a device code with the given user
+func (s *Server) AuthorizeDeviceCode(userCode string, user *database.User) error {
+	var dc database.DeviceCode
+	if err := s.db.Where("user_code = ?", strings.ToUpper(userCode)).First(&dc).Error; err != nil {
+		return errors.New("invalid user code")
+	}
+
+	// Check expiration
+	if time.Now().After(dc.ExpiresAt) {
+		s.db.Model(&dc).Update("status", "expired")
+		return errors.New("device code has expired")
+	}
+
+	// Check if already authorized
+	if dc.Status != "pending" {
+		return errors.New("device code already processed")
+	}
+
+	// Authorize the device code
+	now := time.Now()
+	updates := map[string]interface{}{
+		"status":        "authorized",
+		"user_id":       user.ID,
+		"authorized_at": now,
+	}
+
+	if err := s.db.Model(&dc).Updates(updates).Error; err != nil {
+		return fmt.Errorf("failed to authorize device code: %w", err)
+	}
+
+	return nil
+}
+
+// DenyDeviceCode denies a device code authorization
+func (s *Server) DenyDeviceCode(userCode string) error {
+	var dc database.DeviceCode
+	if err := s.db.Where("user_code = ?", strings.ToUpper(userCode)).First(&dc).Error; err != nil {
+		return errors.New("invalid user code")
+	}
+
+	// Check expiration
+	if time.Now().After(dc.ExpiresAt) {
+		s.db.Model(&dc).Update("status", "expired")
+		return errors.New("device code has expired")
+	}
+
+	// Check if already processed
+	if dc.Status != "pending" {
+		return errors.New("device code already processed")
+	}
+
+	// Deny the device code
+	if err := s.db.Model(&dc).Update("status", "denied").Error; err != nil {
+		return fmt.Errorf("failed to deny device code: %w", err)
+	}
+
+	return nil
+}
+
+// GetDeviceCodeByUserCode retrieves device code info by user code (for verification UI)
+func (s *Server) GetDeviceCodeByUserCode(userCode string) (*database.DeviceCode, *database.Application, error) {
+	var dc database.DeviceCode
+	if err := s.db.Where("user_code = ?", strings.ToUpper(userCode)).First(&dc).Error; err != nil {
+		return nil, nil, errors.New("invalid user code")
+	}
+
+	// Check expiration
+	if time.Now().After(dc.ExpiresAt) {
+		s.db.Model(&dc).Update("status", "expired")
+		return nil, nil, errors.New("device code has expired")
+	}
+
+	// Check if already processed
+	if dc.Status != "pending" {
+		return nil, nil, errors.New("device code already processed")
+	}
+
+	// Get application
+	var app database.Application
+	if err := s.db.Where("id = ?", dc.ApplicationID).First(&app).Error; err != nil {
+		return nil, nil, errors.New("application not found")
+	}
+
+	return &dc, &app, nil
+}
+
+// DeviceCodeError represents an error during device code flow (RFC 8628)
+type DeviceCodeError struct {
+	Code        string
+	Description string
+}
+
+func (e *DeviceCodeError) Error() string {
+	return e.Description
+}
+
+// generateUserCode generates a user-friendly code for device authorization
+// Format: XXXX-XXXX where X is an uppercase letter (excluding ambiguous characters)
+func generateUserCode() (string, error) {
+	// Characters that are easy to distinguish (no O, 0, I, 1, L, etc.)
+	charset := "ABCDEFGHJKMNPQRSTUVWXYZ23456789"
+	code := make([]byte, 8)
+
+	for i := range code {
+		b := make([]byte, 1)
+		if _, err := rand.Read(b); err != nil {
+			return "", err
+		}
+		code[i] = charset[int(b[0])%len(charset)]
+	}
+
+	// Format as XXXX-XXXX
+	return string(code[:4]) + "-" + string(code[4:]), nil
+}
+
+// TokenExchangeGrant handles the token exchange flow (RFC 8693)
+// This allows exchanging one token for another for delegation, impersonation, or cross-domain scenarios
+func (s *Server) TokenExchangeGrant(req *TokenRequest) (*TokenExchangeResponse, error) {
+	// Validate client credentials
+	var app database.Application
+	if err := s.db.Preload("Scopes").Preload("Audiences").Where("client_id = ?", req.ClientID).First(&app).Error; err != nil {
+		return nil, errors.New("invalid client")
+	}
+
+	// Verify client secret
+	if err := s.verifyClientSecret(&app, req.ClientSecret); err != nil {
+		return nil, errors.New("invalid client credentials")
+	}
+
+	// Validate grant type is allowed for this client
+	grantAllowed := false
+	for _, grant := range app.GrantTypes {
+		if grant == "urn:ietf:params:oauth:grant-type:token-exchange" {
+			grantAllowed = true
+			break
+		}
+	}
+	if !grantAllowed {
+		return nil, errors.New("token exchange grant type not allowed for this client")
+	}
+
+	// Validate required parameters
+	if req.SubjectToken == "" {
+		return nil, errors.New("subject_token is required")
+	}
+	if req.SubjectTokenType == "" {
+		return nil, errors.New("subject_token_type is required")
+	}
+
+	// Validate subject_token_type
+	validTokenTypes := map[string]bool{
+		TokenTypeAccessToken:  true,
+		TokenTypeRefreshToken: true,
+		TokenTypeIDToken:      true,
+		TokenTypeJWT:          true,
+	}
+	if !validTokenTypes[req.SubjectTokenType] {
+		return nil, errors.New("invalid subject_token_type")
+	}
+
+	// Validate the subject token
+	subjectClaims, err := s.TokenManager.ValidateToken(req.SubjectToken)
+	if err != nil {
+		return nil, errors.New("invalid subject_token")
+	}
+
+	// Check if the subject token is revoked
+	subjectHash := sha256.Sum256([]byte(req.SubjectToken))
+	subjectTokenHash := base64.URLEncoding.EncodeToString(subjectHash[:])
+	var storedToken database.Token
+	if err := s.db.Where("token_hash = ?", subjectTokenHash).First(&storedToken).Error; err == nil {
+		if storedToken.Revoked {
+			return nil, errors.New("subject_token has been revoked")
+		}
+	}
+
+	// If actor_token is provided, validate it (for delegation scenarios)
+	var actorClaims *tokens.CustomClaims
+	if req.ActorToken != "" {
+		if req.ActorTokenType == "" {
+			return nil, errors.New("actor_token_type is required when actor_token is provided")
+		}
+		if !validTokenTypes[req.ActorTokenType] {
+			return nil, errors.New("invalid actor_token_type")
+		}
+		actorClaims, err = s.TokenManager.ValidateToken(req.ActorToken)
+		if err != nil {
+			return nil, errors.New("invalid actor_token")
+		}
+	}
+
+	// Determine the requested token type (default to access token)
+	requestedType := req.RequestedTokenType
+	if requestedType == "" {
+		requestedType = TokenTypeAccessToken
+	}
+
+	// Determine scope - use requested scope if provided, otherwise use subject token's scope
+	scope := req.Scope
+	if scope == "" {
+		scope = subjectClaims.Scope
+	} else {
+		// Validate that requested scopes are a subset of subject token's scopes
+		requestedScopes := strings.Split(scope, " ")
+		originalScopes := strings.Split(subjectClaims.Scope, " ")
+		originalScopeMap := make(map[string]bool)
+		for _, s := range originalScopes {
+			originalScopeMap[s] = true
+		}
+		for _, s := range requestedScopes {
+			if !originalScopeMap[s] {
+				return nil, errors.New("requested scope exceeds subject token scope")
+			}
+		}
+	}
+
+	// Determine audience - use requested audience/resource, or original token's audience
+	audience := req.Audience
+	if audience == "" {
+		audience = req.Resource
+	}
+	if audience == "" && len(subjectClaims.Audience) > 0 {
+		audience = subjectClaims.Audience[0]
+	}
+
+	// Get the user from the subject token (if present)
+	var user *database.User
+	if subjectClaims.Subject != "" && subjectClaims.Subject != app.ClientID {
+		user = &database.User{}
+		if err := s.db.Preload("Roles").Where("id = ?", subjectClaims.Subject).First(user).Error; err != nil {
+			// Subject might not be a user ID (could be a service account), continue without user
+			user = nil
+		}
+	}
+
+	// Build extra claims for delegation (if actor token provided)
+	var extraClaims map[string]interface{}
+	if actorClaims != nil {
+		extraClaims = map[string]interface{}{
+			"act": map[string]interface{}{
+				"sub":       actorClaims.Subject,
+				"client_id": actorClaims.ClientID,
+			},
+		}
+	}
+
+	// Generate the new token based on requested type
+	var response *TokenExchangeResponse
+
+	switch requestedType {
+	case TokenTypeAccessToken, TokenTypeJWT:
+		accessToken, err := s.TokenManager.GenerateAccessToken(&app, user, scope, audience, extraClaims)
+		if err != nil {
+			return nil, err
+		}
+		response = &TokenExchangeResponse{
+			AccessToken:     accessToken,
+			IssuedTokenType: TokenTypeAccessToken,
+			TokenType:       "Bearer",
+			ExpiresIn:       3600,
+			Scope:           scope,
+		}
+		// Store the new access token
+		s.storeTokens(&app, user, accessToken, "")
+
+	case TokenTypeRefreshToken:
+		refreshToken, err := s.TokenManager.GenerateRefreshToken(&app, user, scope)
+		if err != nil {
+			return nil, err
+		}
+		response = &TokenExchangeResponse{
+			AccessToken:     refreshToken, // RefreshToken goes in access_token field per spec
+			IssuedTokenType: TokenTypeRefreshToken,
+			TokenType:       "N_A", // Per RFC 8693, token_type is "N_A" for non-access tokens
+			Scope:           scope,
+		}
+		// Store the new refresh token
+		s.storeTokens(&app, user, "", refreshToken)
+
+	case TokenTypeIDToken:
+		if user == nil {
+			return nil, errors.New("cannot issue ID token without user context")
+		}
+		idToken, err := s.TokenManager.GenerateIDToken(&app, user, "", time.Now())
+		if err != nil {
+			return nil, err
+		}
+		response = &TokenExchangeResponse{
+			AccessToken:     idToken, // ID token goes in access_token field per spec
+			IssuedTokenType: TokenTypeIDToken,
+			TokenType:       "N_A",
+		}
+
+	default:
+		return nil, errors.New("unsupported requested_token_type")
+	}
+
+	return response, nil
+}
+
+// CreateCIBAAuthentication creates a new CIBA authentication request (OpenID Connect CIBA)
+func (s *Server) CreateCIBAAuthentication(req *CIBAAuthenticationRequest, clientSecret string) (*CIBAAuthenticationResponse, error) {
+	// Validate client
+	var app database.Application
+	if err := s.db.Preload("Scopes").Where("client_id = ?", req.ClientID).First(&app).Error; err != nil {
+		return nil, errors.New("invalid client")
+	}
+
+	// Verify client secret (CIBA requires confidential clients)
+	if err := s.verifyClientSecret(&app, clientSecret); err != nil {
+		return nil, errors.New("invalid client credentials")
+	}
+
+	// Validate grant type is allowed for this client
+	grantAllowed := false
+	for _, grant := range app.GrantTypes {
+		if grant == "urn:openid:params:grant-type:ciba" {
+			grantAllowed = true
+			break
+		}
+	}
+	if !grantAllowed {
+		return nil, errors.New("CIBA grant type not allowed for this client")
+	}
+
+	// At least one hint is required to identify the user
+	if req.LoginHint == "" && req.LoginHintToken == "" && req.IDTokenHint == "" {
+		return nil, errors.New("one of login_hint, login_hint_token, or id_token_hint is required")
+	}
+
+	// Find the user based on the hint
+	var user *database.User
+	if req.LoginHint != "" {
+		user = &database.User{}
+		// Login hint can be username or email
+		if err := s.db.Where("username = ? OR email = ?", req.LoginHint, req.LoginHint).First(user).Error; err != nil {
+			return nil, errors.New("user not found")
+		}
+	} else if req.IDTokenHint != "" {
+		// Validate the ID token and extract user
+		claims, err := s.TokenManager.ValidateToken(req.IDTokenHint)
+		if err != nil {
+			return nil, errors.New("invalid id_token_hint")
+		}
+		user = &database.User{}
+		if err := s.db.Where("id = ?", claims.Subject).First(user).Error; err != nil {
+			return nil, errors.New("user from id_token_hint not found")
+		}
+	}
+	// Note: login_hint_token would require parsing a JWT containing the hint
+
+	if user == nil {
+		return nil, errors.New("unable to identify user from hints")
+	}
+
+	// Check if user is active
+	if !user.IsActive {
+		return nil, errors.New("user account is disabled")
+	}
+
+	// Validate scopes
+	scope := req.Scope
+	if scope == "" {
+		// Use default scopes
+		scopes := []string{}
+		for _, s := range app.Scopes {
+			if s.IsDefault {
+				scopes = append(scopes, s.Name)
+			}
+		}
+		scope = strings.Join(scopes, " ")
+	} else {
+		// Validate requested scopes
+		requestedScopes := strings.Split(scope, " ")
+		validScopes := make(map[string]bool)
+		for _, s := range app.Scopes {
+			validScopes[s.Name] = true
+		}
+		for _, s := range requestedScopes {
+			if !validScopes[s] {
+				return nil, fmt.Errorf("invalid scope: %s", s)
+			}
+		}
+	}
+
+	// Generate unique auth_req_id
+	authReqID, err := generateSecureToken(32)
+	if err != nil {
+		return nil, fmt.Errorf("failed to generate auth_req_id: %w", err)
+	}
+
+	// Determine expiration (default 120 seconds, or requested_expiry if provided)
+	expiresIn := 120
+	if req.RequestedExpiry > 0 && req.RequestedExpiry <= 300 {
+		expiresIn = req.RequestedExpiry
+	}
+	interval := 5 // Polling interval
+
+	// Store CIBA request
+	cibaReq := &database.CIBAAuthenticationRequest{
+		AuthReqID:         authReqID,
+		ApplicationID:     app.ID,
+		UserID:            &user.ID,
+		BindingMessage:    req.BindingMessage,
+		ClientNotifyToken: req.ClientNotifyToken,
+		Scope:             scope,
+		ACRValues:         req.ACRValues,
+		LoginHint:         req.LoginHint,
+		LoginHintToken:    req.LoginHintToken,
+		IDTokenHint:       req.IDTokenHint,
+		RequestedExpiry:   req.RequestedExpiry,
+		ExpiresAt:         time.Now().Add(time.Duration(expiresIn) * time.Second),
+		Interval:          interval,
+		Status:            "pending",
+	}
+
+	if err := s.db.Create(cibaReq).Error; err != nil {
+		return nil, fmt.Errorf("failed to store CIBA request: %w", err)
+	}
+
+	// In a real implementation, this is where you would:
+	// 1. Send a push notification to the user's device
+	// 2. Send an SMS or email to the user
+	// 3. Trigger any out-of-band authentication mechanism
+	// For this implementation, we'll just record the request and let the user
+	// authorize via the /oauth/ciba/authorize endpoint
+
+	return &CIBAAuthenticationResponse{
+		AuthReqID: authReqID,
+		ExpiresIn: expiresIn,
+		Interval:  interval,
+	}, nil
+}
+
+// CIBAGrant handles the CIBA grant flow (token polling)
+func (s *Server) CIBAGrant(req *TokenRequest) (*tokens.TokenResponse, error) {
+	// Validate client credentials
+	var app database.Application
+	if err := s.db.Preload("Scopes").Where("client_id = ?", req.ClientID).First(&app).Error; err != nil {
+		return nil, errors.New("invalid client")
+	}
+
+	// Verify client secret
+	if err := s.verifyClientSecret(&app, req.ClientSecret); err != nil {
+		return nil, errors.New("invalid client credentials")
+	}
+
+	// Find CIBA request
+	var cibaReq database.CIBAAuthenticationRequest
+	if err := s.db.Preload("User").Where("auth_req_id = ? AND application_id = ?", req.AuthReqID, app.ID).First(&cibaReq).Error; err != nil {
+		return nil, errors.New("invalid auth_req_id")
+	}
+
+	// Check expiration
+	if time.Now().After(cibaReq.ExpiresAt) {
+		s.db.Model(&cibaReq).Update("status", "expired")
+		return nil, &CIBAError{Code: "expired_token", Description: "authentication request has expired"}
+	}
+
+	// Check polling rate (slow_down error)
+	if cibaReq.LastPollAt != nil {
+		timeSinceLastPoll := time.Since(*cibaReq.LastPollAt)
+		if timeSinceLastPoll < time.Duration(cibaReq.Interval)*time.Second {
+			return nil, &CIBAError{Code: "slow_down", Description: "polling too frequently"}
+		}
+	}
+
+	// Update last poll time
+	now := time.Now()
+	s.db.Model(&cibaReq).Update("last_poll_at", now)
+
+	// Check status
+	switch cibaReq.Status {
+	case "pending":
+		return nil, &CIBAError{Code: "authorization_pending", Description: "user has not yet authenticated"}
+	case "denied":
+		return nil, &CIBAError{Code: "access_denied", Description: "user denied the authentication request"}
+	case "authorized":
+		// Continue to token generation
+	default:
+		return nil, errors.New("invalid authentication request status")
+	}
+
+	// Get the authenticated user
+	var user *database.User
+	if cibaReq.UserID != nil {
+		user = &database.User{}
+		if err := s.db.Preload("Roles").Where("id = ?", cibaReq.UserID).First(user).Error; err != nil {
+			return nil, errors.New("user not found")
+		}
+	} else {
+		return nil, errors.New("no user associated with authentication request")
+	}
+
+	// Generate tokens
+	accessToken, err := s.TokenManager.GenerateAccessToken(&app, user, cibaReq.Scope, "", nil)
+	if err != nil {
+		return nil, err
+	}
+
+	refreshToken, err := s.TokenManager.GenerateRefreshToken(&app, user, cibaReq.Scope)
+	if err != nil {
+		return nil, err
+	}
+
+	response := &tokens.TokenResponse{
+		AccessToken:  accessToken,
+		TokenType:    "Bearer",
+		ExpiresIn:    3600,
+		RefreshToken: refreshToken,
+		Scope:        cibaReq.Scope,
+	}
+
+	// Generate ID token if openid scope is present
+	if strings.Contains(cibaReq.Scope, "openid") && user != nil {
+		idToken, err := s.TokenManager.GenerateIDToken(&app, user, "", *cibaReq.AuthorizedAt)
+		if err != nil {
+			return nil, err
+		}
+		response.IDToken = idToken
+	}
+
+	// Store tokens
+	s.storeTokens(&app, user, accessToken, refreshToken)
+
+	// Mark CIBA request as consumed (delete)
+	s.db.Delete(&cibaReq)
+
+	return response, nil
+}
+
+// AuthorizeCIBARequest authorizes a CIBA authentication request
+func (s *Server) AuthorizeCIBARequest(authReqID string, user *database.User) error {
+	var cibaReq database.CIBAAuthenticationRequest
+	if err := s.db.Where("auth_req_id = ?", authReqID).First(&cibaReq).Error; err != nil {
+		return errors.New("invalid auth_req_id")
+	}
+
+	// Check expiration
+	if time.Now().After(cibaReq.ExpiresAt) {
+		s.db.Model(&cibaReq).Update("status", "expired")
+		return errors.New("authentication request has expired")
+	}
+
+	// Check if already processed
+	if cibaReq.Status != "pending" {
+		return errors.New("authentication request already processed")
+	}
+
+	// Verify the authorizing user matches the requested user
+	if cibaReq.UserID != nil && *cibaReq.UserID != user.ID {
+		return errors.New("user mismatch - you are not authorized to approve this request")
+	}
+
+	// Authorize the request
+	now := time.Now()
+	updates := map[string]interface{}{
+		"status":        "authorized",
+		"authorized_at": now,
+	}
+
+	if err := s.db.Model(&cibaReq).Updates(updates).Error; err != nil {
+		return fmt.Errorf("failed to authorize CIBA request: %w", err)
+	}
+
+	return nil
+}
+
+// DenyCIBARequest denies a CIBA authentication request
+func (s *Server) DenyCIBARequest(authReqID string) error {
+	var cibaReq database.CIBAAuthenticationRequest
+	if err := s.db.Where("auth_req_id = ?", authReqID).First(&cibaReq).Error; err != nil {
+		return errors.New("invalid auth_req_id")
+	}
+
+	// Check expiration
+	if time.Now().After(cibaReq.ExpiresAt) {
+		s.db.Model(&cibaReq).Update("status", "expired")
+		return errors.New("authentication request has expired")
+	}
+
+	// Check if already processed
+	if cibaReq.Status != "pending" {
+		return errors.New("authentication request already processed")
+	}
+
+	// Deny the request
+	if err := s.db.Model(&cibaReq).Update("status", "denied").Error; err != nil {
+		return fmt.Errorf("failed to deny CIBA request: %w", err)
+	}
+
+	return nil
+}
+
+// GetCIBARequestByAuthReqID retrieves CIBA request info (for authorization UI)
+func (s *Server) GetCIBARequestByAuthReqID(authReqID string) (*database.CIBAAuthenticationRequest, *database.Application, error) {
+	var cibaReq database.CIBAAuthenticationRequest
+	if err := s.db.Where("auth_req_id = ?", authReqID).First(&cibaReq).Error; err != nil {
+		return nil, nil, errors.New("invalid auth_req_id")
+	}
+
+	// Check expiration
+	if time.Now().After(cibaReq.ExpiresAt) {
+		s.db.Model(&cibaReq).Update("status", "expired")
+		return nil, nil, errors.New("authentication request has expired")
+	}
+
+	// Check if already processed
+	if cibaReq.Status != "pending" {
+		return nil, nil, errors.New("authentication request already processed")
+	}
+
+	// Get application
+	var app database.Application
+	if err := s.db.Where("id = ?", cibaReq.ApplicationID).First(&app).Error; err != nil {
+		return nil, nil, errors.New("application not found")
+	}
+
+	return &cibaReq, &app, nil
 }

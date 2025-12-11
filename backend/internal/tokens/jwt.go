@@ -34,12 +34,13 @@ type CustomClaims struct {
 }
 
 type TokenResponse struct {
-	AccessToken  string `json:"access_token"`
-	TokenType    string `json:"token_type"`
-	ExpiresIn    int    `json:"expires_in"`
-	RefreshToken string `json:"refresh_token,omitempty"`
-	IDToken      string `json:"id_token,omitempty"`
-	Scope        string `json:"scope,omitempty"`
+	AccessToken          string `json:"access_token"`
+	TokenType            string `json:"token_type"`
+	ExpiresIn            int    `json:"expires_in"`
+	RefreshToken         string `json:"refresh_token,omitempty"`
+	IDToken              string `json:"id_token,omitempty"`
+	Scope                string `json:"scope,omitempty"`
+	AuthorizationDetails string `json:"authorization_details,omitempty"` // RAR (RFC 9396) - JSON array
 }
 
 type IntrospectionResponse struct {

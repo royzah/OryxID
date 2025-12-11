@@ -3,14 +3,15 @@ package handlers
 import (
 	"crypto/sha256"
 	"encoding/base64"
-	"log"
 	"net/http"
+	"strconv"
 	"strings"
 	"time"
 
 	"github.com/gin-gonic/gin"
 	"github.com/google/uuid"
 	"github.com/tiiuae/oryxid/internal/database"
+	"github.com/tiiuae/oryxid/internal/logger"
 	"github.com/tiiuae/oryxid/internal/oauth"
 	"golang.org/x/crypto/bcrypt"
 	"gorm.io/gorm"
@@ -49,28 +50,30 @@ func (h *OAuthHandler) AuthorizeHandler(c *gin.Context) {
 
 		// Populate request from PAR
 		req = &oauth.AuthorizeRequest{
-			ResponseType:        par.ResponseType,
-			ClientID:            par.ClientID,
-			RedirectURI:         par.RedirectURI,
-			Scope:               par.Scope,
-			State:               par.State,
-			Nonce:               par.Nonce,
-			CodeChallenge:       par.CodeChallenge,
-			CodeChallengeMethod: par.CodeChallengeMethod,
-			RequestURI:          requestURI,
+			ResponseType:         par.ResponseType,
+			ClientID:             par.ClientID,
+			RedirectURI:          par.RedirectURI,
+			Scope:                par.Scope,
+			State:                par.State,
+			Nonce:                par.Nonce,
+			CodeChallenge:        par.CodeChallenge,
+			CodeChallengeMethod:  par.CodeChallengeMethod,
+			AuthorizationDetails: par.AuthorizationDetails, // RAR (RFC 9396)
+			RequestURI:           requestURI,
 		}
 	} else {
 		// Traditional authorization request with parameters in URL
 		req = &oauth.AuthorizeRequest{
-			ResponseType:        c.Query("response_type"),
-			ClientID:            c.Query("client_id"),
-			RedirectURI:         c.Query("redirect_uri"),
-			Scope:               c.Query("scope"),
-			State:               c.Query("state"),
-			Nonce:               c.Query("nonce"),
-			CodeChallenge:       c.Query("code_challenge"),
-			CodeChallengeMethod: c.Query("code_challenge_method"),
-			Audience:            c.Query("audience"),
+			ResponseType:         c.Query("response_type"),
+			ClientID:             c.Query("client_id"),
+			RedirectURI:          c.Query("redirect_uri"),
+			Scope:                c.Query("scope"),
+			State:                c.Query("state"),
+			Nonce:                c.Query("nonce"),
+			CodeChallenge:        c.Query("code_challenge"),
+			CodeChallengeMethod:  c.Query("code_challenge_method"),
+			Audience:             c.Query("audience"),
+			AuthorizationDetails: c.Query("authorization_details"), // RAR (RFC 9396)
 		}
 	}
 
@@ -214,6 +217,53 @@ func (h *OAuthHandler) TokenHandler(c *gin.Context) {
 		response, err = h.server.RefreshTokenGrant(&req)
 	case "password":
 		response, err = h.server.PasswordGrant(&req)
+	case "urn:ietf:params:oauth:grant-type:device_code":
+		// Device authorization grant (RFC 8628)
+		req.DeviceCode = c.PostForm("device_code")
+		if req.DeviceCode == "" {
+			c.JSON(http.StatusBadRequest, gin.H{
+				"error":             "invalid_request",
+				"error_description": "device_code is required",
+			})
+			return
+		}
+		response, err = h.server.DeviceCodeGrant(&req)
+		// Handle specific device code errors per RFC 8628
+		if dcErr, ok := err.(*oauth.DeviceCodeError); ok {
+			c.JSON(http.StatusBadRequest, gin.H{
+				"error":             dcErr.Code,
+				"error_description": dcErr.Description,
+			})
+			return
+		}
+	case "urn:ietf:params:oauth:grant-type:token-exchange":
+		// Token exchange grant (RFC 8693)
+		req.SubjectToken = c.PostForm("subject_token")
+		req.SubjectTokenType = c.PostForm("subject_token_type")
+		req.ActorToken = c.PostForm("actor_token")
+		req.ActorTokenType = c.PostForm("actor_token_type")
+		req.RequestedTokenType = c.PostForm("requested_token_type")
+		req.Resource = c.PostForm("resource")
+		response, err = h.server.TokenExchangeGrant(&req)
+	case "urn:openid:params:grant-type:ciba":
+		// CIBA grant (OpenID Connect CIBA)
+		req.AuthReqID = c.PostForm("auth_req_id")
+		if req.AuthReqID == "" {
+			c.JSON(http.StatusBadRequest, gin.H{
+				"error":             "invalid_request",
+				"error_description": "auth_req_id is required",
+			})
+			return
+		}
+		response, err = h.server.CIBAGrant(&req)
+		// Handle specific CIBA errors
+		if cibaErr, ok := err.(*oauth.CIBAError); ok {
+			c.JSON(http.StatusBadRequest, gin.H{
+				"error":             cibaErr.Code,
+				"error_description": cibaErr.Description,
+			})
+			return
+		}
 	default:
 		c.JSON(http.StatusBadRequest, gin.H{
 			"error": "unsupported_grant_type",
@@ -355,25 +405,32 @@ func (h *OAuthHandler) DiscoveryHandler(c *gin.Context) {
 	baseURL := getBaseURL(c)
 
 	discovery := gin.H{
-		"issuer":                                       baseURL,
-		"authorization_endpoint":                       baseURL + "/oauth/authorize",
-		"token_endpoint":                               baseURL + "/oauth/token",
-		"userinfo_endpoint":                            baseURL + "/oauth/userinfo",
-		"jwks_uri":                                     baseURL + "/.well-known/jwks.json",
-		"registration_endpoint":                        baseURL + "/oauth/register",
-		"introspection_endpoint":                       baseURL + "/oauth/introspect",
-		"revocation_endpoint":                          baseURL + "/oauth/revoke",
-		"pushed_authorization_request_endpoint":        baseURL + "/oauth/par",                                                                      // RFC 9126
-		"require_pushed_authorization_requests":        false,                                                                                        // PAR is optional (can be made required per client)
-		"scopes_supported":                             []string{"openid", "profile", "email", "offline_access"},
-		"response_types_supported":                     []string{"code"},                                                                             // Only authorization code flow fully implemented
-		"response_modes_supported":                     []string{"query"},
-		"grant_types_supported":                        []string{"authorization_code", "client_credentials", "refresh_token", "password"},            // Removed implicit, added password
-		"subject_types_supported":                      []string{"public"},
-		"id_token_signing_alg_values_supported":        []string{"RS256"},
-		"token_endpoint_auth_methods_supported":        []string{"client_secret_basic", "client_secret_post", "private_key_jwt"},                // RFC 7523
-		"claims_supported":                             []string{"sub", "iss", "aud", "exp", "iat", "nbf", "email", "email_verified", "username", "roles"}, // Added email_verified
-		"code_challenge_methods_supported":             []string{"S256"},                                                                             // OAuth 2.1 - only S256 allowed
+		"issuer":                                baseURL,
+		"authorization_endpoint":                baseURL + "/oauth/authorize",
+		"token_endpoint":                        baseURL + "/oauth/token",
+		"userinfo_endpoint":                     baseURL + "/oauth/userinfo",
+		"jwks_uri":                              baseURL + "/.well-known/jwks.json",
+		"registration_endpoint":                 baseURL + "/oauth/register",
+		"introspection_endpoint":                baseURL + "/oauth/introspect",
+		"revocation_endpoint":                   baseURL + "/oauth/revoke",
+		"pushed_authorization_request_endpoint": baseURL + "/oauth/par",                  // RFC 9126
+		"device_authorization_endpoint":         baseURL + "/oauth/device_authorization", // RFC 8628
+		"backchannel_authentication_endpoint":   baseURL + "/oauth/bc-authorize",         // OpenID Connect CIBA
+		"require_pushed_authorization_requests": false,                                   // PAR is optional (can be made required per client)
+		"scopes_supported":                      []string{"openid", "profile", "email", "offline_access"},
+		"response_types_supported":              []string{"code"}, // Only authorization code flow fully implemented
+		"response_modes_supported":              []string{"query"},
+		"grant_types_supported":                 []string{"authorization_code", "client_credentials", "refresh_token", "password", "urn:ietf:params:oauth:grant-type:device_code", "urn:ietf:params:oauth:grant-type:token-exchange", "urn:openid:params:grant-type:ciba"},
+		"backchannel_token_delivery_modes_supported": []string{"poll"},                   // CIBA poll mode
+		"backchannel_user_code_parameter_supported":  false,                              // Not implemented yet
+		"subject_types_supported":                    []string{"public"},
+		"id_token_signing_alg_values_supported":      []string{"RS256"},
+		"token_endpoint_auth_methods_supported":      []string{"client_secret_basic", "client_secret_post", "private_key_jwt"}, // RFC 7523
+		"claims_supported":                           []string{"sub", "iss", "aud", "exp", "iat", "nbf", "email", "email_verified", "username", "roles"},
+		"code_challenge_methods_supported":           []string{"S256"}, // OAuth 2.1 - only S256 allowed
+		// RAR (RFC 9396) support
+		"authorization_details_types_supported":           []string{"payment_initiation", "account_information", "openid_credential"}, // Example types - extensible
+		"authorization_response_iss_parameter_supported":  true,                                                                       // RFC 9207
 	}
 
 	c.JSON(http.StatusOK, discovery)
@@ -489,15 +546,16 @@ func (h *OAuthHandler) PARHandler(c *gin.Context) {
 
 	// Build authorization request from form parameters
 	req := &oauth.AuthorizeRequest{
-		ResponseType:        c.PostForm("response_type"),
-		ClientID:            clientID,
-		RedirectURI:         c.PostForm("redirect_uri"),
-		Scope:               c.PostForm("scope"),
-		State:               c.PostForm("state"),
-		Nonce:               c.PostForm("nonce"),
-		CodeChallenge:       c.PostForm("code_challenge"),
-		CodeChallengeMethod: c.PostForm("code_challenge_method"),
-		Audience:            c.PostForm("audience"),
+		ResponseType:         c.PostForm("response_type"),
+		ClientID:             clientID,
+		RedirectURI:          c.PostForm("redirect_uri"),
+		Scope:                c.PostForm("scope"),
+		State:                c.PostForm("state"),
+		Nonce:                c.PostForm("nonce"),
+		CodeChallenge:        c.PostForm("code_challenge"),
+		CodeChallengeMethod:  c.PostForm("code_challenge_method"),
+		Audience:             c.PostForm("audience"),
+		AuthorizationDetails: c.PostForm("authorization_details"), // RAR (RFC 9396)
 	}
 
 	// Create PAR
@@ -517,6 +575,257 @@ func (h *OAuthHandler) PARHandler(c *gin.Context) {
 	}
 
 	c.JSON(http.StatusCreated, response)
+}
+
+// DeviceAuthorizationHandler handles POST /oauth/device_authorization (RFC 8628)
+func (h *OAuthHandler) DeviceAuthorizationHandler(c *gin.Context) {
+	// Extract client credentials
+	var clientID, clientSecret string
+
+	// Check for private_key_jwt authentication (RFC 7523)
+	clientAssertion := c.PostForm("client_assertion")
+	clientAssertionType := c.PostForm("client_assertion_type")
+
+	if clientAssertion != "" && clientAssertionType == "urn:ietf:params:oauth:client-assertion-type:jwt-bearer" {
+		clientID = c.PostForm("client_id")
+		if clientID == "" {
+			c.JSON(http.StatusBadRequest, gin.H{
+				"error":             "invalid_request",
+				"error_description": "client_id required with client_assertion",
+			})
+			return
+		}
+
+		tokenEndpoint := getBaseURL(c) + "/oauth/token"
+		if err := h.server.ValidatePrivateKeyJWT(clientAssertion, clientID, tokenEndpoint); err != nil {
+			c.JSON(http.StatusUnauthorized, gin.H{
+				"error":             "invalid_client",
+				"error_description": err.Error(),
+			})
+			return
+		}
+	} else {
+		// Traditional client_secret_basic or client_secret_post
+		var hasBasicAuth bool
+		clientID, clientSecret, hasBasicAuth = c.Request.BasicAuth()
+		if !hasBasicAuth {
+			clientID = c.PostForm("client_id")
+			clientSecret = c.PostForm("client_secret")
+		}
+
+		// Validate client (for confidential clients)
+		if clientID != "" && clientSecret != "" {
+			if _, err := h.validateClient(clientID, clientSecret); err != nil {
+				c.JSON(http.StatusUnauthorized, gin.H{
+					"error":             "invalid_client",
+					"error_description": err.Error(),
+				})
+				return
+			}
+		}
+	}
+
+	if clientID == "" {
+		c.JSON(http.StatusBadRequest, gin.H{
+			"error":             "invalid_client",
+			"error_description": "client_id is required",
+		})
+		return
+	}
+
+	// Build device authorization request
+	req := &oauth.DeviceAuthorizationRequest{
+		ClientID: clientID,
+		Scope:    c.PostForm("scope"),
+		Audience: c.PostForm("audience"),
+	}
+
+	// Verification URI where user will enter the code
+	verificationURI := getBaseURL(c) + "/oauth/device"
+
+	// Create device authorization
+	response, err := h.server.CreateDeviceAuthorization(req, verificationURI, c.ClientIP())
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{
+			"error":             "invalid_request",
+			"error_description": err.Error(),
+		})
+		return
+	}
+
+	// Log device authorization request
+	var app database.Application
+	if err := h.db.Where("client_id = ?", clientID).First(&app).Error; err == nil {
+		h.logAudit(c, &app, "oauth.device_authorization", "device_code", response.UserCode)
+	}
+
+	c.JSON(http.StatusOK, response)
+}
+
+// DeviceVerifyHandler handles GET /oauth/device - displays the device verification page
+func (h *OAuthHandler) DeviceVerifyHandler(c *gin.Context) {
+	userCode := c.Query("user_code")
+
+	// If user_code is provided, pre-populate and show app info
+	if userCode != "" {
+		dc, app, err := h.server.GetDeviceCodeByUserCode(userCode)
+		if err != nil {
+			c.HTML(http.StatusOK, "device_verify.html", gin.H{
+				"error":     err.Error(),
+				"user_code": userCode,
+			})
+			return
+		}
+
+		c.HTML(http.StatusOK, "device_verify.html", gin.H{
+			"user_code":    dc.UserCode,
+			"app_name":     app.Name,
+			"scope":        dc.Scope,
+			"show_confirm": true,
+		})
+		return
+	}
+
+	// Show empty form for user to enter code
+	c.HTML(http.StatusOK, "device_verify.html", gin.H{})
+}
+
+// CIBAHandler handles POST /oauth/bc-authorize (CIBA Backchannel Authentication)
+func (h *OAuthHandler) CIBAHandler(c *gin.Context) {
+	// Extract client credentials
+	var clientID, clientSecret string
+	var hasBasicAuth bool
+	clientID, clientSecret, hasBasicAuth = c.Request.BasicAuth()
+	if !hasBasicAuth {
+		clientID = c.PostForm("client_id")
+		clientSecret = c.PostForm("client_secret")
+	}
+
+	if clientID == "" {
+		c.JSON(http.StatusBadRequest, gin.H{
+			"error":             "invalid_client",
+			"error_description": "client_id is required",
+		})
+		return
+	}
+
+	// Parse requested_expiry if provided
+	var requestedExpiry int
+	if expiryStr := c.PostForm("requested_expiry"); expiryStr != "" {
+		if exp, err := strconv.Atoi(expiryStr); err == nil {
+			requestedExpiry = exp
+		}
+	}
+
+	// Build CIBA request
+	req := &oauth.CIBAAuthenticationRequest{
+		ClientID:          clientID,
+		Scope:             c.PostForm("scope"),
+		ACRValues:         c.PostForm("acr_values"),
+		LoginHint:         c.PostForm("login_hint"),
+		LoginHintToken:    c.PostForm("login_hint_token"),
+		IDTokenHint:       c.PostForm("id_token_hint"),
+		BindingMessage:    c.PostForm("binding_message"),
+		ClientNotifyToken: c.PostForm("client_notification_token"),
+		RequestedExpiry:   requestedExpiry,
+	}
+
+	// Create CIBA authentication request
+	response, err := h.server.CreateCIBAAuthentication(req, clientSecret)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{
+			"error":             "invalid_request",
+			"error_description": err.Error(),
+		})
+		return
+	}
+
+	// Log CIBA authentication request
+	var app database.Application
+	if err := h.db.Where("client_id = ?", clientID).First(&app).Error; err == nil {
+		h.logAudit(c, &app, "oauth.ciba_authenticate", "auth_req_id", response.AuthReqID)
+	}
+
+	c.JSON(http.StatusOK, response)
+}
+
+// DeviceAuthorizeHandler handles POST /oauth/device - processes user authorization
+func (h *OAuthHandler) DeviceAuthorizeHandler(c *gin.Context) {
+	userCode := c.PostForm("user_code")
+	action := c.PostForm("action") // "authorize" or "deny"
+
+	if userCode == "" {
+		c.JSON(http.StatusBadRequest, gin.H{
+			"error":             "invalid_request",
+			"error_description": "user_code is required",
+		})
+		return
+	}
+
+	// Get authenticated user from session/token
+	authHeader := c.GetHeader("Authorization")
+	if authHeader == "" {
+		c.JSON(http.StatusUnauthorized, gin.H{
+			"error":             "invalid_request",
+			"error_description": "user authentication required",
+		})
+		return
+	}
+
+	tokenString := strings.TrimPrefix(authHeader, "Bearer ")
+	claims, err := h.server.TokenManager.ValidateToken(tokenString)
+	if err != nil {
+		c.JSON(http.StatusUnauthorized, gin.H{
+			"error":             "invalid_token",
+			"error_description": "invalid or expired token",
+		})
+		return
+	}
+
+	// Get user from claims
+	var user database.User
+	if err := h.db.Where("id = ?", claims.Subject).First(&user).Error; err != nil {
+		c.JSON(http.StatusUnauthorized, gin.H{
+			"error":             "invalid_token",
+			"error_description": "user not found",
+		})
+		return
+	}
+
+	if action == "deny" {
+		if err := h.server.DenyDeviceCode(userCode); err != nil {
+			c.JSON(http.StatusBadRequest, gin.H{
+				"error":             "invalid_request",
+				"error_description": err.Error(),
+			})
+			return
+		}
+		c.JSON(http.StatusOK, gin.H{
+			"status":  "denied",
+			"message": "Device authorization denied",
+		})
+		return
+	}
+
+	// Authorize the device
+	if err := h.server.AuthorizeDeviceCode(userCode, &user); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{
+			"error":             "invalid_request",
+			"error_description": err.Error(),
+		})
+		return
+	}
+
+	// Log successful device authorization
+	dc, app, _ := h.server.GetDeviceCodeByUserCode(userCode)
+	if app != nil {
+		h.logAudit(c, app, "oauth.device_authorized", "device_code", dc.UserCode)
+	}
+
+	c.JSON(http.StatusOK, gin.H{
+		"status":  "authorized",
+		"message": "Device successfully authorized",
+	})
 }
 
 // Helper functions
@@ -599,7 +908,7 @@ func (h *OAuthHandler) logAudit(c *gin.Context, app *database.Application, actio
 	}
 
 	if err := h.db.Create(&audit).Error; err != nil {
-		log.Printf("failed to create audit log: %v", err)
+		logger.Error("failed to create audit log", "error", err, "action", action)
 	}
 }
 

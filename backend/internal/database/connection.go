@@ -2,10 +2,10 @@ package database
 
 import (
 	"fmt"
-	"log"
 	"time"
 
 	"github.com/tiiuae/oryxid/internal/config"
+	applogger "github.com/tiiuae/oryxid/internal/logger"
 	"golang.org/x/crypto/bcrypt"
 	"gorm.io/driver/postgres"
 	"gorm.io/gorm"
@@ -48,7 +48,7 @@ func Connect(cfg *config.Config) (*gorm.DB, error) {
 		return nil, fmt.Errorf("failed to ping database: %w", err)
 	}
 
-	log.Println("Successfully connected to database")
+	applogger.Info("Successfully connected to database")
 	return db, nil
 }
 
@@ -59,7 +59,7 @@ func Migrate(db *gorm.DB) error {
 		return fmt.Errorf("failed to create uuid extension: %w", err)
 	}
 
-	log.Println("Creating all tables manually...")
+	applogger.Debug("Creating all tables manually...")
 
 	// Create permissions table
 	if err := db.Exec(`
@@ -317,6 +317,9 @@ func Migrate(db *gorm.DB) error {
 			user_id UUID REFERENCES users(id) ON DELETE CASCADE,
 			redirect_uri TEXT NOT NULL,
 			scope TEXT,
+			audience TEXT,
+			authorization_details TEXT,
+			state TEXT,
 			code_challenge TEXT,
 			code_challenge_method TEXT,
 			nonce TEXT,
@@ -349,6 +352,7 @@ func Migrate(db *gorm.DB) error {
 			user_id UUID REFERENCES users(id) ON DELETE CASCADE,
 			scope TEXT,
 			audience TEXT,
+			authorization_details TEXT,
 			expires_at TIMESTAMP WITH TIME ZONE NOT NULL,
 			revoked BOOLEAN DEFAULT FALSE,
 			revoked_at TIMESTAMP WITH TIME ZONE
@@ -425,17 +429,97 @@ func Migrate(db *gorm.DB) error {
 			nonce TEXT,
 			code_challenge TEXT,
 			code_challenge_method TEXT,
+			authorization_details TEXT,
 			expires_at TIMESTAMP WITH TIME ZONE NOT NULL,
 			used BOOLEAN DEFAULT FALSE
 		)
 	`).Error; err != nil {
 		return fmt.Errorf("failed to create pushed_authorization_requests table: %w", err)
 	}
+	// Add authorization_details column if it doesn't exist (migration for existing tables)
+	db.Exec(`ALTER TABLE pushed_authorization_requests ADD COLUMN IF NOT EXISTS authorization_details TEXT`)
 	if err := db.Exec(`CREATE INDEX IF NOT EXISTS idx_pushed_authorization_requests_deleted_at ON pushed_authorization_requests(deleted_at)`).Error; err != nil {
 		return fmt.Errorf("failed to create pushed_authorization_requests index: %w", err)
 	}
 
-	log.Println("All tables created successfully")
+	// Create ciba_authentication_requests table (OpenID Connect CIBA)
+	if err := db.Exec(`
+		CREATE TABLE IF NOT EXISTS ciba_authentication_requests (
+			id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+			created_at TIMESTAMP WITH TIME ZONE,
+			updated_at TIMESTAMP WITH TIME ZONE,
+			deleted_at TIMESTAMP WITH TIME ZONE,
+			auth_req_id TEXT UNIQUE NOT NULL,
+			application_id UUID NOT NULL REFERENCES applications(id) ON DELETE CASCADE,
+			user_id UUID REFERENCES users(id) ON DELETE CASCADE,
+			binding_message TEXT,
+			client_notify_token TEXT,
+			scope TEXT,
+			acr_values TEXT,
+			login_hint TEXT,
+			login_hint_token TEXT,
+			id_token_hint TEXT,
+			requested_expiry INTEGER,
+			expires_at TIMESTAMP WITH TIME ZONE NOT NULL,
+			interval INTEGER DEFAULT 5,
+			status TEXT DEFAULT 'pending',
+			authorized_at TIMESTAMP WITH TIME ZONE,
+			last_poll_at TIMESTAMP WITH TIME ZONE
+		)
+	`).Error; err != nil {
+		return fmt.Errorf("failed to create ciba_authentication_requests table: %w", err)
+	}
+	if err := db.Exec(`CREATE INDEX IF NOT EXISTS idx_ciba_auth_req_id ON ciba_authentication_requests(auth_req_id)`).Error; err != nil {
+		return fmt.Errorf("failed to create ciba auth_req_id index: %w", err)
+	}
+	if err := db.Exec(`CREATE INDEX IF NOT EXISTS idx_ciba_expires_at ON ciba_authentication_requests(expires_at)`).Error; err != nil {
+		return fmt.Errorf("failed to create ciba expires_at index: %w", err)
+	}
+	if err := db.Exec(`CREATE INDEX IF NOT EXISTS idx_ciba_status ON ciba_authentication_requests(status)`).Error; err != nil {
+		return fmt.Errorf("failed to create ciba status index: %w", err)
+	}
+
+	// Create device_codes table (RFC 8628 - Device Authorization Grant)
+	if err := db.Exec(`
+		CREATE TABLE IF NOT EXISTS device_codes (
+			id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+			created_at TIMESTAMP WITH TIME ZONE,
+			updated_at TIMESTAMP WITH TIME ZONE,
+			deleted_at TIMESTAMP WITH TIME ZONE,
+			device_code TEXT UNIQUE NOT NULL,
+			user_code TEXT UNIQUE NOT NULL,
+			application_id UUID NOT NULL REFERENCES applications(id) ON DELETE CASCADE,
+			user_id UUID REFERENCES users(id) ON DELETE CASCADE,
+			scope TEXT,
+			audience TEXT,
+			verification_uri TEXT,
+			expires_at TIMESTAMP WITH TIME ZONE NOT NULL,
+			interval INTEGER DEFAULT 5,
+			status TEXT DEFAULT 'pending',
+			authorized_at TIMESTAMP WITH TIME ZONE,
+			last_poll_at TIMESTAMP WITH TIME ZONE,
+			client_ip TEXT
+		)
+	`).Error; err != nil {
+		return fmt.Errorf("failed to create device_codes table: %w", err)
+	}
+	if err := db.Exec(`CREATE INDEX IF NOT EXISTS idx_device_codes_deleted_at ON device_codes(deleted_at)`).Error; err != nil {
+		return fmt.Errorf("failed to create device_codes index: %w", err)
+	}
+	if err := db.Exec(`CREATE INDEX IF NOT EXISTS idx_device_codes_device_code ON device_codes(device_code)`).Error; err != nil {
+		return fmt.Errorf("failed to create device_codes device_code index: %w", err)
+	}
+	if err := db.Exec(`CREATE INDEX IF NOT EXISTS idx_device_codes_user_code ON device_codes(user_code)`).Error; err != nil {
+		return fmt.Errorf("failed to create device_codes user_code index: %w", err)
+	}
+	if err := db.Exec(`CREATE INDEX IF NOT EXISTS idx_device_codes_expires_at ON device_codes(expires_at)`).Error; err != nil {
+		return fmt.Errorf("failed to create device_codes expires_at index: %w", err)
+	}
+	if err := db.Exec(`CREATE INDEX IF NOT EXISTS idx_device_codes_status ON device_codes(status)`).Error; err != nil {
+		return fmt.Errorf("failed to create device_codes status index: %w", err)
+	}
+
+	applogger.Debug("All tables created successfully")
 	return nil
 }
 
@@ -445,16 +529,20 @@ func CreateIndexes(db *gorm.DB) error {
 		// User indexes
 		"CREATE INDEX IF NOT EXISTS idx_users_username ON users(username)",
 		"CREATE INDEX IF NOT EXISTS idx_users_email ON users(email)",
+		"CREATE INDEX IF NOT EXISTS idx_users_is_active ON users(is_active)",
 
 		// Application indexes
 		"CREATE INDEX IF NOT EXISTS idx_applications_client_id ON applications(client_id)",
 		"CREATE INDEX IF NOT EXISTS idx_applications_owner_id ON applications(owner_id)",
+		"CREATE INDEX IF NOT EXISTS idx_applications_name ON applications(name)",
 
 		// Token indexes
 		"CREATE INDEX IF NOT EXISTS idx_tokens_token_hash ON tokens(token_hash)",
 		"CREATE INDEX IF NOT EXISTS idx_tokens_expires_at ON tokens(expires_at)",
 		"CREATE INDEX IF NOT EXISTS idx_tokens_application_id ON tokens(application_id)",
 		"CREATE INDEX IF NOT EXISTS idx_tokens_user_id ON tokens(user_id)",
+		"CREATE INDEX IF NOT EXISTS idx_tokens_revoked ON tokens(revoked)",
+		"CREATE INDEX IF NOT EXISTS idx_tokens_expires_revoked ON tokens(expires_at, revoked)",
 
 		// Authorization code indexes
 		"CREATE INDEX IF NOT EXISTS idx_authorization_codes_code ON authorization_codes(code)",
@@ -470,11 +558,19 @@ func CreateIndexes(db *gorm.DB) error {
 		"CREATE INDEX IF NOT EXISTS idx_audit_logs_user_id ON audit_logs(user_id)",
 		"CREATE INDEX IF NOT EXISTS idx_audit_logs_application_id ON audit_logs(application_id)",
 		"CREATE INDEX IF NOT EXISTS idx_audit_logs_action ON audit_logs(action)",
+
+		// Scope and Audience indexes
+		"CREATE INDEX IF NOT EXISTS idx_scopes_name ON scopes(name)",
+		"CREATE INDEX IF NOT EXISTS idx_audiences_name ON audiences(name)",
+
+		// PAR indexes
+		"CREATE INDEX IF NOT EXISTS idx_par_request_uri ON pushed_authorization_requests(request_uri)",
+		"CREATE INDEX IF NOT EXISTS idx_par_expires_at ON pushed_authorization_requests(expires_at)",
 	}
 
 	for _, idx := range indexes {
 		if err := db.Exec(idx).Error; err != nil {
-			log.Printf("Failed to create index: %s - %v", idx, err)
+			applogger.Warn("Failed to create index", "index", idx, "error", err)
 		}
 	}
 
@@ -495,7 +591,7 @@ func InitializeDefaultData(db *gorm.DB, cfg *config.Config) error {
 			if err := db.Create(&role).Error; err != nil {
 				return fmt.Errorf("failed to create role %s: %w", role.Name, err)
 			}
-			log.Printf("Created role: %s", role.Name)
+			applogger.Debug("Created role", "role", role.Name)
 		}
 	}
 
@@ -516,7 +612,7 @@ func InitializeDefaultData(db *gorm.DB, cfg *config.Config) error {
 			if err := db.Create(&perm).Error; err != nil {
 				return fmt.Errorf("failed to create permission %s: %w", perm.Name, err)
 			}
-			log.Printf("Created permission: %s", perm.Name)
+			applogger.Debug("Created permission", "permission", perm.Name)
 		}
 	}
 
@@ -528,9 +624,9 @@ func InitializeDefaultData(db *gorm.DB, cfg *config.Config) error {
 			return fmt.Errorf("failed to find permissions: %w", err)
 		}
 		if err := db.Model(&adminRole).Association("Permissions").Replace(allPerms); err != nil {
-			log.Printf("Failed to assign permissions to admin role: %v", err)
+			applogger.Warn("Failed to assign permissions to admin role", "error", err)
 		}
-		log.Println("Assigned all permissions to admin role")
+		applogger.Debug("Assigned all permissions to admin role")
 	}
 
 	// Create admin user only if configured
@@ -558,7 +654,7 @@ func InitializeDefaultData(db *gorm.DB, cfg *config.Config) error {
 			if err := db.Model(&adminUser).Association("Roles").Append(&adminRole); err != nil {
 				return fmt.Errorf("failed to assign admin role to user: %w", err)
 			}
-			log.Printf("Created admin user: %s", cfg.Admin.Username)
+			applogger.Info("Created admin user", "username", cfg.Admin.Username)
 		}
 	}
 
@@ -576,7 +672,7 @@ func InitializeDefaultData(db *gorm.DB, cfg *config.Config) error {
 			if err := db.Create(&scope).Error; err != nil {
 				return fmt.Errorf("failed to create scope %s: %w", scope.Name, err)
 			}
-			log.Printf("Created scope: %s", scope.Name)
+			applogger.Debug("Created scope", "scope", scope.Name)
 		}
 	}
 

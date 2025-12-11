@@ -1,13 +1,13 @@
 package handlers
 
 import (
-	"log"
 	"net/http"
 	"time"
 
 	"github.com/gin-gonic/gin"
 	"github.com/google/uuid"
 	"github.com/tiiuae/oryxid/internal/database"
+	"github.com/tiiuae/oryxid/internal/logger"
 	"github.com/tiiuae/oryxid/internal/redis"
 	"gorm.io/gorm"
 )
@@ -190,7 +190,7 @@ func (h *SessionHandler) CleanupExpiredSessions() error {
 			},
 		}
 		if err := h.db.Create(&audit).Error; err != nil {
-			log.Printf("failed to create audit log for session cleanup: %v", err)
+			logger.Error("failed to create audit log for session cleanup", "error", err)
 		}
 	}
 
@@ -233,7 +233,7 @@ func (h *SessionHandler) CreateSession(userID uuid.UUID, ipAddress, userAgent st
 		if err := h.redis.SetSession(sessionID, sessionData, duration); err != nil {
 			// Log error but don't fail session creation
 			// Redis is optional for session storage
-			log.Printf("failed to set session in redis: %v", err)
+			logger.Warn("failed to set session in redis", "error", err)
 		}
 	}
 
@@ -253,7 +253,7 @@ func (h *SessionHandler) ValidateSession(sessionID string) (*database.Session, e
 				// Update last used
 				go func() {
 					if err := h.UpdateSessionActivity(sessionID); err != nil {
-						log.Printf("error updating session activity: %v", err)
+						logger.Warn("error updating session activity", "error", err, "session_id", sessionID)
 					}
 				}()
 				return &session, nil
@@ -271,7 +271,7 @@ func (h *SessionHandler) ValidateSession(sessionID string) (*database.Session, e
 	// Update last used
 	go func() {
 		if err := h.UpdateSessionActivity(sessionID); err != nil {
-			log.Printf("error updating session activity: %v", err)
+			logger.Warn("error updating session activity", "error", err, "session_id", sessionID)
 		}
 	}()
 
@@ -301,6 +301,6 @@ func (h *SessionHandler) logAudit(c *gin.Context, action, resource, resourceID s
 	}
 
 	if err := h.db.Create(&audit).Error; err != nil {
-		log.Printf("failed to create audit log: %v", err)
+		logger.Error("failed to create audit log", "error", err, "action", action)
 	}
 }

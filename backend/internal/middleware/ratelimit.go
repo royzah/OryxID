@@ -3,6 +3,7 @@ package middleware
 import (
 	"fmt"
 	"net/http"
+	"sync"
 	"time"
 
 	"github.com/gin-gonic/gin"
@@ -18,6 +19,7 @@ type RateLimiter interface {
 // InMemoryRateLimiter uses in-memory rate limiting
 type InMemoryRateLimiter struct {
 	limiters map[string]*rate.Limiter
+	mu       sync.Mutex
 	rps      int
 	burst    int
 }
@@ -33,11 +35,13 @@ func NewInMemoryRateLimiter(rps, burst int) *InMemoryRateLimiter {
 
 // Allow checks if the request is allowed
 func (r *InMemoryRateLimiter) Allow(key string) bool {
+	r.mu.Lock()
 	limiter, exists := r.limiters[key]
 	if !exists {
 		limiter = rate.NewLimiter(rate.Limit(r.rps), r.burst)
 		r.limiters[key] = limiter
 	}
+	r.mu.Unlock()
 	return limiter.Allow()
 }
 
@@ -130,9 +134,10 @@ func RateLimitByUser(limiter RateLimiter, rps int) gin.HandlerFunc {
 		}
 
 		// Get or create limiter for this user
+		// Burst is set to rps for predictable rate limiting behavior
 		userLimiter, exists := userLimiters[userID]
 		if !exists {
-			userLimiter = rate.NewLimiter(rate.Limit(rps), rps*2)
+			userLimiter = rate.NewLimiter(rate.Limit(rps), rps)
 			userLimiters[userID] = userLimiter
 		}
 
