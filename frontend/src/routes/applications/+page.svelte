@@ -178,7 +178,7 @@
 		{ value: 'refresh_token', label: 'Refresh Token' },
 		{ value: 'urn:ietf:params:oauth:grant-type:device_code', label: 'Device Authorization (RFC 8628)' },
 		{ value: 'urn:ietf:params:oauth:grant-type:token-exchange', label: 'Token Exchange (RFC 8693)' },
-		{ value: 'urn:ietf:params:oauth:grant-type:ciba', label: 'CIBA (OpenID Connect)' },
+		{ value: 'urn:openid:params:grant-type:ciba', label: 'CIBA (OpenID Connect)' },
 		{ value: 'implicit', label: 'Implicit (deprecated)' }
 	];
 </script>
