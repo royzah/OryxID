@@ -176,12 +176,16 @@ func main() {
 		oauthGroup.POST("/token", oauthHandler.TokenHandler)
 		oauthGroup.POST("/introspect", oauthHandler.IntrospectHandler)
 		oauthGroup.POST("/revoke", oauthHandler.RevokeHandler)
-		oauthGroup.POST("/par", oauthHandler.PARHandler) // RFC 9126 - Pushed Authorization Requests
+		oauthGroup.POST("/par", oauthHandler.PARHandler)                                  // RFC 9126 - Pushed Authorization Requests
+		oauthGroup.POST("/device_authorization", oauthHandler.DeviceAuthorizationHandler) // RFC 8628 - Device Authorization Grant
+		oauthGroup.GET("/device", oauthHandler.DeviceVerifyHandler)                       // RFC 8628 - User verification page
+		oauthGroup.POST("/bc-authorize", oauthHandler.CIBAHandler)                        // OpenID Connect CIBA
 
 		// Protected endpoints
 		authMiddleware := auth.NewAuthMiddleware(tokenManager, db)
 		oauthGroup.GET("/userinfo", authMiddleware.RequireAuth(), oauthHandler.UserInfoHandler)
 		oauthGroup.POST("/userinfo", authMiddleware.RequireAuth(), oauthHandler.UserInfoHandler)
+		oauthGroup.POST("/device", authMiddleware.RequireAuth(), oauthHandler.DeviceAuthorizeHandler) // RFC 8628 - User authorization
 	}
 
 	// OIDC Discovery
@@ -309,6 +313,14 @@ func startBackgroundTasks(db *gorm.DB, stop <-chan struct{}) {
 	codeTicker := time.NewTicker(15 * time.Minute)
 	defer codeTicker.Stop()
 
+	// Clean up expired device codes every 15 minutes (RFC 8628)
+	deviceCodeTicker := time.NewTicker(15 * time.Minute)
+	defer deviceCodeTicker.Stop()
+
+	// Clean up expired CIBA requests every 5 minutes (they expire quickly)
+	cibaTicker := time.NewTicker(5 * time.Minute)
+	defer cibaTicker.Stop()
+
 	logger.Debug("Background cleanup tasks started")
 
 	for {
@@ -330,6 +342,16 @@ func startBackgroundTasks(db *gorm.DB, stop <-chan struct{}) {
 		case <-codeTicker.C:
 			if err := cleanupExpiredAuthCodes(db); err != nil {
 				logger.Error("Error cleaning up expired auth codes", "error", err)
+			}
+
+		case <-deviceCodeTicker.C:
+			if err := cleanupExpiredDeviceCodes(db); err != nil {
+				logger.Error("Error cleaning up expired device codes", "error", err)
+			}
+
+		case <-cibaTicker.C:
+			if err := cleanupExpiredCIBARequests(db); err != nil {
+				logger.Error("Error cleaning up expired CIBA requests", "error", err)
 			}
 		}
 	}
@@ -367,6 +389,30 @@ func cleanupExpiredAuthCodes(db *gorm.DB) error {
 	}
 	if result.RowsAffected > 0 {
 		logger.Info("Cleaned up expired authorization codes", "count", result.RowsAffected)
+	}
+	return nil
+}
+
+func cleanupExpiredDeviceCodes(db *gorm.DB) error {
+	result := db.Where("expires_at < ?", time.Now()).
+		Delete(&database.DeviceCode{})
+	if result.Error != nil {
+		return result.Error
+	}
+	if result.RowsAffected > 0 {
+		logger.Info("Cleaned up expired device codes", "count", result.RowsAffected)
+	}
+	return nil
+}
+
+func cleanupExpiredCIBARequests(db *gorm.DB) error {
+	result := db.Where("expires_at < ?", time.Now()).
+		Delete(&database.CIBAAuthenticationRequest{})
+	if result.Error != nil {
+		return result.Error
+	}
+	if result.RowsAffected > 0 {
+		logger.Info("Cleaned up expired CIBA requests", "count", result.RowsAffected)
 	}
 	return nil
 }

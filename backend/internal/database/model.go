@@ -129,36 +129,38 @@ type Audience struct {
 // AuthorizationCode represents OAuth2 authorization codes
 type AuthorizationCode struct {
 	BaseModel
-	Code                string      `gorm:"uniqueIndex;not null" json:"code"`
-	ApplicationID       uuid.UUID   `gorm:"not null" json:"application_id"`
-	Application         Application `gorm:"foreignKey:ApplicationID" json:"-"`
-	UserID              *uuid.UUID  `json:"user_id,omitempty"`
-	User                *User       `gorm:"foreignKey:UserID" json:"-"`
-	RedirectURI         string      `json:"redirect_uri"`
-	Scope               string      `json:"scope"`
-	Audience            string      `json:"audience"`
-	State               string      `json:"state"`
-	Nonce               string      `json:"nonce"`
-	CodeChallenge       string      `json:"code_challenge"`
-	CodeChallengeMethod string      `json:"code_challenge_method"`
-	ExpiresAt           time.Time   `json:"expires_at"`
-	Used                bool        `gorm:"default:false" json:"used"`
+	Code                 string      `gorm:"uniqueIndex;not null" json:"code"`
+	ApplicationID        uuid.UUID   `gorm:"not null" json:"application_id"`
+	Application          Application `gorm:"foreignKey:ApplicationID" json:"-"`
+	UserID               *uuid.UUID  `json:"user_id,omitempty"`
+	User                 *User       `gorm:"foreignKey:UserID" json:"-"`
+	RedirectURI          string      `json:"redirect_uri"`
+	Scope                string      `json:"scope"`
+	Audience             string      `json:"audience"`
+	AuthorizationDetails string      `json:"authorization_details,omitempty"` // RAR (RFC 9396) - JSON array of authorization details
+	State                string      `json:"state"`
+	Nonce                string      `json:"nonce"`
+	CodeChallenge        string      `json:"code_challenge"`
+	CodeChallengeMethod  string      `json:"code_challenge_method"`
+	ExpiresAt            time.Time   `json:"expires_at"`
+	Used                 bool        `gorm:"default:false" json:"used"`
 }
 
 // Token represents various token types (access, refresh)
 type Token struct {
 	BaseModel
-	TokenHash     string      `gorm:"uniqueIndex;not null" json:"-"`
-	TokenType     string      `gorm:"not null" json:"token_type"` // access, refresh
-	ApplicationID uuid.UUID   `gorm:"not null" json:"application_id"`
-	Application   Application `gorm:"foreignKey:ApplicationID" json:"-"`
-	UserID        *uuid.UUID  `json:"user_id,omitempty"`
-	User          *User       `gorm:"foreignKey:UserID" json:"-"`
-	Scope         string      `json:"scope"`
-	Audience      string      `json:"audience"`
-	ExpiresAt     time.Time   `json:"expires_at"`
-	Revoked       bool        `gorm:"default:false" json:"revoked"`
-	RevokedAt     *time.Time  `json:"revoked_at,omitempty"`
+	TokenHash            string      `gorm:"uniqueIndex;not null" json:"-"`
+	TokenType            string      `gorm:"not null" json:"token_type"` // access, refresh
+	ApplicationID        uuid.UUID   `gorm:"not null" json:"application_id"`
+	Application          Application `gorm:"foreignKey:ApplicationID" json:"-"`
+	UserID               *uuid.UUID  `json:"user_id,omitempty"`
+	User                 *User       `gorm:"foreignKey:UserID" json:"-"`
+	Scope                string      `json:"scope"`
+	Audience             string      `json:"audience"`
+	AuthorizationDetails string      `json:"authorization_details,omitempty"` // RAR (RFC 9396)
+	ExpiresAt            time.Time   `json:"expires_at"`
+	Revoked              bool        `gorm:"default:false" json:"revoked"`
+	RevokedAt            *time.Time  `json:"revoked_at,omitempty"`
 }
 
 // Session represents user sessions
@@ -224,19 +226,63 @@ type SigningKey struct {
 	RevokedAt     *time.Time `json:"revoked_at,omitempty"`                // If key compromised
 }
 
+// CIBAAuthenticationRequest represents a CIBA authentication request (OpenID Connect CIBA)
+type CIBAAuthenticationRequest struct {
+	BaseModel
+	AuthReqID         string      `gorm:"uniqueIndex;not null" json:"auth_req_id"` // Unique authentication request ID
+	ApplicationID     uuid.UUID   `gorm:"not null;index" json:"application_id"`
+	Application       Application `gorm:"foreignKey:ApplicationID" json:"-"`
+	UserID            *uuid.UUID  `json:"user_id,omitempty"`                     // User being authenticated
+	User              *User       `gorm:"foreignKey:UserID" json:"-"`            // The user
+	BindingMessage    string      `json:"binding_message,omitempty"`             // Message shown to user
+	ClientNotifyToken string      `json:"client_notify_token,omitempty"`         // Token for callback notification
+	Scope             string      `json:"scope,omitempty"`                        // Requested scopes
+	ACRValues         string      `json:"acr_values,omitempty"`                   // Requested authentication context
+	LoginHint         string      `json:"login_hint,omitempty"`                   // Hint to identify user
+	LoginHintToken    string      `json:"login_hint_token,omitempty"`             // JWT containing user hint
+	IDTokenHint       string      `json:"id_token_hint,omitempty"`                // Previous ID token as hint
+	RequestedExpiry   int         `json:"requested_expiry,omitempty"`             // Requested auth expiry
+	ExpiresAt         time.Time   `gorm:"not null;index" json:"expires_at"`       // When the request expires
+	Interval          int         `gorm:"default:5" json:"interval"`              // Polling interval in seconds
+	Status            string      `gorm:"default:'pending';index" json:"status"`  // pending, authorized, denied, expired
+	AuthorizedAt      *time.Time  `json:"authorized_at,omitempty"`                // When user authorized
+	LastPollAt        *time.Time  `json:"last_poll_at,omitempty"`                 // Last time client polled
+}
+
+// DeviceCode represents a device authorization request (RFC 8628)
+type DeviceCode struct {
+	BaseModel
+	DeviceCode       string      `gorm:"uniqueIndex;not null" json:"device_code"`    // Secret code for device
+	UserCode         string      `gorm:"uniqueIndex;not null" json:"user_code"`      // Code displayed to user (e.g., "WDJB-MJHT")
+	ApplicationID    uuid.UUID   `gorm:"not null;index" json:"application_id"`       // Which app requested this
+	Application      Application `gorm:"foreignKey:ApplicationID" json:"-"`          // The application
+	UserID           *uuid.UUID  `json:"user_id,omitempty"`                          // User who authorized (set after authorization)
+	User             *User       `gorm:"foreignKey:UserID" json:"-"`                 // The authorizing user
+	Scope            string      `json:"scope,omitempty"`                            // Requested scopes
+	Audience         string      `json:"audience,omitempty"`                         // Target audience
+	VerificationURI  string      `json:"verification_uri"`                           // Where user should go to authorize
+	ExpiresAt        time.Time   `gorm:"not null;index" json:"expires_at"`           // When the codes expire
+	Interval         int         `gorm:"default:5" json:"interval"`                  // Polling interval in seconds
+	Status           string      `gorm:"default:'pending';index" json:"status"`      // pending, authorized, denied, expired
+	AuthorizedAt     *time.Time  `json:"authorized_at,omitempty"`                    // When user authorized
+	LastPollAt       *time.Time  `json:"last_poll_at,omitempty"`                     // Last time device polled
+	ClientIP         string      `json:"client_ip,omitempty"`                        // Device IP address
+}
+
 // PushedAuthorizationRequest represents a PAR object (RFC 9126)
 type PushedAuthorizationRequest struct {
 	BaseModel
-	RequestURI          string    `gorm:"uniqueIndex;not null" json:"request_uri"` // urn:ietf:params:oauth:request_uri:<value>
-	ApplicationID       uuid.UUID `gorm:"not null;index" json:"application_id"`
-	ResponseType        string    `gorm:"not null" json:"response_type"`
-	ClientID            string    `gorm:"not null" json:"client_id"`
-	RedirectURI         string    `gorm:"not null" json:"redirect_uri"`
-	Scope               string    `json:"scope,omitempty"`
-	State               string    `json:"state,omitempty"`
-	Nonce               string    `json:"nonce,omitempty"`
-	CodeChallenge       string    `json:"code_challenge,omitempty"`
-	CodeChallengeMethod string    `json:"code_challenge_method,omitempty"`
-	ExpiresAt           time.Time `gorm:"not null;index" json:"expires_at"` // PAR requests expire quickly (typically 90 seconds)
-	Used                bool      `gorm:"default:false;index" json:"used"`  // One-time use
+	RequestURI           string    `gorm:"uniqueIndex;not null" json:"request_uri"` // urn:ietf:params:oauth:request_uri:<value>
+	ApplicationID        uuid.UUID `gorm:"not null;index" json:"application_id"`
+	ResponseType         string    `gorm:"not null" json:"response_type"`
+	ClientID             string    `gorm:"not null" json:"client_id"`
+	RedirectURI          string    `gorm:"not null" json:"redirect_uri"`
+	Scope                string    `json:"scope,omitempty"`
+	State                string    `json:"state,omitempty"`
+	Nonce                string    `json:"nonce,omitempty"`
+	CodeChallenge        string    `json:"code_challenge,omitempty"`
+	CodeChallengeMethod  string    `json:"code_challenge_method,omitempty"`
+	AuthorizationDetails string    `json:"authorization_details,omitempty"` // RAR (RFC 9396) - JSON array of authorization details
+	ExpiresAt            time.Time `gorm:"not null;index" json:"expires_at"` // PAR requests expire quickly (typically 90 seconds)
+	Used                 bool      `gorm:"default:false;index" json:"used"`  // One-time use
 }

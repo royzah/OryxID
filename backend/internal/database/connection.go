@@ -317,6 +317,9 @@ func Migrate(db *gorm.DB) error {
 			user_id UUID REFERENCES users(id) ON DELETE CASCADE,
 			redirect_uri TEXT NOT NULL,
 			scope TEXT,
+			audience TEXT,
+			authorization_details TEXT,
+			state TEXT,
 			code_challenge TEXT,
 			code_challenge_method TEXT,
 			nonce TEXT,
@@ -349,6 +352,7 @@ func Migrate(db *gorm.DB) error {
 			user_id UUID REFERENCES users(id) ON DELETE CASCADE,
 			scope TEXT,
 			audience TEXT,
+			authorization_details TEXT,
 			expires_at TIMESTAMP WITH TIME ZONE NOT NULL,
 			revoked BOOLEAN DEFAULT FALSE,
 			revoked_at TIMESTAMP WITH TIME ZONE
@@ -425,14 +429,94 @@ func Migrate(db *gorm.DB) error {
 			nonce TEXT,
 			code_challenge TEXT,
 			code_challenge_method TEXT,
+			authorization_details TEXT,
 			expires_at TIMESTAMP WITH TIME ZONE NOT NULL,
 			used BOOLEAN DEFAULT FALSE
 		)
 	`).Error; err != nil {
 		return fmt.Errorf("failed to create pushed_authorization_requests table: %w", err)
 	}
+	// Add authorization_details column if it doesn't exist (migration for existing tables)
+	db.Exec(`ALTER TABLE pushed_authorization_requests ADD COLUMN IF NOT EXISTS authorization_details TEXT`)
 	if err := db.Exec(`CREATE INDEX IF NOT EXISTS idx_pushed_authorization_requests_deleted_at ON pushed_authorization_requests(deleted_at)`).Error; err != nil {
 		return fmt.Errorf("failed to create pushed_authorization_requests index: %w", err)
+	}
+
+	// Create ciba_authentication_requests table (OpenID Connect CIBA)
+	if err := db.Exec(`
+		CREATE TABLE IF NOT EXISTS ciba_authentication_requests (
+			id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+			created_at TIMESTAMP WITH TIME ZONE,
+			updated_at TIMESTAMP WITH TIME ZONE,
+			deleted_at TIMESTAMP WITH TIME ZONE,
+			auth_req_id TEXT UNIQUE NOT NULL,
+			application_id UUID NOT NULL REFERENCES applications(id) ON DELETE CASCADE,
+			user_id UUID REFERENCES users(id) ON DELETE CASCADE,
+			binding_message TEXT,
+			client_notify_token TEXT,
+			scope TEXT,
+			acr_values TEXT,
+			login_hint TEXT,
+			login_hint_token TEXT,
+			id_token_hint TEXT,
+			requested_expiry INTEGER,
+			expires_at TIMESTAMP WITH TIME ZONE NOT NULL,
+			interval INTEGER DEFAULT 5,
+			status TEXT DEFAULT 'pending',
+			authorized_at TIMESTAMP WITH TIME ZONE,
+			last_poll_at TIMESTAMP WITH TIME ZONE
+		)
+	`).Error; err != nil {
+		return fmt.Errorf("failed to create ciba_authentication_requests table: %w", err)
+	}
+	if err := db.Exec(`CREATE INDEX IF NOT EXISTS idx_ciba_auth_req_id ON ciba_authentication_requests(auth_req_id)`).Error; err != nil {
+		return fmt.Errorf("failed to create ciba auth_req_id index: %w", err)
+	}
+	if err := db.Exec(`CREATE INDEX IF NOT EXISTS idx_ciba_expires_at ON ciba_authentication_requests(expires_at)`).Error; err != nil {
+		return fmt.Errorf("failed to create ciba expires_at index: %w", err)
+	}
+	if err := db.Exec(`CREATE INDEX IF NOT EXISTS idx_ciba_status ON ciba_authentication_requests(status)`).Error; err != nil {
+		return fmt.Errorf("failed to create ciba status index: %w", err)
+	}
+
+	// Create device_codes table (RFC 8628 - Device Authorization Grant)
+	if err := db.Exec(`
+		CREATE TABLE IF NOT EXISTS device_codes (
+			id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+			created_at TIMESTAMP WITH TIME ZONE,
+			updated_at TIMESTAMP WITH TIME ZONE,
+			deleted_at TIMESTAMP WITH TIME ZONE,
+			device_code TEXT UNIQUE NOT NULL,
+			user_code TEXT UNIQUE NOT NULL,
+			application_id UUID NOT NULL REFERENCES applications(id) ON DELETE CASCADE,
+			user_id UUID REFERENCES users(id) ON DELETE CASCADE,
+			scope TEXT,
+			audience TEXT,
+			verification_uri TEXT,
+			expires_at TIMESTAMP WITH TIME ZONE NOT NULL,
+			interval INTEGER DEFAULT 5,
+			status TEXT DEFAULT 'pending',
+			authorized_at TIMESTAMP WITH TIME ZONE,
+			last_poll_at TIMESTAMP WITH TIME ZONE,
+			client_ip TEXT
+		)
+	`).Error; err != nil {
+		return fmt.Errorf("failed to create device_codes table: %w", err)
+	}
+	if err := db.Exec(`CREATE INDEX IF NOT EXISTS idx_device_codes_deleted_at ON device_codes(deleted_at)`).Error; err != nil {
+		return fmt.Errorf("failed to create device_codes index: %w", err)
+	}
+	if err := db.Exec(`CREATE INDEX IF NOT EXISTS idx_device_codes_device_code ON device_codes(device_code)`).Error; err != nil {
+		return fmt.Errorf("failed to create device_codes device_code index: %w", err)
+	}
+	if err := db.Exec(`CREATE INDEX IF NOT EXISTS idx_device_codes_user_code ON device_codes(user_code)`).Error; err != nil {
+		return fmt.Errorf("failed to create device_codes user_code index: %w", err)
+	}
+	if err := db.Exec(`CREATE INDEX IF NOT EXISTS idx_device_codes_expires_at ON device_codes(expires_at)`).Error; err != nil {
+		return fmt.Errorf("failed to create device_codes expires_at index: %w", err)
+	}
+	if err := db.Exec(`CREATE INDEX IF NOT EXISTS idx_device_codes_status ON device_codes(status)`).Error; err != nil {
+		return fmt.Errorf("failed to create device_codes status index: %w", err)
 	}
 
 	applogger.Debug("All tables created successfully")

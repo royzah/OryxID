@@ -16,11 +16,11 @@ A collection of potential improvements and feature ideas for the OryxID OAuth2/O
 
 ### OAuth/OIDC Compliance
 
-- [ ] Implement Device Authorization Grant (RFC 8628)
-- [ ] Add support for JWT Bearer assertion (RFC 7523)
-- [ ] Implement Token Exchange (RFC 8693)
-- [ ] Add CIBA (Client-Initiated Backchannel Authentication)
-- [ ] Implement Rich Authorization Requests (RAR)
+- [x] Implement Device Authorization Grant (RFC 8628)
+- [x] Add support for JWT Bearer assertion (RFC 7523) - private_key_jwt already implemented
+- [x] Implement Token Exchange (RFC 8693)
+- [x] Add CIBA (Client-Initiated Backchannel Authentication)
+- [x] Implement Rich Authorization Requests (RAR - RFC 9396)
 
 ## Medium Priority
 
