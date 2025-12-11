@@ -15,12 +15,14 @@
 		{ href: '/settings', label: 'Settings', icon: 'settings' }
 	];
 
-	$: isLoginPage = $page.url.pathname === '/login';
+	// Public routes that don't require authentication
+	const publicRoutes = ['/login', '/device', '/authorize', '/consent'];
+	$: isPublicRoute = publicRoutes.some(route => $page.url.pathname.startsWith(route));
 
 	onMount(() => {
-		// Redirect to login if not authenticated (except on login page)
+		// Redirect to login if not authenticated (except on public routes)
 		const unsubscribe = auth.subscribe((state) => {
-			if (state.isInitialized && !state.token && !isLoginPage) {
+			if (state.isInitialized && !state.token && !isPublicRoute) {
 				goto('/login');
 			}
 		});
@@ -37,7 +39,7 @@
 	<title>OryxID Admin</title>
 </svelte:head>
 
-{#if isLoginPage}
+{#if isPublicRoute}
 	<slot />
 {:else if $isAuthenticated}
 	<div class="min-h-screen bg-gray-50/50">

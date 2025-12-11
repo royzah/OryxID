@@ -45,6 +45,15 @@ func getEnv(key, defaultValue string) string {
 	return defaultValue
 }
 
+// verifyServerRunning checks if the server is accessible
+func verifyServerRunning(t *testing.T) {
+	client := &http.Client{Timeout: 5 * time.Second}
+	_, err := client.Get(baseURL + "/.well-known/openid-configuration")
+	if err != nil {
+		t.Skipf("Cannot connect to server at %s - is it running?", baseURL)
+	}
+}
+
 // verifyTestClientExists checks if the test OAuth application is configured
 func verifyTestClientExists(t *testing.T) {
 	// Try to get a token with test credentials
@@ -253,6 +262,7 @@ func TestDiscoveryEndpoint(t *testing.T) {
 	if testing.Short() {
 		t.Skip("Skipping integration test in short mode")
 	}
+	verifyServerRunning(t)
 
 	client := &http.Client{Timeout: 10 * time.Second}
 	resp, err := client.Get(baseURL + "/.well-known/openid-configuration")
@@ -287,6 +297,7 @@ func TestJWKSEndpoint(t *testing.T) {
 	if testing.Short() {
 		t.Skip("Skipping integration test in short mode")
 	}
+	verifyServerRunning(t)
 
 	client := &http.Client{Timeout: 10 * time.Second}
 	resp, err := client.Get(baseURL + "/.well-known/jwks.json")
@@ -356,6 +367,7 @@ func TestRedisCaching(t *testing.T) {
 	if testing.Short() {
 		t.Skip("Skipping integration test in short mode")
 	}
+	verifyServerRunning(t)
 
 	// Test that repeated requests to discovery use cache
 	client := &http.Client{Timeout: 10 * time.Second}

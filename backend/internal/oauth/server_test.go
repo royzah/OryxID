@@ -34,6 +34,8 @@ func setupTestDB(t *testing.T) *gorm.DB {
 		&database.AuditLog{},
 		&database.SigningKey{},
 		&database.PushedAuthorizationRequest{},
+		&database.DeviceCode{},
+		&database.CIBAAuthenticationRequest{},
 	)
 	require.NoError(t, err)
 
