@@ -203,7 +203,7 @@
 										<p class="font-medium text-blue-900">{detail.type}</p>
 										{#if detail.instructedAmount}
 											<p class="text-sm text-blue-700 mt-1">
-												Amount: {(detail.instructedAmount as {currency: string, amount: string}).currency} {(detail.instructedAmount as {currency: string, amount: string}).amount}
+												Amount: {detail.instructedAmount.currency} {detail.instructedAmount.amount}
 											</p>
 										{/if}
 									</li>
