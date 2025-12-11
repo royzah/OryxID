@@ -27,14 +27,14 @@ type RotateKeyRequest struct {
 }
 
 type KeyResponse struct {
-	ID        string    `json:"id"`
-	Kid       string    `json:"kid"`
-	Algorithm string    `json:"algorithm"`
-	KeyType   string    `json:"key_type"`
-	Use       string    `json:"use"`
-	Active    bool      `json:"active"`
-	CreatedAt time.Time `json:"created_at"`
-	ExpiresAt time.Time `json:"expires_at"`
+	ID        string     `json:"id"`
+	Kid       string     `json:"kid"`
+	Algorithm string     `json:"algorithm"`
+	KeyType   string     `json:"key_type"`
+	Use       string     `json:"use"`
+	Active    bool       `json:"active"`
+	CreatedAt time.Time  `json:"created_at"`
+	ExpiresAt time.Time  `json:"expires_at"`
 	RevokedAt *time.Time `json:"revoked_at,omitempty"`
 }
 

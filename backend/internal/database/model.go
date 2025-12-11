@@ -85,26 +85,26 @@ type Permission struct {
 // Application represents an OAuth2 client
 type Application struct {
 	BaseModel
-	Name                     string      `gorm:"not null" json:"name"`
-	Description              string      `json:"description"`
-	ClientID                 string      `gorm:"uniqueIndex;not null" json:"client_id"`
-	HashedClientSecret       string      `gorm:"not null" json:"-"` // Only store hashed secret
-	ClientType               string      `gorm:"not null" json:"client_type"` // confidential, public
-	TokenEndpointAuthMethod  string      `json:"token_endpoint_auth_method"` // client_secret_basic, client_secret_post, private_key_jwt
-	PublicKeyPEM             string      `json:"public_key_pem,omitempty"` // For private_key_jwt authentication
-	JWKSURI                  string      `json:"jwks_uri,omitempty"` // Alternative to PublicKeyPEM - fetch keys from URL
-	GrantTypes               StringArray `gorm:"type:jsonb" json:"grant_types"`
-	ResponseTypes            StringArray `gorm:"type:jsonb" json:"response_types"`
-	RedirectURIs             StringArray `gorm:"type:jsonb" json:"redirect_uris"`
-	PostLogoutURIs           StringArray `gorm:"type:jsonb" json:"post_logout_uris"`
-	Scopes                   []Scope     `gorm:"many2many:application_scopes" json:"scopes,omitempty"`
-	Audiences                []Audience  `gorm:"many2many:application_audiences" json:"audiences,omitempty"`
-	SkipAuthorization        bool        `gorm:"default:false" json:"skip_authorization"`
-	AccessTokenLifespan      int         `json:"access_token_lifespan"`  // seconds, 0 means use default
-	RefreshTokenLifespan     int         `json:"refresh_token_lifespan"` // seconds, 0 means use default
-	Owner                    *User      `gorm:"foreignKey:OwnerID" json:"owner,omitempty"`
-	OwnerID                  *uuid.UUID `json:"owner_id,omitempty"`
-	Metadata                 JSONB      `gorm:"type:jsonb" json:"metadata,omitempty"`
+	Name                    string      `gorm:"not null" json:"name"`
+	Description             string      `json:"description"`
+	ClientID                string      `gorm:"uniqueIndex;not null" json:"client_id"`
+	HashedClientSecret      string      `gorm:"not null" json:"-"`           // Only store hashed secret
+	ClientType              string      `gorm:"not null" json:"client_type"` // confidential, public
+	TokenEndpointAuthMethod string      `json:"token_endpoint_auth_method"`  // client_secret_basic, client_secret_post, private_key_jwt
+	PublicKeyPEM            string      `json:"public_key_pem,omitempty"`    // For private_key_jwt authentication
+	JWKSURI                 string      `json:"jwks_uri,omitempty"`          // Alternative to PublicKeyPEM - fetch keys from URL
+	GrantTypes              StringArray `gorm:"type:jsonb" json:"grant_types"`
+	ResponseTypes           StringArray `gorm:"type:jsonb" json:"response_types"`
+	RedirectURIs            StringArray `gorm:"type:jsonb" json:"redirect_uris"`
+	PostLogoutURIs          StringArray `gorm:"type:jsonb" json:"post_logout_uris"`
+	Scopes                  []Scope     `gorm:"many2many:application_scopes" json:"scopes,omitempty"`
+	Audiences               []Audience  `gorm:"many2many:application_audiences" json:"audiences,omitempty"`
+	SkipAuthorization       bool        `gorm:"default:false" json:"skip_authorization"`
+	AccessTokenLifespan     int         `json:"access_token_lifespan"`  // seconds, 0 means use default
+	RefreshTokenLifespan    int         `json:"refresh_token_lifespan"` // seconds, 0 means use default
+	Owner                   *User       `gorm:"foreignKey:OwnerID" json:"owner,omitempty"`
+	OwnerID                 *uuid.UUID  `json:"owner_id,omitempty"`
+	Metadata                JSONB       `gorm:"type:jsonb" json:"metadata,omitempty"`
 }
 
 // Scope represents OAuth2 scopes
@@ -183,10 +183,10 @@ type AuditLog struct {
 	Action        string       `gorm:"not null" json:"action"`
 	Resource      string       `json:"resource"`
 	ResourceID    string       `json:"resource_id"`
-	IPAddress     string `json:"ip_address"`
-	UserAgent     string `json:"user_agent"`
-	StatusCode    int    `json:"status_code"`
-	Metadata      JSONB  `gorm:"type:jsonb" json:"metadata,omitempty"`
+	IPAddress     string       `json:"ip_address"`
+	UserAgent     string       `json:"user_agent"`
+	StatusCode    int          `json:"status_code"`
+	Metadata      JSONB        `gorm:"type:jsonb" json:"metadata,omitempty"`
 }
 
 // JSONB is a custom type for PostgreSQL JSONB support
@@ -214,14 +214,14 @@ func (j *JSONB) Scan(value interface{}) error {
 // SigningKey represents a cryptographic key for JWT signing (key rotation support)
 type SigningKey struct {
 	BaseModel
-	KeyID         string     `gorm:"uniqueIndex;not null" json:"key_id"`        // kid claim
-	Algorithm     string     `gorm:"not null" json:"algorithm"` // Signing algorithm
-	PrivateKeyPEM string     `gorm:"not null" json:"-"`               // PEM-encoded private key (never exposed)
-	PublicKeyPEM  string     `gorm:"not null" json:"public_key_pem"`  // PEM-encoded public key
-	IsActive      bool       `gorm:"default:true;index" json:"is_active"`       // Currently used for signing
-	ActivatedAt   time.Time  `gorm:"not null" json:"activated_at"`              // When this key became active
-	ExpiresAt     *time.Time `json:"expires_at,omitempty"`                      // Optional expiration (for key rotation)
-	RevokedAt     *time.Time `json:"revoked_at,omitempty"`                      // If key compromised
+	KeyID         string     `gorm:"uniqueIndex;not null" json:"key_id"`  // kid claim
+	Algorithm     string     `gorm:"not null" json:"algorithm"`           // Signing algorithm
+	PrivateKeyPEM string     `gorm:"not null" json:"-"`                   // PEM-encoded private key (never exposed)
+	PublicKeyPEM  string     `gorm:"not null" json:"public_key_pem"`      // PEM-encoded public key
+	IsActive      bool       `gorm:"default:true;index" json:"is_active"` // Currently used for signing
+	ActivatedAt   time.Time  `gorm:"not null" json:"activated_at"`        // When this key became active
+	ExpiresAt     *time.Time `json:"expires_at,omitempty"`                // Optional expiration (for key rotation)
+	RevokedAt     *time.Time `json:"revoked_at,omitempty"`                // If key compromised
 }
 
 // PushedAuthorizationRequest represents a PAR object (RFC 9126)

@@ -343,19 +343,19 @@ func TestApplication_Create(t *testing.T) {
 	db := setupTestDB(t)
 
 	app := &Application{
-		Name:                     "Test App",
-		Description:              "A test application",
-		ClientID:                 "test-client-id",
-		HashedClientSecret:       "hashed-secret",
-		ClientType:               "confidential",
-		TokenEndpointAuthMethod:  "client_secret_basic",
-		GrantTypes:               StringArray{"authorization_code", "refresh_token"},
-		ResponseTypes:            StringArray{"code"},
-		RedirectURIs:             StringArray{"https://example.com/callback"},
-		PostLogoutURIs:           StringArray{"https://example.com/logout"},
-		SkipAuthorization:        false,
-		AccessTokenLifespan:      3600,
-		RefreshTokenLifespan:     86400,
+		Name:                    "Test App",
+		Description:             "A test application",
+		ClientID:                "test-client-id",
+		HashedClientSecret:      "hashed-secret",
+		ClientType:              "confidential",
+		TokenEndpointAuthMethod: "client_secret_basic",
+		GrantTypes:              StringArray{"authorization_code", "refresh_token"},
+		ResponseTypes:           StringArray{"code"},
+		RedirectURIs:            StringArray{"https://example.com/callback"},
+		PostLogoutURIs:          StringArray{"https://example.com/logout"},
+		SkipAuthorization:       false,
+		AccessTokenLifespan:     3600,
+		RefreshTokenLifespan:    86400,
 	}
 
 	err := db.Create(app).Error

@@ -378,7 +378,7 @@ func (s *Server) RefreshTokenGrant(req *TokenRequest) (*tokens.TokenResponse, er
 		TokenType:    "Bearer",
 		ExpiresIn:    3600,
 		RefreshToken: newRefreshToken, // Return new refresh token (OAuth 2.1 best practice)
-		Scope:        requestedScope,   // Return actual scope (might be downscaled)
+		Scope:        requestedScope,  // Return actual scope (might be downscaled)
 	}
 
 	// Store new access token and new refresh token

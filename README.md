@@ -87,6 +87,84 @@ See component documentation:
 - [Backend README](./backend/README.md) - API, OAuth endpoints, configuration
 - [Frontend README](./frontend/README.md) - Admin UI, components, development
 
+## Creating OAuth Applications
+
+### Via Admin Dashboard
+
+1. Login at `http://localhost:8080` (default: admin/admin123)
+2. Navigate to **Applications** in the sidebar
+3. Click **Create Application**
+4. Fill in the form:
+
+   | Field | Description | Example |
+   |-------|-------------|---------|
+   | Name | Application display name | My App |
+   | Client Type | `confidential` or `public` | confidential |
+   | Redirect URIs | Callback URLs (one per line) | https://myapp.com/callback |
+   | Grant Types | Allowed OAuth flows | client_credentials, authorization_code |
+   | Scopes | Permissions requested | read, write |
+
+5. Click **Create**
+6. **Important**: Copy the **Client Secret** immediately - it's only shown once!
+
+### Application Types
+
+| Type | Use Case | Secret Required |
+|------|----------|-----------------|
+| confidential | Server-side apps | Yes |
+| public | SPAs, mobile apps | No |
+
+### Grant Types
+
+| Grant | Use Case |
+|-------|----------|
+| client_credentials | Machine-to-machine |
+| authorization_code | User login flows |
+| refresh_token | Token refresh |
+
+### Testing OAuth Credentials
+
+Use the included Python script to verify your client credentials:
+
+```bash
+# Test client_credentials flow
+python scripts/test_oauth_client.py \
+  --client-id YOUR_CLIENT_ID \
+  --client-secret YOUR_SECRET \
+  --url http://localhost:9000
+
+# With custom scope
+python scripts/test_oauth_client.py \
+  -c YOUR_CLIENT_ID \
+  -s YOUR_SECRET \
+  --scope "read write"
+```
+
+Expected output for valid credentials:
+
+```text
+Testing OAuth client credentials against http://localhost:9000
+Client ID: YOUR_CLIENT_ID
+--------------------------------------------------
+
+[1] Testing client_credentials grant...
+    Status: SUCCESS
+    Access Token: eyJhbGciOiJSUzI1NiIsInR5cCI6IkpXVCJ9...
+    Token Type: Bearer
+    Expires In: 3600 seconds
+    Scope: read
+
+[2] Testing token introspection...
+    Status: SUCCESS
+    Active: True
+    Client ID: YOUR_CLIENT_ID
+    Scope: read
+
+==================================================
+RESULT: Client credentials are VALID
+==================================================
+```
+
 ## Security Features
 
 ### OAuth 2.1 Compliance

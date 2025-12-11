@@ -329,14 +329,14 @@ func TestPARExpiration(t *testing.T) {
 
 	// Create PAR
 	parRequest := &database.PushedAuthorizationRequest{
-		RequestURI:          "urn:ietf:params:oauth:request_uri:test-expired",
-		ApplicationID:       app.ID,
-		ResponseType:        "code",
-		ClientID:            app.ClientID,
-		RedirectURI:         "https://example.com/callback",
-		Scope:               "openid",
-		ExpiresAt:           time.Now().Add(-1 * time.Minute), // Already expired
-		Used:                false,
+		RequestURI:    "urn:ietf:params:oauth:request_uri:test-expired",
+		ApplicationID: app.ID,
+		ResponseType:  "code",
+		ClientID:      app.ClientID,
+		RedirectURI:   "https://example.com/callback",
+		Scope:         "openid",
+		ExpiresAt:     time.Now().Add(-1 * time.Minute), // Already expired
+		Used:          false,
 	}
 
 	err := db.Create(parRequest).Error
