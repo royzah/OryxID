@@ -36,31 +36,27 @@
 	<title>Login - OryxID</title>
 </svelte:head>
 
-<div class="min-h-screen flex items-center justify-center bg-gray-50 py-12 px-4 sm:px-6 lg:px-8">
-	<Card class="w-full max-w-md p-8">
-		<div class="text-center mb-8">
-			<div
-				class="mx-auto w-16 h-16 bg-purple-600 rounded-xl flex items-center justify-center mb-4"
-			>
-				<span class="text-white text-2xl font-bold">O</span>
-			</div>
-			<h1 class="text-2xl font-bold text-gray-900">OryxID</h1>
-			<p class="text-gray-600 mt-2">Sign in to the admin panel</p>
+<div class="min-h-screen flex items-center justify-center bg-gradient-to-br from-gray-50 to-gray-100 py-12 px-4 sm:px-6 lg:px-8">
+	<Card class="w-full max-w-md p-10 shadow-xl border-0">
+		<div class="text-center mb-10">
+			<img src="/favicon-96x96.png" alt="OryxID" class="mx-auto w-16 h-16 rounded-2xl shadow-lg mb-6" />
+			<h1 class="text-2xl font-semibold text-gray-900">Welcome back</h1>
+			<p class="text-gray-500 mt-2">Sign in to OryxID Admin</p>
 		</div>
 
 		{#if error}
-			<div class="mb-6 p-4 bg-red-50 border border-red-200 rounded-lg text-red-700 text-sm">
+			<div class="mb-6 p-4 bg-red-50 border border-red-100 rounded-xl text-red-600 text-sm">
 				{error}
 			</div>
 		{/if}
 
-		<form on:submit={handleSubmit} class="space-y-6">
+		<form on:submit={handleSubmit} class="space-y-5">
 			<div class="space-y-2">
-				<Label for="username">Username or Email</Label>
+				<Label for="username">Username</Label>
 				<Input
 					id="username"
 					type="text"
-					placeholder="Enter your username or email"
+					placeholder="Enter your username"
 					bind:value={username}
 					required
 					autocomplete="username"
@@ -79,9 +75,9 @@
 				/>
 			</div>
 
-			<Button type="submit" class="w-full" disabled={loading}>
+			<Button type="submit" class="w-full h-11" disabled={loading}>
 				{#if loading}
-					<svg class="animate-spin -ml-1 mr-3 h-5 w-5 text-white" fill="none" viewBox="0 0 24 24">
+					<svg class="animate-spin -ml-1 mr-3 h-5 w-5" fill="none" viewBox="0 0 24 24">
 						<circle
 							class="opacity-25"
 							cx="12"
@@ -103,7 +99,7 @@
 			</Button>
 		</form>
 
-		<p class="mt-8 text-center text-sm text-gray-500">
+		<p class="mt-10 text-center text-sm text-gray-400">
 			OAuth2/OIDC Server Administration
 		</p>
 	</Card>
