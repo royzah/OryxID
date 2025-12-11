@@ -148,6 +148,7 @@ func main() {
 			"/health",
 			"/metrics",
 			"/auth/login",   // Login must be exempt - it's the entry point
+			"/auth/logout",  // Logout is protected by JWT auth, not CSRF
 			"/auth/refresh", // Token refresh should be exempt
 			"/oauth/*",      // OAuth endpoints are protected by client credentials
 			"/api/v1/*",     // API endpoints (use * for prefix matching)
