@@ -43,9 +43,10 @@ make status
 ```
 
 Access points:
-- Application: http://localhost:8080
-- Backend API: http://localhost:9000
-- Frontend Dev: http://localhost:3000
+
+- Application: <http://localhost:8080>
+- Backend API: <http://localhost:9000>
+- Frontend Dev: <http://localhost:3000>
 
 ## OAuth2 Flows
 
@@ -70,7 +71,7 @@ sequenceDiagram
 
 ## Project Structure
 
-```
+```text
 .
 ├── backend/          # Go API server
 ├── frontend/         # SvelteKit admin UI
@@ -82,24 +83,28 @@ sequenceDiagram
 ```
 
 See component documentation:
+
 - [Backend README](./backend/README.md) - API, OAuth endpoints, configuration
 - [Frontend README](./frontend/README.md) - Admin UI, components, development
 
 ## Security Features
 
 ### OAuth 2.1 Compliance
+
 - PKCE with S256 (plain method rejected)
 - Refresh token rotation
 - Access token revocation
 - No implicit flow
 
 ### OpenID Connect 1.0
+
 - ID tokens with required claims
 - UserInfo endpoint
 - Discovery endpoint `/.well-known/openid-configuration`
 - JWKS endpoint `/.well-known/jwks.json`
 
 ### Additional Security
+
 - PAR (Pushed Authorization Requests)
 - private_key_jwt client authentication
 - Rate limiting
@@ -150,7 +155,7 @@ Copy `.env.example` to `.env` and configure:
 | REDIS_PASSWORD | Redis password | - |
 | ADMIN_USERNAME | Admin user | admin |
 | ADMIN_PASSWORD | Admin password | - |
-| OAUTH_ISSUER | Token issuer URL | http://localhost:8080 |
+| OAUTH_ISSUER | Token issuer URL | <http://localhost:8080> |
 
 ## Deployment
 

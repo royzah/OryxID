@@ -34,7 +34,7 @@ graph TD
 
 ## Directory Layout
 
-```
+```text
 src/
 ├── routes/              # SvelteKit pages
 │   ├── +layout.svelte   # Root layout
@@ -156,7 +156,7 @@ npm run preview
 
 ## Docker
 
-### Development
+### Docker Development
 
 ```bash
 # From root
@@ -230,13 +230,13 @@ sequenceDiagram
 3. Click **Create Application**
 4. Fill in the form:
 
-| Field | Description | Example |
-|-------|-------------|---------|
-| Name | Application display name | My App |
-| Client Type | `confidential` or `public` | confidential |
-| Redirect URIs | Callback URLs (one per line) | https://myapp.com/callback |
-| Grant Types | Allowed OAuth flows | client_credentials, authorization_code |
-| Scopes | Permissions requested | read, write |
+   | Field | Description | Example |
+   |-------|-------------|---------|
+   | Name | Application display name | My App |
+   | Client Type | `confidential` or `public` | confidential |
+   | Redirect URIs | Callback URLs (one per line) | <https://myapp.com/callback> |
+   | Grant Types | Allowed OAuth flows | client_credentials, authorization_code |
+   | Scopes | Permissions requested | read, write |
 
 5. Click **Create**
 6. Copy the **Client ID** and **Client Secret** (secret shown only once)
@@ -275,7 +275,8 @@ python scripts/test_oauth_client.py \
 ```
 
 Expected output for valid credentials:
-```
+
+```text
 Testing OAuth client credentials against http://localhost:9000
 Client ID: YOUR_CLIENT_ID
 --------------------------------------------------
