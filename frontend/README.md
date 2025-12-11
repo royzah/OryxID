@@ -214,7 +214,7 @@ sequenceDiagram
 
     User->>Login: Submit credentials
     Login->>AuthStore: login(username, password)
-    AuthStore->>Backend: POST /api/admin/login
+    AuthStore->>Backend: POST /auth/login
     Backend-->>AuthStore: Token + User
     AuthStore->>AuthStore: Store token
     AuthStore-->>Login: Success
@@ -225,7 +225,7 @@ sequenceDiagram
 
 ### Via Frontend UI
 
-1. Login to the admin dashboard at `http://localhost:3000`
+1. Login to the admin dashboard at `http://localhost:8080`
 2. Navigate to **Applications** in the sidebar
 3. Click **Create Application**
 4. Fill in the form:
