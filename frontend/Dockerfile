@@ -6,11 +6,13 @@ WORKDIR /app
 
 # Install dependencies
 COPY package*.json ./
-# Use legacy peer deps to handle ESLint version conflicts
-RUN npm ci --legacy-peer-deps
+RUN npm ci
 
 # Copy source code
 COPY . .
+
+# Generate SvelteKit types
+RUN npm run check || true
 
 # Expose development port
 EXPOSE 3000
@@ -24,30 +26,43 @@ WORKDIR /app
 
 # Install dependencies
 COPY package*.json ./
-# Use legacy peer deps to handle ESLint version conflicts
-RUN npm ci --legacy-peer-deps
+RUN npm ci
 
 # Copy source and build
 COPY . .
 
-# Build the application (skip TypeScript type checking for now)
-ENV NODE_OPTIONS="--max-old-space-size=4096"
-RUN npx vite build || npm run build
+# Build the application
+ENV NODE_ENV=production
+RUN npm run build
 
 # Production Stage
-FROM nginx:alpine AS production
+FROM node:20-alpine AS production
+WORKDIR /app
 
-# Install Node.js for serving via http-server (lighter than custom nginx config)
-RUN apk add --no-cache nodejs npm && npm install -g http-server
+# Install only production dependencies
+COPY package*.json ./
+RUN npm ci --omit=dev
 
-# Copy built files
-COPY --from=build /app/dist /app/dist
+# Copy built application
+COPY --from=build /app/build ./build
+COPY --from=build /app/package.json ./
 
-# Add health check
+# Run as non-root user
+RUN addgroup -g 1001 -S nodejs && \
+    adduser -S sveltekit -u 1001 -G nodejs && \
+    chown -R sveltekit:nodejs /app
+
+USER sveltekit
+
+# Health check
 HEALTHCHECK --interval=30s --timeout=3s --start-period=5s --retries=3 \
     CMD wget --no-verbose --tries=1 --spider http://localhost:3000/health || exit 1
 
 EXPOSE 3000
 
-WORKDIR /app/dist
-CMD ["http-server", "-p", "3000", "-c-1", "--cors"]
+# Use Node adapter for production
+ENV NODE_ENV=production
+ENV PORT=3000
+ENV HOST=0.0.0.0
+
+CMD ["node", "build"]
