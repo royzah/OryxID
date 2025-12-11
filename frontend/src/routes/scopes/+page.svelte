@@ -242,7 +242,7 @@
 								bind:value={formData.name}
 								placeholder="read:users"
 								required
-								pattern="[a-z0-9:_-]+"
+								pattern="[a-z0-9_:-]+"
 							/>
 							<p class="mt-1 text-xs text-gray-500">
 								Lowercase letters, numbers, colons, underscores, and hyphens only
