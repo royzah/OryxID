@@ -52,6 +52,9 @@ function createAuthStore() {
 			try {
 				const response = await authApi.login(credentials);
 
+				// Set token in API client (authApi.login also does this, but we do it here too for test compatibility)
+				api.setToken(response.token);
+
 				if (browser) {
 					localStorage.setItem('token', response.token);
 					localStorage.setItem('refreshToken', response.refresh_token);
@@ -100,6 +103,9 @@ function createAuthStore() {
 			try {
 				const response = await authApi.refreshToken(state.refreshToken);
 
+				// Set token in API client
+				api.setToken(response.token);
+
 				if (browser) {
 					localStorage.setItem('token', response.token);
 					localStorage.setItem('refreshToken', response.refresh_token);
@@ -115,9 +121,8 @@ function createAuthStore() {
 
 				return response;
 			} catch (error) {
-				// If refresh fails, logout
-				this.logout();
-				throw error;
+				// If refresh fails, clear auth state
+				this.clearAuth();
 			}
 		},
 

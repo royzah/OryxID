@@ -36,7 +36,7 @@ describe('API Client', () => {
 			const result = await api.get('/test');
 
 			expect(mockFetch).toHaveBeenCalledWith(
-				'/api/admin/test',
+				'/api/v1/test',
 				expect.objectContaining({
 					method: 'GET',
 					headers: expect.objectContaining({
@@ -56,7 +56,7 @@ describe('API Client', () => {
 			await api.get('/test', { search: 'query', limit: 10 });
 
 			expect(mockFetch).toHaveBeenCalledWith(
-				'/api/admin/test?search=query&limit=10',
+				'/api/v1/test?search=query&limit=10',
 				expect.any(Object)
 			);
 		});
@@ -72,7 +72,7 @@ describe('API Client', () => {
 			await api.get('/test');
 
 			expect(mockFetch).toHaveBeenCalledWith(
-				'/api/admin/test',
+				'/api/v1/test',
 				expect.objectContaining({
 					headers: expect.objectContaining({
 						Authorization: 'Bearer bearer-token'
@@ -89,7 +89,7 @@ describe('API Client', () => {
 
 			await api.get('/test', { search: 'value', empty: undefined });
 
-			expect(mockFetch).toHaveBeenCalledWith('/api/admin/test?search=value', expect.any(Object));
+			expect(mockFetch).toHaveBeenCalledWith('/api/v1/test?search=value', expect.any(Object));
 		});
 	});
 
@@ -106,7 +106,7 @@ describe('API Client', () => {
 			const result = await api.post('/test', requestBody);
 
 			expect(mockFetch).toHaveBeenCalledWith(
-				'/api/admin/test',
+				'/api/v1/test',
 				expect.objectContaining({
 					method: 'POST',
 					body: JSON.stringify(requestBody)
@@ -124,7 +124,7 @@ describe('API Client', () => {
 			await api.post('/test');
 
 			expect(mockFetch).toHaveBeenCalledWith(
-				'/api/admin/test',
+				'/api/v1/test',
 				expect.objectContaining({
 					method: 'POST'
 				})
@@ -144,7 +144,7 @@ describe('API Client', () => {
 			await api.put('/test/1', requestBody);
 
 			expect(mockFetch).toHaveBeenCalledWith(
-				'/api/admin/test/1',
+				'/api/v1/test/1',
 				expect.objectContaining({
 					method: 'PUT',
 					body: JSON.stringify(requestBody)
@@ -163,11 +163,49 @@ describe('API Client', () => {
 			await api.delete('/test/1');
 
 			expect(mockFetch).toHaveBeenCalledWith(
-				'/api/admin/test/1',
+				'/api/v1/test/1',
 				expect.objectContaining({
 					method: 'DELETE'
 				})
 			);
+		});
+	});
+
+	describe('Direct path requests', () => {
+		it('should make a GET request without API_BASE prefix', async () => {
+			mockFetch.mockResolvedValueOnce({
+				ok: true,
+				json: () => Promise.resolve({ user: 'test' })
+			} as Response);
+
+			const result = await api.getDirect('/auth/me');
+
+			expect(mockFetch).toHaveBeenCalledWith(
+				'/auth/me',
+				expect.objectContaining({
+					method: 'GET'
+				})
+			);
+			expect(result).toEqual({ user: 'test' });
+		});
+
+		it('should make a POST request without API_BASE prefix', async () => {
+			const credentials = { username: 'test', password: 'pass' };
+			mockFetch.mockResolvedValueOnce({
+				ok: true,
+				json: () => Promise.resolve({ token: 'abc123' })
+			} as Response);
+
+			const result = await api.postDirect('/auth/login', credentials);
+
+			expect(mockFetch).toHaveBeenCalledWith(
+				'/auth/login',
+				expect.objectContaining({
+					method: 'POST',
+					body: JSON.stringify(credentials)
+				})
+			);
+			expect(result).toEqual({ token: 'abc123' });
 		});
 	});
 

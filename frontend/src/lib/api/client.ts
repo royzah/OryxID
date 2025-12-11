@@ -1,6 +1,6 @@
 import type { ApiError as ApiErrorType } from '$lib/types';
 
-const API_BASE = '/api/admin';
+const API_BASE = '/api/v1';
 
 interface FetchOptions extends RequestInit {
 	params?: Record<string, string | number | undefined>;
@@ -27,10 +27,10 @@ class ApiClient {
 		return this.token;
 	}
 
-	private async request<T>(endpoint: string, options: FetchOptions = {}): Promise<T> {
+	private async request<T>(endpoint: string, options: FetchOptions = {}, useApiBase = true): Promise<T> {
 		const { params, ...fetchOptions } = options;
 
-		let url = `${API_BASE}${endpoint}`;
+		let url = useApiBase ? `${API_BASE}${endpoint}` : endpoint;
 
 		if (params) {
 			const searchParams = new URLSearchParams();
@@ -97,6 +97,18 @@ class ApiClient {
 
 	async delete<T>(endpoint: string): Promise<T> {
 		return this.request<T>(endpoint, { method: 'DELETE' });
+	}
+
+	// Methods for direct paths (without API_BASE prefix)
+	async getDirect<T>(path: string, params?: Record<string, string | number | undefined>): Promise<T> {
+		return this.request<T>(path, { method: 'GET', params }, false);
+	}
+
+	async postDirect<T>(path: string, body?: unknown): Promise<T> {
+		return this.request<T>(path, {
+			method: 'POST',
+			body: body ? JSON.stringify(body) : undefined
+		}, false);
 	}
 }
 

@@ -3,7 +3,7 @@ import type { AuthResponse, LoginCredentials, User } from '$lib/types';
 
 export const authApi = {
 	async login(credentials: LoginCredentials): Promise<AuthResponse> {
-		const response = await api.post<{
+		const response = await api.postDirect<{
 			token: string;
 			refresh_token: string;
 			user: User;
@@ -15,16 +15,16 @@ export const authApi = {
 	},
 
 	async logout(): Promise<void> {
-		await api.post('/auth/logout');
+		await api.postDirect('/auth/logout');
 		api.setToken(null);
 	},
 
 	async getMe(): Promise<User> {
-		return api.get<User>('/auth/me');
+		return api.getDirect<User>('/auth/me');
 	},
 
 	async refreshToken(refreshToken: string): Promise<AuthResponse> {
-		const response = await api.post<AuthResponse>('/auth/refresh', {
+		const response = await api.postDirect<AuthResponse>('/auth/refresh', {
 			refresh_token: refreshToken
 		});
 
