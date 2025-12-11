@@ -1,4 +1,4 @@
-import { describe, it, expect, vi } from 'vitest';
+import { describe, it, expect } from 'vitest';
 import { render, screen, fireEvent } from '@testing-library/svelte';
 import Input from './Input.svelte';
 
@@ -25,7 +25,7 @@ describe('Input Component', () => {
 		});
 
 		it('should update value on input', async () => {
-			const { component } = render(Input, { props: { value: '' } });
+			render(Input, { props: { value: '' } });
 			const input = screen.getByRole('textbox');
 
 			await fireEvent.input(input, { target: { value: 'new value' } });

@@ -18,6 +18,12 @@ type Config struct {
 	JWT      JWTConfig
 	Security SecurityConfig
 	Admin    AdminConfig
+	Log      LogConfig
+}
+
+type LogConfig struct {
+	Level  string // debug, info, warn, error
+	Format string // json, text
 }
 
 type ServerConfig struct {
@@ -196,6 +202,10 @@ func bindEnvVars() {
 		"admin.username",
 		"admin.email",
 		"admin.password",
+
+		// Log
+		"log.level",
+		"log.format",
 	}
 
 	for _, key := range envKeys {
@@ -251,6 +261,10 @@ func setDefaults() {
 	viper.SetDefault("jwt.privatekeypath", "./certs/private_key.pem")
 	viper.SetDefault("jwt.publickeypath", "./certs/public_key.pem")
 	viper.SetDefault("jwt.kid", "default-key-id")
+
+	// Log defaults
+	viper.SetDefault("log.level", "info")
+	viper.SetDefault("log.format", "json")
 }
 
 // Get returns the loaded config (or panics if Load() wasn't called).

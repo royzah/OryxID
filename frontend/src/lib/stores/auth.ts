@@ -120,7 +120,7 @@ function createAuthStore() {
 				}));
 
 				return response;
-			} catch (error) {
+			} catch {
 				// If refresh fails, clear auth state
 				this.clearAuth();
 			}

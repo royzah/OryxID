@@ -125,12 +125,12 @@ A collection of potential improvements and feature ideas for the OryxID OAuth2/O
 
 ## Technical Debt
 
-- [ ] Add ESLint configuration for frontend
+- [x] Add ESLint configuration for frontend
 - [ ] Increase test coverage to >80%
 - [ ] Remove unused dependencies
 - [ ] Optimize database queries with indexes
 - [ ] Add proper error boundaries in frontend
-- [ ] Implement structured logging (JSON format)
+- [x] Implement structured logging (JSON format)
 - [ ] Add request ID correlation across services
 
 ## Notes

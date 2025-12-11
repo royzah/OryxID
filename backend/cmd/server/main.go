@@ -4,7 +4,6 @@ import (
 	"context"
 	"flag"
 	"fmt"
-	"log"
 	"net/http"
 	"os"
 	"os/signal"
@@ -16,6 +15,7 @@ import (
 	"github.com/tiiuae/oryxid/internal/config"
 	"github.com/tiiuae/oryxid/internal/database"
 	"github.com/tiiuae/oryxid/internal/handlers"
+	"github.com/tiiuae/oryxid/internal/logger"
 	"github.com/tiiuae/oryxid/internal/middleware"
 	"github.com/tiiuae/oryxid/internal/oauth"
 	"github.com/tiiuae/oryxid/internal/redis"
@@ -39,13 +39,24 @@ func main() {
 	// Load configuration
 	cfg, err := config.Load()
 	if err != nil {
-		log.Fatalf("Failed to load configuration: %v", err)
+		logger.Fatal("Failed to load configuration", "error", err)
 	}
+
+	// Initialize structured logger with config
+	logger.Initialize(logger.Config{
+		Level:  cfg.Log.Level,
+		Format: cfg.Log.Format,
+	})
+
+	logger.Info("Configuration loaded",
+		"server_mode", cfg.Server.Mode,
+		"log_level", cfg.Log.Level,
+	)
 
 	// Load JWT keys
 	privateKey, err := crypto.LoadPrivateKey(cfg.JWT.PrivateKeyPath)
 	if err != nil {
-		log.Fatalf("Failed to load private key: %v", err)
+		logger.Fatal("Failed to load private key", "error", err, "path", cfg.JWT.PrivateKeyPath)
 	}
 	cfg.JWT.PrivateKey = privateKey
 	cfg.JWT.PublicKey = &privateKey.PublicKey
@@ -53,17 +64,19 @@ func main() {
 	// Connect to database
 	db, err := database.Connect(cfg)
 	if err != nil {
-		log.Fatalf("Failed to connect to database: %v", err)
+		logger.Fatal("Failed to connect to database", "error", err)
 	}
+	logger.Info("Database connected", "host", cfg.Database.Host, "name", cfg.Database.Name)
 
 	// Run migrations
 	if err := database.Migrate(db); err != nil {
-		log.Fatalf("Failed to run migrations: %v", err)
+		logger.Fatal("Failed to run migrations", "error", err)
 	}
+	logger.Debug("Database migrations completed")
 
 	// Initialize default data
 	if err := database.InitializeDefaultData(db, cfg); err != nil {
-		log.Fatalf("Failed to initialize default data: %v", err)
+		logger.Fatal("Failed to initialize default data", "error", err)
 	}
 
 	// Initialize Redis client (optional)
@@ -71,17 +84,20 @@ func main() {
 	if cfg.Redis.Host != "" {
 		redisClient, err = redis.NewClient(cfg)
 		if err != nil {
-			log.Printf("Warning: Failed to connect to Redis: %v", err)
-			log.Println("Continuing without Redis (some features will be disabled)")
+			logger.Warn("Failed to connect to Redis, continuing without it",
+				"error", err,
+				"host", cfg.Redis.Host,
+			)
 		} else {
 			defer redisClient.Close()
+			logger.Info("Redis connected", "host", cfg.Redis.Host)
 		}
 	}
 
 	// Initialize token manager
 	tokenManager, err := tokens.NewTokenManager(&cfg.JWT, cfg.OAuth.Issuer)
 	if err != nil {
-		log.Fatalf("Failed to initialize token manager: %v", err)
+		logger.Fatal("Failed to initialize token manager", "error", err)
 	}
 
 	// Initialize OAuth server
@@ -245,12 +261,14 @@ func main() {
 
 	// Start server in goroutine
 	go func() {
-		log.Printf("Starting OryxID server on %s", srv.Addr)
-		log.Printf("OAuth endpoints: http://%s/oauth", srv.Addr)
-		log.Printf("API endpoints: http://%s/api/v1", srv.Addr)
+		logger.Info("Starting OryxID server",
+			"addr", srv.Addr,
+			"oauth_endpoint", fmt.Sprintf("http://%s/oauth", srv.Addr),
+			"api_endpoint", fmt.Sprintf("http://%s/api/v1", srv.Addr),
+		)
 
 		if err := srv.ListenAndServe(); err != nil && err != http.ErrServerClosed {
-			log.Fatalf("Failed to start server: %v", err)
+			logger.Fatal("Failed to start server", "error", err)
 		}
 	}()
 
@@ -258,17 +276,17 @@ func main() {
 	quit := make(chan os.Signal, 1)
 	signal.Notify(quit, syscall.SIGINT, syscall.SIGTERM)
 	<-quit
-	log.Println("Shutting down server...")
+	logger.Info("Shutting down server...")
 
 	// Graceful shutdown with 30s timeout
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
 
 	if err := srv.Shutdown(ctx); err != nil {
-		log.Fatal("Server forced to shutdown:", err)
+		logger.Fatal("Server forced to shutdown", "error", err)
 	}
 
-	log.Println("Server exited")
+	logger.Info("Server exited gracefully")
 }
 
 // startBackgroundTasks starts periodic cleanup tasks
@@ -285,25 +303,27 @@ func startBackgroundTasks(db *gorm.DB, stop <-chan struct{}) {
 	codeTicker := time.NewTicker(15 * time.Minute)
 	defer codeTicker.Stop()
 
+	logger.Debug("Background cleanup tasks started")
+
 	for {
 		select {
 		case <-stop:
-			log.Println("Stopping background tasks")
+			logger.Info("Stopping background tasks")
 			return
 
 		case <-tokenTicker.C:
 			if err := cleanupExpiredTokens(db); err != nil {
-				log.Printf("Error cleaning up expired tokens: %v", err)
+				logger.Error("Error cleaning up expired tokens", "error", err)
 			}
 
 		case <-sessionTicker.C:
 			if err := cleanupExpiredSessions(db); err != nil {
-				log.Printf("Error cleaning up expired sessions: %v", err)
+				logger.Error("Error cleaning up expired sessions", "error", err)
 			}
 
 		case <-codeTicker.C:
 			if err := cleanupExpiredAuthCodes(db); err != nil {
-				log.Printf("Error cleaning up expired auth codes: %v", err)
+				logger.Error("Error cleaning up expired auth codes", "error", err)
 			}
 		}
 	}
@@ -316,7 +336,7 @@ func cleanupExpiredTokens(db *gorm.DB) error {
 		return result.Error
 	}
 	if result.RowsAffected > 0 {
-		log.Printf("Cleaned up %d expired tokens", result.RowsAffected)
+		logger.Info("Cleaned up expired tokens", "count", result.RowsAffected)
 	}
 	return nil
 }
@@ -328,7 +348,7 @@ func cleanupExpiredSessions(db *gorm.DB) error {
 		return result.Error
 	}
 	if result.RowsAffected > 0 {
-		log.Printf("Cleaned up %d expired sessions", result.RowsAffected)
+		logger.Info("Cleaned up expired sessions", "count", result.RowsAffected)
 	}
 	return nil
 }
@@ -340,7 +360,7 @@ func cleanupExpiredAuthCodes(db *gorm.DB) error {
 		return result.Error
 	}
 	if result.RowsAffected > 0 {
-		log.Printf("Cleaned up %d expired authorization codes", result.RowsAffected)
+		logger.Info("Cleaned up expired authorization codes", "count", result.RowsAffected)
 	}
 	return nil
 }

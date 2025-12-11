@@ -125,17 +125,12 @@ describe('Button Component', () => {
 		});
 
 		it('should not trigger click when disabled', async () => {
-			let clicked = false;
-			const { component } = render(Button, { props: { disabled: true } });
-			component.$on('click', () => {
-				clicked = true;
-			});
+			render(Button, { props: { disabled: true } });
 
 			const button = screen.getByRole('button');
 			await fireEvent.click(button);
 
-			// Button is disabled, so click handler attached to the component should still receive event
-			// but native behavior is prevented
+			// Button should be disabled
 			expect(button).toBeDisabled();
 		});
 	});

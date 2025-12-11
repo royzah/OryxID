@@ -9,26 +9,26 @@ For project overview, see [main README](../README.md).
 ```mermaid
 graph TD
     subgraph Routes
-        Login[/login]
-        Dashboard[/]
-        Apps[/applications]
-        Users[/users]
-        Scopes[/scopes]
-        Audit[/audit]
-        Settings[/settings]
+        Login["login"]
+        Dashboard["dashboard"]
+        Apps["applications"]
+        Users["users"]
+        Scopes["scopes"]
+        Audit["audit"]
+        Settings["settings"]
     end
 
     subgraph Lib
-        API[API Clients]
-        Stores[Svelte Stores]
-        Components[UI Components]
-        Utils[Utilities]
+        API["API Clients"]
+        Stores["Svelte Stores"]
+        Components["UI Components"]
+        Utils["Utilities"]
     end
 
     Routes --> API
     Routes --> Stores
     Routes --> Components
-    API --> Backend[Backend API]
+    API --> Backend["Backend API"]
     Stores --> API
 ```
 

@@ -1,4 +1,4 @@
-import { describe, it, expect, vi, beforeAll, afterAll } from 'vitest';
+import { describe, it, expect } from 'vitest';
 import { cn, formatDate, truncate } from './utils';
 
 describe('cn utility function', () => {
@@ -21,12 +21,14 @@ describe('cn utility function', () => {
 
 	describe('conditional classes', () => {
 		it('should handle conditional classes', () => {
-			const result = cn('foo', true && 'bar');
+			const isActive = true;
+			const result = cn('foo', isActive && 'bar');
 			expect(result).toBe('foo bar');
 		});
 
 		it('should filter out falsy values', () => {
-			const result = cn('foo', false && 'bar', null, undefined, 'baz');
+			const isHidden = false;
+			const result = cn('foo', isHidden && 'bar', null, undefined, 'baz');
 			expect(result).toBe('foo baz');
 		});
 

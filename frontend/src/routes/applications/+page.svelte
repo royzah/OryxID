@@ -495,7 +495,7 @@
 							<div>
 								<Label>Redirect URIs</Label>
 								<div class="mt-2 space-y-2">
-									{#each formData.redirect_uris as uri, i}
+									{#each formData.redirect_uris as _uri, i}
 										<div class="flex gap-2">
 											<Input
 												bind:value={formData.redirect_uris[i]}
