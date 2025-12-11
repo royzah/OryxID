@@ -79,6 +79,12 @@ func main() {
 		logger.Fatal("Failed to initialize default data", "error", err)
 	}
 
+	// Create performance indexes
+	if err := database.CreateIndexes(db); err != nil {
+		logger.Warn("Failed to create some indexes", "error", err)
+	}
+	logger.Debug("Database indexes created")
+
 	// Initialize Redis client (optional)
 	var redisClient *redis.Client
 	if cfg.Redis.Host != "" {

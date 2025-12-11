@@ -445,16 +445,20 @@ func CreateIndexes(db *gorm.DB) error {
 		// User indexes
 		"CREATE INDEX IF NOT EXISTS idx_users_username ON users(username)",
 		"CREATE INDEX IF NOT EXISTS idx_users_email ON users(email)",
+		"CREATE INDEX IF NOT EXISTS idx_users_is_active ON users(is_active)",
 
 		// Application indexes
 		"CREATE INDEX IF NOT EXISTS idx_applications_client_id ON applications(client_id)",
 		"CREATE INDEX IF NOT EXISTS idx_applications_owner_id ON applications(owner_id)",
+		"CREATE INDEX IF NOT EXISTS idx_applications_name ON applications(name)",
 
 		// Token indexes
 		"CREATE INDEX IF NOT EXISTS idx_tokens_token_hash ON tokens(token_hash)",
 		"CREATE INDEX IF NOT EXISTS idx_tokens_expires_at ON tokens(expires_at)",
 		"CREATE INDEX IF NOT EXISTS idx_tokens_application_id ON tokens(application_id)",
 		"CREATE INDEX IF NOT EXISTS idx_tokens_user_id ON tokens(user_id)",
+		"CREATE INDEX IF NOT EXISTS idx_tokens_revoked ON tokens(revoked)",
+		"CREATE INDEX IF NOT EXISTS idx_tokens_expires_revoked ON tokens(expires_at, revoked)",
 
 		// Authorization code indexes
 		"CREATE INDEX IF NOT EXISTS idx_authorization_codes_code ON authorization_codes(code)",
@@ -470,6 +474,14 @@ func CreateIndexes(db *gorm.DB) error {
 		"CREATE INDEX IF NOT EXISTS idx_audit_logs_user_id ON audit_logs(user_id)",
 		"CREATE INDEX IF NOT EXISTS idx_audit_logs_application_id ON audit_logs(application_id)",
 		"CREATE INDEX IF NOT EXISTS idx_audit_logs_action ON audit_logs(action)",
+
+		// Scope and Audience indexes
+		"CREATE INDEX IF NOT EXISTS idx_scopes_name ON scopes(name)",
+		"CREATE INDEX IF NOT EXISTS idx_audiences_name ON audiences(name)",
+
+		// PAR indexes
+		"CREATE INDEX IF NOT EXISTS idx_par_request_uri ON pushed_authorization_requests(request_uri)",
+		"CREATE INDEX IF NOT EXISTS idx_par_expires_at ON pushed_authorization_requests(expires_at)",
 	}
 
 	for _, idx := range indexes {

@@ -23,6 +23,7 @@
     "@types/eslint": "^9.6.0",
     "@typescript-eslint/eslint-plugin": "^8.49.0",
     "@typescript-eslint/parser": "^8.49.0",
+    "@vitest/coverage-v8": "^1.6.1",
     "autoprefixer": "^10.4.16",
     "eslint": "^9.0.0",
     "eslint-config-prettier": "^10.1.8",
@@ -41,14 +42,8 @@
     "vitest": "^1.1.0"
   },
   "dependencies": {
-    "bits-ui": "^0.21.0",
     "clsx": "^2.1.0",
-    "lucide-svelte": "^0.400.0",
-    "mode-watcher": "^0.3.0",
-    "svelte-sonner": "^0.3.0",
-    "tailwind-merge": "^2.2.0",
-    "tailwind-variants": "^0.2.0",
-    "zod": "^3.22.4"
+    "tailwind-merge": "^2.2.0"
   },
   "type": "module",
   "overrides": {

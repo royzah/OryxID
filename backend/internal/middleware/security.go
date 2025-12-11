@@ -1,10 +1,11 @@
 package middleware
 
 import (
-	"strconv"
+	"time"
 
 	"github.com/gin-gonic/gin"
 	"github.com/google/uuid"
+	"github.com/tiiuae/oryxid/internal/logger"
 )
 
 // Security adds security headers to responses
@@ -42,24 +43,69 @@ func RequestID() gin.HandlerFunc {
 	}
 }
 
-// Logger logs HTTP requests
+// Logger logs HTTP requests with structured logging and request ID correlation
 func Logger() gin.HandlerFunc {
-	return gin.LoggerWithConfig(gin.LoggerConfig{
-		SkipPaths: []string{"/health"},
-		Formatter: func(param gin.LogFormatterParams) string {
-			return param.TimeStamp.Format("2006-01-02 15:04:05") + " | " +
-				param.Method + " | " +
-				param.Path + " | " +
-				param.Request.Proto + " | " +
-				strconv.Itoa(int(param.StatusCode)) + " | " +
-				param.Latency.String() + " | " +
-				param.ClientIP + " | " +
-				param.ErrorMessage + "\n"
-		},
-	})
+	return func(c *gin.Context) {
+		// Skip health checks
+		if c.Request.URL.Path == "/health" {
+			c.Next()
+			return
+		}
+
+		start := time.Now()
+		path := c.Request.URL.Path
+		query := c.Request.URL.RawQuery
+
+		c.Next()
+
+		// Get request ID from context (set by RequestID middleware)
+		requestID, _ := c.Get("request_id")
+		requestIDStr, _ := requestID.(string)
+
+		latency := time.Since(start)
+		status := c.Writer.Status()
+
+		// Log with structured fields including request_id for correlation
+		logger.Info("HTTP request",
+			"request_id", requestIDStr,
+			"method", c.Request.Method,
+			"path", path,
+			"query", query,
+			"status", status,
+			"latency_ms", latency.Milliseconds(),
+			"client_ip", c.ClientIP(),
+			"user_agent", c.Request.UserAgent(),
+		)
+
+		// Log errors separately at error level
+		if len(c.Errors) > 0 {
+			for _, e := range c.Errors {
+				logger.Error("Request error",
+					"request_id", requestIDStr,
+					"error", e.Error(),
+					"path", path,
+				)
+			}
+		}
+	}
 }
 
-// Recovery recovers from panics
+// Recovery recovers from panics with request ID correlation
 func Recovery() gin.HandlerFunc {
-	return gin.Recovery()
+	return gin.CustomRecovery(func(c *gin.Context, recovered interface{}) {
+		requestID, _ := c.Get("request_id")
+		requestIDStr, _ := requestID.(string)
+
+		logger.Error("Panic recovered",
+			"request_id", requestIDStr,
+			"error", recovered,
+			"path", c.Request.URL.Path,
+			"method", c.Request.Method,
+		)
+
+		c.AbortWithStatusJSON(500, gin.H{
+			"error":      "Internal Server Error",
+			"request_id": requestIDStr,
+		})
+	})
 }
