@@ -14,7 +14,7 @@ help: ## Show available commands
 
 # Setup
 .PHONY: setup
-setup: env keys ## Initial setup (create .env and generate keys)
+setup: env keys ssl ## Initial setup (create .env and generate keys)
 	@echo "Setup complete. Run 'make up' to start services."
 
 .PHONY: env
@@ -26,13 +26,22 @@ keys: ## Generate RSA keys for JWT signing
 	@mkdir -p certs
 	@[ -f certs/private_key.pem ] || openssl genrsa -out certs/private_key.pem 4096 2>/dev/null
 	@[ -f certs/public_key.pem ] || openssl rsa -in certs/private_key.pem -pubout -out certs/public_key.pem 2>/dev/null
-	@echo "Keys generated in certs/"
+	@echo "JWT keys generated in certs/"
+
+.PHONY: ssl
+ssl: ## Generate self-signed SSL certificates for nginx
+	@mkdir -p certs
+	@[ -f certs/ssl_cert.pem ] || openssl req -x509 -nodes -days 365 -newkey rsa:2048 \
+		-keyout certs/ssl_key.pem -out certs/ssl_cert.pem \
+		-subj "/CN=localhost/O=OryxID/C=US" 2>/dev/null
+	@chmod 644 certs/ssl_key.pem 2>/dev/null || true
+	@echo "SSL certificates generated in certs/"
 
 # Docker commands
 .PHONY: up
 up: ## Start all services
 	@$(COMPOSE) up -d
-	@echo "Services started. Access at http://localhost:8080"
+	@echo "Services started. Access at https://localhost:8443"
 
 .PHONY: down
 down: ## Stop all services
@@ -74,7 +83,7 @@ status: ## Show service health status
 	@echo "Health Checks:"
 	@curl -sf http://localhost:9000/health >/dev/null && echo "  Backend:  OK" || echo "  Backend:  FAIL"
 	@curl -sf http://localhost:3000/health >/dev/null && echo "  Frontend: OK" || echo "  Frontend: FAIL"
-	@curl -sf http://localhost:8080/health >/dev/null && echo "  Nginx:    OK" || echo "  Nginx:    FAIL"
+	@curl -skf https://localhost:8443/health >/dev/null && echo "  Nginx:    OK" || echo "  Nginx:    FAIL"
 
 # Development
 .PHONY: dev
@@ -196,4 +205,4 @@ version: ## Show version information
 info: ## Show environment info
 	@echo "Frontend: http://localhost:$$(grep FRONTEND_PORT .env | cut -d '=' -f2)"
 	@echo "Backend:  http://localhost:$$(grep SERVER_PORT .env | cut -d '=' -f2)"
-	@echo "Proxy:    http://localhost:$$(grep HTTP_PORT .env | cut -d '=' -f2)"
+	@echo "Proxy:    https://localhost:$$(grep HTTPS_PORT .env | cut -d '=' -f2)"
