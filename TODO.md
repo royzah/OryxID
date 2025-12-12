@@ -2,7 +2,7 @@
 
 ## Essential Security
 - [ ] Account lockout after failed login attempts
-- [ ] MFA/2FA support (TOTP)
+- [x] MFA/2FA support (TOTP)
 - [ ] Password policies (complexity, expiration)
 
 ## Production Readiness

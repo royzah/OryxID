@@ -27,7 +27,21 @@
 		confirmPassword: ''
 	};
 
+	// MFA state
+	let mfaEnabled = false;
+	let mfaSetup: { secret: string; provision_uri: string; backup_codes: string[] } | null = null;
+	let mfaVerifyCode = '';
+	let mfaDisableForm = { password: '', code: '' };
+
 	onMount(async () => {
+		// Load MFA status
+		try {
+			const status = await api.getDirect<{ mfa_enabled: boolean }>('/auth/mfa/status');
+			mfaEnabled = status.mfa_enabled;
+		} catch (e) {
+			// Ignore error, MFA just won't show status
+		}
+
 		if ($auth.user?.is_admin) {
 			try {
 				const data = await api.get<typeof settings>('/settings');
@@ -126,6 +140,70 @@
 		if (seconds < 86400) return `${Math.floor(seconds / 3600)} hours`;
 		return `${Math.floor(seconds / 86400)} days`;
 	}
+
+	async function setupMFA() {
+		saving = true;
+		message = null;
+
+		try {
+			mfaSetup = await api.postDirect<typeof mfaSetup>('/auth/mfa/setup', {});
+		} catch (e) {
+			message = { type: 'error', text: e instanceof Error ? e.message : 'Failed to setup MFA' };
+		} finally {
+			saving = false;
+		}
+	}
+
+	async function verifyMFA() {
+		if (!mfaVerifyCode || mfaVerifyCode.length !== 6) {
+			message = { type: 'error', text: 'Please enter a 6-digit code' };
+			return;
+		}
+
+		saving = true;
+		message = null;
+
+		try {
+			await api.postDirect('/auth/mfa/verify', { code: mfaVerifyCode });
+			mfaEnabled = true;
+			mfaSetup = null;
+			mfaVerifyCode = '';
+			message = { type: 'success', text: 'MFA enabled successfully!' };
+		} catch (e) {
+			message = { type: 'error', text: e instanceof Error ? e.message : 'Invalid verification code' };
+		} finally {
+			saving = false;
+		}
+	}
+
+	async function disableMFA() {
+		if (!mfaDisableForm.password || !mfaDisableForm.code) {
+			message = { type: 'error', text: 'Please enter your password and verification code' };
+			return;
+		}
+
+		saving = true;
+		message = null;
+
+		try {
+			await api.postDirect('/auth/mfa/disable', {
+				password: mfaDisableForm.password,
+				code: mfaDisableForm.code
+			});
+			mfaEnabled = false;
+			mfaDisableForm = { password: '', code: '' };
+			message = { type: 'success', text: 'MFA disabled successfully' };
+		} catch (e) {
+			message = { type: 'error', text: e instanceof Error ? e.message : 'Failed to disable MFA' };
+		} finally {
+			saving = false;
+		}
+	}
+
+	function cancelMFASetup() {
+		mfaSetup = null;
+		mfaVerifyCode = '';
+	}
 </script>
 
 <div class="space-y-6 max-w-4xl">
@@ -201,6 +279,104 @@
 				{saving ? 'Changing...' : 'Change Password'}
 			</Button>
 		</form>
+	</Card>
+
+	<!-- Two-Factor Authentication -->
+	<Card class="p-6">
+		<h2 class="text-lg font-semibold text-gray-900 mb-4">Two-Factor Authentication</h2>
+
+		{#if mfaEnabled}
+			<div class="space-y-4">
+				<div class="flex items-center gap-3 p-4 bg-green-50 border border-green-200 rounded-lg">
+					<svg class="w-6 h-6 text-green-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+						<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12l2 2 4-4m5.618-4.016A11.955 11.955 0 0112 2.944a11.955 11.955 0 01-8.618 3.04A12.02 12.02 0 003 9c0 5.591 3.824 10.29 9 11.622 5.176-1.332 9-6.03 9-11.622 0-1.042-.133-2.052-.382-3.016z" />
+					</svg>
+					<div>
+						<p class="font-medium text-green-800">MFA is enabled</p>
+						<p class="text-sm text-green-600">Your account is protected with two-factor authentication.</p>
+					</div>
+				</div>
+
+				<div class="border-t pt-4">
+					<h3 class="font-medium text-gray-700 mb-3">Disable MFA</h3>
+					<form on:submit|preventDefault={disableMFA} class="space-y-3 max-w-md">
+						<div>
+							<Label for="disable-password">Password</Label>
+							<Input id="disable-password" type="password" bind:value={mfaDisableForm.password} required />
+						</div>
+						<div>
+							<Label for="disable-code">Verification Code</Label>
+							<Input id="disable-code" type="text" bind:value={mfaDisableForm.code} placeholder="000000" maxlength={6} required />
+						</div>
+						<Button type="submit" variant="destructive" disabled={saving}>
+							{saving ? 'Disabling...' : 'Disable MFA'}
+						</Button>
+					</form>
+				</div>
+			</div>
+		{:else if mfaSetup}
+			<div class="space-y-6">
+				<div class="p-4 bg-blue-50 border border-blue-200 rounded-lg">
+					<p class="text-sm text-blue-800">
+						Scan the QR code below with your authenticator app (Google Authenticator, Authy, etc.)
+					</p>
+				</div>
+
+				<div class="flex flex-col items-center gap-4">
+					<img
+						src="https://api.qrserver.com/v1/create-qr-code/?size=200x200&data={encodeURIComponent(mfaSetup.provision_uri)}"
+						alt="QR Code"
+						class="w-48 h-48 border rounded-lg"
+					/>
+					<div class="text-center">
+						<p class="text-xs text-gray-500 mb-1">Or enter this code manually:</p>
+						<code class="text-sm bg-gray-100 px-3 py-1 rounded font-mono">{mfaSetup.secret}</code>
+					</div>
+				</div>
+
+				<div class="p-4 bg-yellow-50 border border-yellow-200 rounded-lg">
+					<p class="font-medium text-yellow-800 mb-2">Save your backup codes</p>
+					<p class="text-sm text-yellow-700 mb-3">
+						These codes can be used to access your account if you lose your authenticator device.
+					</p>
+					<div class="grid grid-cols-2 gap-2 max-w-xs">
+						{#each mfaSetup.backup_codes as code}
+							<code class="text-sm bg-white px-2 py-1 rounded border font-mono text-center">{code}</code>
+						{/each}
+					</div>
+				</div>
+
+				<form on:submit|preventDefault={verifyMFA} class="space-y-4 max-w-md">
+					<div>
+						<Label for="verify-code">Enter the 6-digit code from your app</Label>
+						<Input
+							id="verify-code"
+							type="text"
+							bind:value={mfaVerifyCode}
+							placeholder="000000"
+							maxlength={6}
+							class="text-center text-2xl tracking-widest font-mono"
+							required
+						/>
+					</div>
+					<div class="flex gap-3">
+						<Button type="button" variant="outline" on:click={cancelMFASetup}>Cancel</Button>
+						<Button type="submit" disabled={saving}>
+							{saving ? 'Verifying...' : 'Enable MFA'}
+						</Button>
+					</div>
+				</form>
+			</div>
+		{:else}
+			<div class="space-y-4">
+				<p class="text-gray-600">
+					Add an extra layer of security to your account by enabling two-factor authentication.
+				</p>
+				<Button on:click={setupMFA} disabled={saving}>
+					{saving ? 'Setting up...' : 'Enable MFA'}
+				</Button>
+			</div>
+		{/if}
 	</Card>
 
 	<!-- Server Configuration (Admin only) -->

@@ -250,3 +250,40 @@ func (tm *TokenManager) GetJWKS() (map[string]interface{}, error) {
 
 	return jwks, nil
 }
+
+// GenerateMFAToken generates a short-lived token for MFA verification
+func (tm *TokenManager) GenerateMFAToken(user *database.User) (string, error) {
+	now := time.Now()
+	expiresAt := now.Add(5 * time.Minute) // MFA token valid for 5 minutes
+
+	claims := CustomClaims{
+		RegisteredClaims: jwt.RegisteredClaims{
+			Issuer:    tm.issuer,
+			Subject:   user.ID.String(),
+			ExpiresAt: jwt.NewNumericDate(expiresAt),
+			IssuedAt:  jwt.NewNumericDate(now),
+			NotBefore: jwt.NewNumericDate(now),
+			ID:        uuid.New().String(),
+		},
+		Type: "MFA",
+	}
+
+	token := jwt.NewWithClaims(tm.signingMethod, claims)
+	token.Header["kid"] = tm.kid
+
+	return token.SignedString(tm.privateKey)
+}
+
+// ValidateMFAToken validates an MFA token and returns the user ID
+func (tm *TokenManager) ValidateMFAToken(tokenString string) (string, error) {
+	claims, err := tm.ValidateToken(tokenString)
+	if err != nil {
+		return "", err
+	}
+
+	if claims.Type != "MFA" {
+		return "", fmt.Errorf("invalid token type")
+	}
+
+	return claims.Subject, nil
+}
