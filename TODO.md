@@ -12,4 +12,4 @@
 
 ## Quality
 - [ ] Increase test coverage to >80%
-- [ ] Fix TypeScript errors in authorize and device pages
+- [x] Fix TypeScript errors in authorize and device pages
