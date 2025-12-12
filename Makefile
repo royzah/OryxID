@@ -29,13 +29,55 @@ keys: ## Generate RSA keys for JWT signing
 	@echo "JWT keys generated in certs/"
 
 .PHONY: ssl
-ssl: ## Generate self-signed SSL certificates for nginx
+ssl: ## Generate self-signed SSL certificates (development)
 	@mkdir -p certs
 	@[ -f certs/ssl_cert.pem ] || openssl req -x509 -nodes -days 365 -newkey rsa:2048 \
 		-keyout certs/ssl_key.pem -out certs/ssl_cert.pem \
 		-subj "/CN=localhost/O=OryxID/C=US" 2>/dev/null
 	@chmod 644 certs/ssl_key.pem 2>/dev/null || true
 	@echo "SSL certificates generated in certs/"
+
+.PHONY: cert-init
+cert-init: ## Get Let's Encrypt certificate (requires SSL_DOMAIN and SSL_EMAIL in .env)
+	@DOMAIN=$$(grep SSL_DOMAIN .env | cut -d '=' -f2); \
+	EMAIL=$$(grep SSL_EMAIL .env | cut -d '=' -f2); \
+	if [ -z "$$DOMAIN" ] || [ "$$DOMAIN" = "localhost" ]; then \
+		echo "Error: Set SSL_DOMAIN in .env to your domain name"; exit 1; \
+	fi; \
+	if [ -z "$$EMAIL" ] || [ "$$EMAIL" = "admin@example.com" ]; then \
+		echo "Error: Set SSL_EMAIL in .env to your email"; exit 1; \
+	fi; \
+	echo "Requesting certificate for $$DOMAIN..."; \
+	docker run --rm \
+		-v $$(pwd)/certs:/etc/letsencrypt \
+		-v oryxid_certbot_webroot:/var/www/certbot \
+		-p 80:80 \
+		certbot/certbot certonly --standalone \
+		--email $$EMAIL \
+		--agree-tos \
+		--no-eff-email \
+		-d $$DOMAIN && \
+	cp certs/live/$$DOMAIN/fullchain.pem certs/ssl_cert.pem && \
+	cp certs/live/$$DOMAIN/privkey.pem certs/ssl_key.pem && \
+	chmod 644 certs/ssl_key.pem && \
+	echo "Certificate installed! Restart nginx: make restart"
+
+.PHONY: cert-renew
+cert-renew: ## Renew Let's Encrypt certificate
+	@DOMAIN=$$(grep SSL_DOMAIN .env | cut -d '=' -f2); \
+	if [ -z "$$DOMAIN" ] || [ "$$DOMAIN" = "localhost" ]; then \
+		echo "Error: Set SSL_DOMAIN in .env"; exit 1; \
+	fi; \
+	echo "Renewing certificate for $$DOMAIN..."; \
+	docker run --rm \
+		-v $$(pwd)/certs:/etc/letsencrypt \
+		-v oryxid_certbot_webroot:/var/www/certbot \
+		certbot/certbot renew --webroot -w /var/www/certbot && \
+	cp certs/live/$$DOMAIN/fullchain.pem certs/ssl_cert.pem && \
+	cp certs/live/$$DOMAIN/privkey.pem certs/ssl_key.pem && \
+	chmod 644 certs/ssl_key.pem && \
+	$(COMPOSE) exec nginx nginx -s reload && \
+	echo "Certificate renewed!"
 
 # Docker commands
 .PHONY: up
