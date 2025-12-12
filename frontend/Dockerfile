@@ -31,9 +31,9 @@ RUN npm ci
 # Copy source and build
 COPY . .
 
-# Build the application
+# Generate SvelteKit types and build
 ENV NODE_ENV=production
-RUN npm run build
+RUN npx svelte-kit sync && npm run build
 
 # Production Stage
 FROM node:20-alpine AS production
