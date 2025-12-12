@@ -125,6 +125,7 @@ services:
     volumes:
       - ./docker/nginx/nginx.conf:/etc/nginx/nginx.conf:ro
       - ./docker/nginx/conf.d:/etc/nginx/conf.d:ro
+      - ./certs:/etc/nginx/ssl:ro
     networks:
       - oryxid-network
     healthcheck:
