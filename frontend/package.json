@@ -48,6 +48,7 @@
   "type": "module",
   "overrides": {
     "cookie": "^0.7.0",
-    "esbuild": "^0.25.0"
+    "esbuild": "^0.25.0",
+    "@rollup/plugin-node-resolve": "^16.0.0"
   }
 }
