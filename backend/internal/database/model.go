@@ -296,13 +296,12 @@ type ServerSettings struct {
 
 // ServerSettingsData is the structure stored in ServerSettings.Value
 type ServerSettingsData struct {
-	Issuer                  string `json:"issuer"`
-	AccessTokenLifespan     int    `json:"access_token_lifespan"`     // seconds
-	RefreshTokenLifespan    int    `json:"refresh_token_lifespan"`    // seconds
-	IDTokenLifespan         int    `json:"id_token_lifespan"`         // seconds
-	AuthCodeLifespan        int    `json:"auth_code_lifespan"`        // seconds
-	RequirePKCE             bool   `json:"require_pkce"`
-	AllowImplicit           bool   `json:"allow_implicit"`
-	RotateRefreshTokens     bool   `json:"rotate_refresh_tokens"`
-	RevokeOldRefreshTokens  bool   `json:"revoke_old_refresh_tokens"`
+	Issuer                 string `json:"issuer"`
+	AccessTokenLifespan    int    `json:"access_token_lifespan"`    // seconds
+	RefreshTokenLifespan   int    `json:"refresh_token_lifespan"`   // seconds
+	IDTokenLifespan        int    `json:"id_token_lifespan"`        // seconds
+	AuthCodeLifespan       int    `json:"auth_code_lifespan"`       // seconds
+	RequirePKCE            bool   `json:"require_pkce"`
+	RotateRefreshTokens    bool   `json:"rotate_refresh_tokens"`
+	RevokeOldRefreshTokens bool   `json:"revoke_old_refresh_tokens"`
 }

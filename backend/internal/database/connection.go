@@ -705,7 +705,6 @@ func InitializeDefaultData(db *gorm.DB, cfg *config.Config) error {
 				"id_token_lifespan":         3600,
 				"auth_code_lifespan":        600,
 				"require_pkce":              true,
-				"allow_implicit":            false,
 				"rotate_refresh_tokens":     true,
 				"revoke_old_refresh_tokens": true,
 			},

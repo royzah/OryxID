@@ -16,7 +16,6 @@
 		id_token_lifespan: 3600,
 		auth_code_lifespan: 600,
 		require_pkce: true,
-		allow_implicit: false,
 		rotate_refresh_tokens: true,
 		revoke_old_refresh_tokens: true
 	};
@@ -285,20 +284,6 @@
 								<span class="text-sm font-medium">Require PKCE</span>
 								<p class="text-xs text-gray-500">
 									Require Proof Key for Code Exchange for all authorization code flows
-								</p>
-							</div>
-						</label>
-
-						<label class="flex items-center gap-3">
-							<input
-								type="checkbox"
-								bind:checked={settings.allow_implicit}
-								class="rounded text-purple-600"
-							/>
-							<div>
-								<span class="text-sm font-medium">Allow Implicit Flow</span>
-								<p class="text-xs text-gray-500">
-									Enable the legacy implicit grant type (not recommended)
 								</p>
 							</div>
 						</label>

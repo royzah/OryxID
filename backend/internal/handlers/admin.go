@@ -909,7 +909,6 @@ func (h *AdminHandler) UpdateSettings(c *gin.Context) {
 		"id_token_lifespan":         req.IDTokenLifespan,
 		"auth_code_lifespan":        req.AuthCodeLifespan,
 		"require_pkce":              req.RequirePKCE,
-		"allow_implicit":            req.AllowImplicit,
 		"rotate_refresh_tokens":     req.RotateRefreshTokens,
 		"revoke_old_refresh_tokens": req.RevokeOldRefreshTokens,
 	}
