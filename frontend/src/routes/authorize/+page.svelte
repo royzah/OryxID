@@ -13,6 +13,10 @@
 		response_type: string;
 		authorization_details?: Array<{
 			type: string;
+			instructedAmount?: {
+				currency: string;
+				amount: string;
+			};
 			[key: string]: unknown;
 		}>;
 	} | null = null;
