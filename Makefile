@@ -248,3 +248,59 @@ info: ## Show environment info
 	@echo "Frontend: http://localhost:$$(grep FRONTEND_PORT .env | cut -d '=' -f2)"
 	@echo "Backend:  http://localhost:$$(grep SERVER_PORT .env | cut -d '=' -f2)"
 	@echo "Proxy:    https://localhost:$$(grep HTTPS_PORT .env | cut -d '=' -f2)"
+
+# Kubernetes / Helm
+HELM_RELEASE := oryxid
+HELM_NAMESPACE := oryxid
+HELM_CHART := ./helm/oryxid
+
+.PHONY: helm-deps
+helm-deps: ## Install Helm chart dependencies
+	@helm dependency update $(HELM_CHART)
+
+.PHONY: helm-lint
+helm-lint: ## Lint Helm chart
+	@helm lint $(HELM_CHART)
+
+.PHONY: helm-template
+helm-template: ## Render Helm templates locally
+	@helm template $(HELM_RELEASE) $(HELM_CHART) --namespace $(HELM_NAMESPACE)
+
+.PHONY: helm-install
+helm-install: helm-deps ## Install OryxID to Kubernetes
+	@helm upgrade --install $(HELM_RELEASE) $(HELM_CHART) \
+		--namespace $(HELM_NAMESPACE) \
+		--create-namespace \
+		--wait
+
+.PHONY: helm-install-prod
+helm-install-prod: helm-deps ## Install OryxID to Kubernetes (production)
+	@helm upgrade --install $(HELM_RELEASE) $(HELM_CHART) \
+		--namespace $(HELM_NAMESPACE) \
+		--create-namespace \
+		-f $(HELM_CHART)/values-production.yaml \
+		--wait
+
+.PHONY: helm-uninstall
+helm-uninstall: ## Uninstall OryxID from Kubernetes
+	@helm uninstall $(HELM_RELEASE) --namespace $(HELM_NAMESPACE)
+
+.PHONY: helm-status
+helm-status: ## Show Helm release status
+	@helm status $(HELM_RELEASE) --namespace $(HELM_NAMESPACE)
+
+.PHONY: k8s-logs
+k8s-logs: ## Show logs from all OryxID pods
+	@kubectl logs -n $(HELM_NAMESPACE) -l app.kubernetes.io/name=oryxid --all-containers -f
+
+.PHONY: k8s-pods
+k8s-pods: ## Show OryxID pods
+	@kubectl get pods -n $(HELM_NAMESPACE) -l app.kubernetes.io/name=oryxid
+
+.PHONY: docker-build-push
+docker-build-push: ## Build and push Docker images (requires REGISTRY variable)
+	@if [ -z "$(REGISTRY)" ]; then echo "Error: Set REGISTRY variable"; exit 1; fi
+	@docker build -t $(REGISTRY)/oryxid-backend:latest ./backend
+	@docker build -t $(REGISTRY)/oryxid-frontend:latest ./frontend
+	@docker push $(REGISTRY)/oryxid-backend:latest
+	@docker push $(REGISTRY)/oryxid-frontend:latest

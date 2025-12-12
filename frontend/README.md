@@ -86,7 +86,6 @@ Create and manage OAuth clients with support for:
   - Device Authorization (RFC 8628)
   - Token Exchange (RFC 8693)
   - CIBA (Client-Initiated Backchannel Authentication)
-  - Implicit (deprecated)
 - Redirect URI management
 - Scope assignment
 - Skip authorization option (first-party apps)
@@ -339,7 +338,6 @@ The application form supports these grant types:
 | `urn:ietf:params:oauth:grant-type:device_code` | Device Authorization | Limited input devices |
 | `urn:ietf:params:oauth:grant-type:token-exchange` | Token Exchange | Token delegation |
 | `urn:openid:params:grant-type:ciba` | CIBA | Backchannel auth |
-| `implicit` | Implicit | Deprecated, for legacy apps |
 
 ## Route Reference
 
