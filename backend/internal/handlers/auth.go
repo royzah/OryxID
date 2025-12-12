@@ -259,6 +259,57 @@ func (h *AuthHandler) RefreshToken(c *gin.Context) {
 	})
 }
 
+type ChangePasswordRequest struct {
+	CurrentPassword string `json:"current_password" binding:"required"`
+	NewPassword     string `json:"new_password" binding:"required,min=8"`
+}
+
+// ChangePassword handles password change for the current user
+func (h *AuthHandler) ChangePassword(c *gin.Context) {
+	var req ChangePasswordRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+
+	userID := c.GetString("user_id")
+	if userID == "" {
+		c.JSON(http.StatusUnauthorized, gin.H{"error": "User not authenticated"})
+		return
+	}
+
+	// Find user
+	var user database.User
+	if err := h.db.Where("id = ?", userID).First(&user).Error; err != nil {
+		c.JSON(http.StatusNotFound, gin.H{"error": "User not found"})
+		return
+	}
+
+	// Verify current password
+	if err := bcrypt.CompareHashAndPassword([]byte(user.Password), []byte(req.CurrentPassword)); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "Current password is incorrect"})
+		return
+	}
+
+	// Hash new password
+	hashedPassword, err := bcrypt.GenerateFromPassword([]byte(req.NewPassword), bcrypt.DefaultCost)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to hash password"})
+		return
+	}
+
+	// Update password
+	if err := h.db.Model(&user).Update("password", string(hashedPassword)).Error; err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to update password"})
+		return
+	}
+
+	// Log the password change
+	h.logAudit(&user, nil, "user.password_change", "user", user.ID.String(), c)
+
+	c.JSON(http.StatusOK, gin.H{"message": "Password changed successfully"})
+}
+
 // Helper function to log audit events
 func (h *AuthHandler) logAudit(user *database.User, app *database.Application, action, resource, resourceID string, c *gin.Context) {
 	audit := database.AuditLog{

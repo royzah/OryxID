@@ -877,6 +877,95 @@ func (h *AdminHandler) GetStatistics(c *gin.Context) {
 	c.JSON(http.StatusOK, stats)
 }
 
+// Settings Handlers
+
+func (h *AdminHandler) GetSettings(c *gin.Context) {
+	var settings database.ServerSettings
+	if err := h.db.Where("key = ?", "default").First(&settings).Error; err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to fetch settings"})
+		return
+	}
+	c.JSON(http.StatusOK, settings.Value)
+}
+
+func (h *AdminHandler) UpdateSettings(c *gin.Context) {
+	var req database.ServerSettingsData
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+
+	var settings database.ServerSettings
+	if err := h.db.Where("key = ?", "default").First(&settings).Error; err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to fetch settings"})
+		return
+	}
+
+	// Update settings
+	settings.Value = database.JSONB{
+		"issuer":                    req.Issuer,
+		"access_token_lifespan":     req.AccessTokenLifespan,
+		"refresh_token_lifespan":    req.RefreshTokenLifespan,
+		"id_token_lifespan":         req.IDTokenLifespan,
+		"auth_code_lifespan":        req.AuthCodeLifespan,
+		"require_pkce":              req.RequirePKCE,
+		"allow_implicit":            req.AllowImplicit,
+		"rotate_refresh_tokens":     req.RotateRefreshTokens,
+		"revoke_old_refresh_tokens": req.RevokeOldRefreshTokens,
+	}
+
+	if err := h.db.Save(&settings).Error; err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to save settings"})
+		return
+	}
+
+	// Log audit event
+	h.logAudit(c, "settings.update", "settings", "default", http.StatusOK)
+
+	c.JSON(http.StatusOK, settings.Value)
+}
+
+// Danger Zone Handlers
+
+func (h *AdminHandler) RevokeAllTokens(c *gin.Context) {
+	now := time.Now()
+	result := h.db.Model(&database.Token{}).
+		Where("revoked = ?", false).
+		Updates(map[string]interface{}{
+			"revoked":    true,
+			"revoked_at": now,
+		})
+
+	if result.Error != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to revoke tokens"})
+		return
+	}
+
+	// Log audit event
+	h.logAudit(c, "tokens.revoke_all", "tokens", "", http.StatusOK)
+
+	c.JSON(http.StatusOK, gin.H{
+		"message":        "All tokens revoked",
+		"tokens_revoked": result.RowsAffected,
+	})
+}
+
+func (h *AdminHandler) ClearAllSessions(c *gin.Context) {
+	result := h.db.Where("1 = 1").Delete(&database.Session{})
+	if result.Error != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to clear sessions"})
+		return
+	}
+
+	// Log audit event
+	h.logAudit(c, "sessions.clear_all", "sessions", "", http.StatusOK)
+
+	c.JSON(http.StatusOK, gin.H{
+		"message":          "All sessions cleared",
+		"sessions_cleared": result.RowsAffected,
+	})
+}
+
 // Helper function to log audit events
 func (h *AdminHandler) logAudit(c *gin.Context, action, resource, resourceID string, statusCode int) {
 	audit := database.AuditLog{

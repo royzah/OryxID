@@ -286,3 +286,23 @@ type PushedAuthorizationRequest struct {
 	ExpiresAt            time.Time `gorm:"not null;index" json:"expires_at"` // PAR requests expire quickly (typically 90 seconds)
 	Used                 bool      `gorm:"default:false;index" json:"used"`  // One-time use
 }
+
+// ServerSettings represents OAuth2/OIDC server configuration (singleton)
+type ServerSettings struct {
+	BaseModel
+	Key   string `gorm:"uniqueIndex;not null" json:"key"` // Always "default" for singleton
+	Value JSONB  `gorm:"type:jsonb" json:"value"`
+}
+
+// ServerSettingsData is the structure stored in ServerSettings.Value
+type ServerSettingsData struct {
+	Issuer                  string `json:"issuer"`
+	AccessTokenLifespan     int    `json:"access_token_lifespan"`     // seconds
+	RefreshTokenLifespan    int    `json:"refresh_token_lifespan"`    // seconds
+	IDTokenLifespan         int    `json:"id_token_lifespan"`         // seconds
+	AuthCodeLifespan        int    `json:"auth_code_lifespan"`        // seconds
+	RequirePKCE             bool   `json:"require_pkce"`
+	AllowImplicit           bool   `json:"allow_implicit"`
+	RotateRefreshTokens     bool   `json:"rotate_refresh_tokens"`
+	RevokeOldRefreshTokens  bool   `json:"revoke_old_refresh_tokens"`
+}
