@@ -1,6 +1,8 @@
 package database
 
 import (
+	"context"
+	"errors"
 	"fmt"
 	"time"
 
@@ -12,14 +14,29 @@ import (
 	"gorm.io/gorm/logger"
 )
 
+// silentRecordNotFoundLogger wraps the default logger and suppresses ErrRecordNotFound
+type silentRecordNotFoundLogger struct {
+	logger.Interface
+}
+
+func (l *silentRecordNotFoundLogger) Trace(ctx context.Context, begin time.Time, fc func() (sql string, rowsAffected int64), err error) {
+	// Suppress ErrRecordNotFound - it's expected behavior, not an error
+	if errors.Is(err, gorm.ErrRecordNotFound) {
+		return
+	}
+	l.Interface.Trace(ctx, begin, fc, err)
+}
+
 // Connect establishes a connection to the database
 func Connect(cfg *config.Config) (*gorm.DB, error) {
 	dsn := config.GetDSN()
 
-	// Configure GORM logger
-	gormLogger := logger.Default
+	// Configure GORM logger - wrap default to suppress ErrRecordNotFound
+	var gormLogger logger.Interface
 	if cfg.Server.Mode == "release" {
 		gormLogger = logger.Default.LogMode(logger.Silent)
+	} else {
+		gormLogger = &silentRecordNotFoundLogger{Interface: logger.Default}
 	}
 
 	db, err := gorm.Open(postgres.Open(dsn), &gorm.Config{
