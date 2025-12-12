@@ -1,12 +1,17 @@
 package handlers
 
 import (
+	"bytes"
 	"crypto/rand"
 	"encoding/base32"
+	"encoding/base64"
+	"image/png"
 	"net/http"
 	"strings"
 	"time"
 
+	"github.com/boombuler/barcode"
+	"github.com/boombuler/barcode/qr"
 	"github.com/gin-gonic/gin"
 	"github.com/pquerna/otp/totp"
 	"github.com/tiiuae/oryxid/internal/database"
@@ -333,9 +338,9 @@ func (h *AuthHandler) ChangePassword(c *gin.Context) {
 
 // MFA Setup Response
 type MFASetupResponse struct {
-	Secret        string   `json:"secret"`
-	ProvisionURI  string   `json:"provision_uri"`
-	BackupCodes   []string `json:"backup_codes"`
+	Secret      string   `json:"secret"`
+	QRCode      string   `json:"qr_code"` // Base64-encoded PNG image
+	BackupCodes []string `json:"backup_codes"`
 }
 
 // SetupMFA generates a new TOTP secret for the user
@@ -385,11 +390,42 @@ func (h *AuthHandler) SetupMFA(c *gin.Context) {
 		return
 	}
 
+	// Generate QR code locally (never send secret to external services)
+	qrCode, err := generateQRCode(key.URL(), 200)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to generate QR code"})
+		return
+	}
+
 	c.JSON(http.StatusOK, MFASetupResponse{
-		Secret:       key.Secret(),
-		ProvisionURI: key.URL(),
-		BackupCodes:  backupCodes,
+		Secret:      key.Secret(),
+		QRCode:      qrCode,
+		BackupCodes: backupCodes,
 	})
+}
+
+// generateQRCode creates a base64-encoded PNG QR code from the given content
+func generateQRCode(content string, size int) (string, error) {
+	// Create QR code
+	qrCode, err := qr.Encode(content, qr.M, qr.Auto)
+	if err != nil {
+		return "", err
+	}
+
+	// Scale to desired size
+	qrCode, err = barcode.Scale(qrCode, size, size)
+	if err != nil {
+		return "", err
+	}
+
+	// Encode as PNG
+	var buf bytes.Buffer
+	if err := png.Encode(&buf, qrCode); err != nil {
+		return "", err
+	}
+
+	// Return as data URL
+	return "data:image/png;base64," + base64.StdEncoding.EncodeToString(buf.Bytes()), nil
 }
 
 type VerifyMFARequest struct {

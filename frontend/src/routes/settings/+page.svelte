@@ -29,7 +29,7 @@
 
 	// MFA state
 	let mfaEnabled = false;
-	let mfaSetup: { secret: string; provision_uri: string; backup_codes: string[] } | null = null;
+	let mfaSetup: { secret: string; qr_code: string; backup_codes: string[] } | null = null;
 	let mfaVerifyCode = '';
 	let mfaDisableForm = { password: '', code: '' };
 
@@ -324,7 +324,7 @@
 
 				<div class="flex flex-col items-center gap-4">
 					<img
-						src="https://api.qrserver.com/v1/create-qr-code/?size=200x200&data={encodeURIComponent(mfaSetup.provision_uri)}"
+						src={mfaSetup.qr_code}
 						alt="QR Code"
 						class="w-48 h-48 border rounded-lg"
 					/>

@@ -118,11 +118,18 @@ func Migrate(db *gorm.DB) error {
 			email_verified BOOLEAN DEFAULT FALSE,
 			password TEXT NOT NULL,
 			is_active BOOLEAN DEFAULT TRUE,
-			is_admin BOOLEAN DEFAULT FALSE
+			is_admin BOOLEAN DEFAULT FALSE,
+			totp_secret TEXT DEFAULT '',
+			totp_enabled BOOLEAN DEFAULT FALSE,
+			backup_codes JSONB DEFAULT '[]'
 		)
 	`).Error; err != nil {
 		return fmt.Errorf("failed to create users table: %w", err)
 	}
+	// Add MFA columns if they don't exist (for existing databases)
+	db.Exec(`ALTER TABLE users ADD COLUMN IF NOT EXISTS totp_secret TEXT DEFAULT ''`)
+	db.Exec(`ALTER TABLE users ADD COLUMN IF NOT EXISTS totp_enabled BOOLEAN DEFAULT FALSE`)
+	db.Exec(`ALTER TABLE users ADD COLUMN IF NOT EXISTS backup_codes JSONB DEFAULT '[]'`)
 	if err := db.Exec(`CREATE INDEX IF NOT EXISTS idx_users_deleted_at ON users(deleted_at)`).Error; err != nil {
 		return fmt.Errorf("failed to create users index: %w", err)
 	}
