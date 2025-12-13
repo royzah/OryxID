@@ -1,0 +1,44 @@
+
+OryxID has been deployed!
+
+{{- if .Values.ingress.enabled }}
+Access the application at:
+{{- range $host := .Values.ingress.hosts }}
+  {{- range .paths }}
+  https://{{ $host.host }}{{ .path }}
+  {{- end }}
+{{- end }}
+{{- else }}
+Get the application URL by running:
+  export POD_NAME=$(kubectl get pods --namespace {{ .Release.Namespace }} -l "app.kubernetes.io/name={{ include "oryxid.name" . }},app.kubernetes.io/instance={{ .Release.Name }},app.kubernetes.io/component=frontend" -o jsonpath="{.items[0].metadata.name}")
+  export CONTAINER_PORT=$(kubectl get pod --namespace {{ .Release.Namespace }} $POD_NAME -o jsonpath="{.spec.containers[0].ports[0].containerPort}")
+  kubectl --namespace {{ .Release.Namespace }} port-forward $POD_NAME 8080:$CONTAINER_PORT
+  echo "Visit http://127.0.0.1:8080 to use your application"
+{{- end }}
+
+Admin credentials:
+  Username: {{ .Values.admin.username }}
+  Email: {{ .Values.admin.email }}
+{{- if .Values.admin.existingSecret }}
+  Password: stored in secret {{ .Values.admin.existingSecret }}
+{{- else }}
+  Password: set via --set admin.password or existing secret
+{{- end }}
+
+{{- if .Values.postgresql.enabled }}
+
+PostgreSQL is deployed as part of this release.
+{{- else }}
+
+Using external PostgreSQL at: {{ .Values.externalDatabase.host }}:{{ .Values.externalDatabase.port }}
+{{- end }}
+
+{{- if .Values.redis.enabled }}
+
+Redis is deployed as part of this release.
+{{- else }}
+
+Using external Redis at: {{ .Values.externalRedis.host }}:{{ .Values.externalRedis.port }}
+{{- end }}
+
+For more information, visit: https://github.com/royzah/OryxID

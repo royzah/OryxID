@@ -1,6 +1,8 @@
 package database
 
 import (
+	"context"
+	"errors"
 	"fmt"
 	"time"
 
@@ -12,14 +14,29 @@ import (
 	"gorm.io/gorm/logger"
 )
 
+// silentRecordNotFoundLogger wraps the default logger and suppresses ErrRecordNotFound
+type silentRecordNotFoundLogger struct {
+	logger.Interface
+}
+
+func (l *silentRecordNotFoundLogger) Trace(ctx context.Context, begin time.Time, fc func() (sql string, rowsAffected int64), err error) {
+	// Suppress ErrRecordNotFound - it's expected behavior, not an error
+	if errors.Is(err, gorm.ErrRecordNotFound) {
+		return
+	}
+	l.Interface.Trace(ctx, begin, fc, err)
+}
+
 // Connect establishes a connection to the database
 func Connect(cfg *config.Config) (*gorm.DB, error) {
 	dsn := config.GetDSN()
 
-	// Configure GORM logger
-	gormLogger := logger.Default
+	// Configure GORM logger - wrap default to suppress ErrRecordNotFound
+	var gormLogger logger.Interface
 	if cfg.Server.Mode == "release" {
 		gormLogger = logger.Default.LogMode(logger.Silent)
+	} else {
+		gormLogger = &silentRecordNotFoundLogger{Interface: logger.Default}
 	}
 
 	db, err := gorm.Open(postgres.Open(dsn), &gorm.Config{
@@ -118,11 +135,18 @@ func Migrate(db *gorm.DB) error {
 			email_verified BOOLEAN DEFAULT FALSE,
 			password TEXT NOT NULL,
 			is_active BOOLEAN DEFAULT TRUE,
-			is_admin BOOLEAN DEFAULT FALSE
+			is_admin BOOLEAN DEFAULT FALSE,
+			totp_secret TEXT DEFAULT '',
+			totp_enabled BOOLEAN DEFAULT FALSE,
+			backup_codes JSONB DEFAULT '[]'
 		)
 	`).Error; err != nil {
 		return fmt.Errorf("failed to create users table: %w", err)
 	}
+	// Add MFA columns if they don't exist (for existing databases)
+	db.Exec(`ALTER TABLE users ADD COLUMN IF NOT EXISTS totp_secret TEXT DEFAULT ''`)
+	db.Exec(`ALTER TABLE users ADD COLUMN IF NOT EXISTS totp_enabled BOOLEAN DEFAULT FALSE`)
+	db.Exec(`ALTER TABLE users ADD COLUMN IF NOT EXISTS backup_codes JSONB DEFAULT '[]'`)
 	if err := db.Exec(`CREATE INDEX IF NOT EXISTS idx_users_deleted_at ON users(deleted_at)`).Error; err != nil {
 		return fmt.Errorf("failed to create users index: %w", err)
 	}
@@ -519,6 +543,23 @@ func Migrate(db *gorm.DB) error {
 		return fmt.Errorf("failed to create device_codes status index: %w", err)
 	}
 
+	// Create server_settings table
+	if err := db.Exec(`
+		CREATE TABLE IF NOT EXISTS server_settings (
+			id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+			created_at TIMESTAMP WITH TIME ZONE,
+			updated_at TIMESTAMP WITH TIME ZONE,
+			deleted_at TIMESTAMP WITH TIME ZONE,
+			key TEXT UNIQUE NOT NULL,
+			value JSONB
+		)
+	`).Error; err != nil {
+		return fmt.Errorf("failed to create server_settings table: %w", err)
+	}
+	if err := db.Exec(`CREATE INDEX IF NOT EXISTS idx_server_settings_deleted_at ON server_settings(deleted_at)`).Error; err != nil {
+		return fmt.Errorf("failed to create server_settings index: %w", err)
+	}
+
 	applogger.Debug("All tables created successfully")
 	return nil
 }
@@ -674,6 +715,28 @@ func InitializeDefaultData(db *gorm.DB, cfg *config.Config) error {
 			}
 			applogger.Debug("Created scope", "scope", scope.Name)
 		}
+	}
+
+	// Initialize default server settings
+	var existingSettings ServerSettings
+	if err := db.Where("key = ?", "default").First(&existingSettings).Error; err == gorm.ErrRecordNotFound {
+		defaultSettings := ServerSettings{
+			Key: "default",
+			Value: JSONB{
+				"issuer":                    cfg.OAuth.Issuer,
+				"access_token_lifespan":     3600,
+				"refresh_token_lifespan":    86400,
+				"id_token_lifespan":         3600,
+				"auth_code_lifespan":        600,
+				"require_pkce":              true,
+				"rotate_refresh_tokens":     true,
+				"revoke_old_refresh_tokens": true,
+			},
+		}
+		if err := db.Create(&defaultSettings).Error; err != nil {
+			return fmt.Errorf("failed to create default server settings: %w", err)
+		}
+		applogger.Debug("Created default server settings")
 	}
 
 	return nil

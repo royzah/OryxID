@@ -238,6 +238,16 @@ func main() {
 
 		// Statistics
 		apiGroup.GET("/stats", adminHandler.GetStatistics)
+
+		// Settings (require admin role)
+		settingsGroup := apiGroup.Group("/settings")
+		settingsGroup.Use(authMiddleware.RequireAdmin())
+		{
+			settingsGroup.GET("", adminHandler.GetSettings)
+			settingsGroup.PUT("", adminHandler.UpdateSettings)
+			settingsGroup.POST("/revoke-all-tokens", adminHandler.RevokeAllTokens)
+			settingsGroup.POST("/clear-sessions", adminHandler.ClearAllSessions)
+		}
 	}
 
 	// Auth endpoints (login for admin panel)
@@ -245,9 +255,21 @@ func main() {
 	authGroup := router.Group("/auth")
 	{
 		authGroup.POST("/login", authHandler.Login)
+		authGroup.POST("/login/mfa", authHandler.VerifyMFALogin)
 		authGroup.POST("/logout", authMiddleware.RequireAuth(), authHandler.Logout)
 		authGroup.GET("/me", authMiddleware.RequireAuth(), authHandler.Me)
 		authGroup.POST("/refresh", authHandler.RefreshToken)
+		authGroup.POST("/change-password", authMiddleware.RequireAuth(), authHandler.ChangePassword)
+
+		// MFA endpoints
+		mfaGroup := authGroup.Group("/mfa")
+		mfaGroup.Use(authMiddleware.RequireAuth())
+		{
+			mfaGroup.GET("/status", authHandler.GetMFAStatus)
+			mfaGroup.POST("/setup", authHandler.SetupMFA)
+			mfaGroup.POST("/verify", authHandler.VerifyMFA)
+			mfaGroup.POST("/disable", authHandler.DisableMFA)
+		}
 	}
 
 	// Session management endpoints (if Redis is available)

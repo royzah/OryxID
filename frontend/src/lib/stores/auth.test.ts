@@ -7,11 +7,13 @@ vi.mock('$lib/api', () => ({
 		login: vi.fn(),
 		logout: vi.fn(),
 		refreshToken: vi.fn(),
-		me: vi.fn()
+		me: vi.fn(),
+		verifyMFA: vi.fn()
 	},
 	api: {
 		setToken: vi.fn()
-	}
+	},
+	isMFARequired: vi.fn().mockReturnValue(false)
 }));
 
 describe('Auth Store', () => {

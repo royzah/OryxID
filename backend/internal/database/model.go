@@ -56,13 +56,16 @@ func (b *BaseModel) BeforeCreate(tx *gorm.DB) error {
 // User represents a system user (admin)
 type User struct {
 	BaseModel
-	Username      string `gorm:"uniqueIndex;not null" json:"username"`
-	Email         string `gorm:"uniqueIndex;not null" json:"email"`
-	EmailVerified bool   `gorm:"default:false" json:"email_verified"`
-	Password      string `gorm:"not null" json:"-"`
-	IsActive      bool   `gorm:"default:true" json:"is_active"`
-	IsAdmin       bool   `gorm:"default:false" json:"is_admin"`
-	Roles         []Role `gorm:"many2many:user_roles" json:"roles,omitempty"`
+	Username      string      `gorm:"uniqueIndex;not null" json:"username"`
+	Email         string      `gorm:"uniqueIndex;not null" json:"email"`
+	EmailVerified bool        `gorm:"default:false" json:"email_verified"`
+	Password      string      `gorm:"not null" json:"-"`
+	IsActive      bool        `gorm:"default:true" json:"is_active"`
+	IsAdmin       bool        `gorm:"default:false" json:"is_admin"`
+	TOTPSecret    string      `json:"-"`                              // Encrypted TOTP secret
+	TOTPEnabled   bool        `gorm:"default:false" json:"mfa_enabled"` // Whether MFA is enabled
+	BackupCodes   StringArray `gorm:"type:jsonb" json:"-"`            // Hashed backup codes
+	Roles         []Role      `gorm:"many2many:user_roles" json:"roles,omitempty"`
 }
 
 // Role represents user roles
@@ -285,4 +288,23 @@ type PushedAuthorizationRequest struct {
 	AuthorizationDetails string    `json:"authorization_details,omitempty"` // RAR (RFC 9396) - JSON array of authorization details
 	ExpiresAt            time.Time `gorm:"not null;index" json:"expires_at"` // PAR requests expire quickly (typically 90 seconds)
 	Used                 bool      `gorm:"default:false;index" json:"used"`  // One-time use
+}
+
+// ServerSettings represents OAuth2/OIDC server configuration (singleton)
+type ServerSettings struct {
+	BaseModel
+	Key   string `gorm:"uniqueIndex;not null" json:"key"` // Always "default" for singleton
+	Value JSONB  `gorm:"type:jsonb" json:"value"`
+}
+
+// ServerSettingsData is the structure stored in ServerSettings.Value
+type ServerSettingsData struct {
+	Issuer                 string `json:"issuer"`
+	AccessTokenLifespan    int    `json:"access_token_lifespan"`    // seconds
+	RefreshTokenLifespan   int    `json:"refresh_token_lifespan"`   // seconds
+	IDTokenLifespan        int    `json:"id_token_lifespan"`        // seconds
+	AuthCodeLifespan       int    `json:"auth_code_lifespan"`       // seconds
+	RequirePKCE            bool   `json:"require_pkce"`
+	RotateRefreshTokens    bool   `json:"rotate_refresh_tokens"`
+	RevokeOldRefreshTokens bool   `json:"revoke_old_refresh_tokens"`
 }

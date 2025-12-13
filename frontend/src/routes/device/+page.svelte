@@ -205,7 +205,7 @@
 							value={userCode}
 							on:input={handleInput}
 							class="mt-2 text-center text-2xl tracking-widest font-mono"
-							maxlength="9"
+							maxlength={9}
 							autocomplete="off"
 						/>
 						<p class="text-xs text-gray-500 mt-2 text-center">

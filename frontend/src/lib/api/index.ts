@@ -1,5 +1,6 @@
 export { api } from './client';
-export { authApi } from './auth';
+export { authApi, isMFARequired } from './auth';
+export type { MFARequiredResponse, LoginResponse } from './auth';
 export { applicationsApi } from './applications';
 export { scopesApi } from './scopes';
 export { usersApi } from './users';

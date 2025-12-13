@@ -1,0 +1,42 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ include "oryxid.fullname" . }}-config
+  labels:
+    {{- include "oryxid.labels" . | nindent 4 }}
+data:
+  # Server configuration
+  SERVER_MODE: {{ .Values.backend.config.mode | quote }}
+  SERVER_PORT: {{ .Values.backend.config.port | quote }}
+
+  # Database configuration
+  DATABASE_HOST: {{ include "oryxid.postgresql.host" . | quote }}
+  DATABASE_PORT: {{ include "oryxid.postgresql.port" . | quote }}
+  DATABASE_NAME: {{ include "oryxid.postgresql.database" . | quote }}
+  DATABASE_USER: {{ include "oryxid.postgresql.user" . | quote }}
+  DATABASE_SSLMODE: {{ .Values.externalDatabase.sslMode | default "disable" | quote }}
+
+  # Redis configuration
+  REDIS_HOST: {{ include "oryxid.redis.host" . | quote }}
+  REDIS_PORT: {{ include "oryxid.redis.port" . | quote }}
+
+  # OAuth configuration
+  OAUTH_ISSUER: {{ .Values.backend.oauth.issuer | quote }}
+  OAUTH_ACCESS_TOKEN_LIFESPAN: {{ .Values.backend.oauth.accessTokenLifespan | quote }}
+  OAUTH_REFRESH_TOKEN_LIFESPAN: {{ .Values.backend.oauth.refreshTokenLifespan | quote }}
+  OAUTH_AUTHORIZATION_CODE_LIFESPAN: {{ .Values.backend.oauth.authorizationCodeLifespan | quote }}
+
+  # Security configuration
+  SECURITY_BCRYPT_COST: {{ .Values.backend.security.bcryptCost | quote }}
+  SECURITY_RATE_LIMIT_ENABLED: {{ .Values.backend.security.rateLimitEnabled | quote }}
+  SECURITY_RATE_LIMIT_RPS: {{ .Values.backend.security.rateLimitRPS | quote }}
+  SECURITY_RATE_LIMIT_BURST: {{ .Values.backend.security.rateLimitBurst | quote }}
+  SECURITY_PKCE_REQUIRED: {{ .Values.backend.security.pkceRequired | quote }}
+  SECURITY_CSRF_ENABLED: {{ .Values.backend.security.csrfEnabled | quote }}
+
+  # JWT configuration
+  JWT_KID: {{ .Values.jwt.kid | quote }}
+
+  # Admin configuration
+  ADMIN_USERNAME: {{ .Values.admin.username | quote }}
+  ADMIN_EMAIL: {{ .Values.admin.email | quote }}

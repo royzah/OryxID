@@ -1,0 +1,111 @@
+# Production values for OryxID
+# Use: helm install oryxid ./helm/oryxid -f ./helm/oryxid/values-production.yaml
+
+backend:
+  replicaCount: 3
+  config:
+    mode: release
+  resources:
+    limits:
+      cpu: 1000m
+      memory: 1Gi
+    requests:
+      cpu: 200m
+      memory: 256Mi
+  autoscaling:
+    enabled: true
+    minReplicas: 3
+    maxReplicas: 20
+    targetCPUUtilizationPercentage: 70
+  security:
+    bcryptCost: 14
+    rateLimitEnabled: true
+    rateLimitRPS: 100
+    rateLimitBurst: 20
+    pkceRequired: true
+    csrfEnabled: true
+
+frontend:
+  replicaCount: 3
+  resources:
+    limits:
+      cpu: 500m
+      memory: 512Mi
+    requests:
+      cpu: 100m
+      memory: 128Mi
+  autoscaling:
+    enabled: true
+    minReplicas: 3
+    maxReplicas: 10
+    targetCPUUtilizationPercentage: 70
+
+ingress:
+  enabled: true
+  className: "nginx"
+  annotations:
+    nginx.ingress.kubernetes.io/ssl-redirect: "true"
+    nginx.ingress.kubernetes.io/proxy-body-size: "10m"
+    nginx.ingress.kubernetes.io/rate-limit: "100"
+    nginx.ingress.kubernetes.io/rate-limit-window: "1m"
+    cert-manager.io/cluster-issuer: "letsencrypt-prod"
+  # Override these values!
+  hosts:
+    - host: auth.example.com
+      paths:
+        - path: /api
+          pathType: Prefix
+          service: backend
+        - path: /oauth
+          pathType: Prefix
+          service: backend
+        - path: /auth
+          pathType: Prefix
+          service: backend
+        - path: /.well-known
+          pathType: Prefix
+          service: backend
+        - path: /
+          pathType: Prefix
+          service: frontend
+  tls:
+    - secretName: oryxid-tls
+      hosts:
+        - auth.example.com
+
+postgresql:
+  enabled: true
+  auth:
+    username: oryxid
+    database: oryxid
+  primary:
+    persistence:
+      enabled: true
+      size: 50Gi
+    resources:
+      limits:
+        cpu: 2000m
+        memory: 4Gi
+      requests:
+        cpu: 500m
+        memory: 1Gi
+
+redis:
+  enabled: true
+  auth:
+    enabled: true
+  master:
+    persistence:
+      enabled: true
+      size: 10Gi
+    resources:
+      limits:
+        cpu: 500m
+        memory: 512Mi
+      requests:
+        cpu: 100m
+        memory: 128Mi
+
+podDisruptionBudget:
+  enabled: true
+  minAvailable: 2

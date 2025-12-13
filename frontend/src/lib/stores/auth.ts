@@ -1,7 +1,7 @@
 import { writable, derived, get } from 'svelte/store';
 import { browser } from '$app/environment';
 import { goto } from '$app/navigation';
-import { authApi, api } from '$lib/api';
+import { authApi, api, isMFARequired } from '$lib/api';
 import type { User, LoginCredentials } from '$lib/types';
 
 interface AuthState {
@@ -10,6 +10,8 @@ interface AuthState {
 	refreshToken: string | null;
 	isLoading: boolean;
 	isInitialized: boolean;
+	mfaRequired: boolean;
+	mfaToken: string | null;
 }
 
 const initialState: AuthState = {
@@ -17,7 +19,9 @@ const initialState: AuthState = {
 	token: null,
 	refreshToken: null,
 	isLoading: false,
-	isInitialized: false
+	isInitialized: false,
+	mfaRequired: false,
+	mfaToken: null
 };
 
 function createAuthStore() {
@@ -52,6 +56,17 @@ function createAuthStore() {
 			try {
 				const response = await authApi.login(credentials);
 
+				// Check if MFA is required
+				if (isMFARequired(response)) {
+					update((state) => ({
+						...state,
+						isLoading: false,
+						mfaRequired: true,
+						mfaToken: response.mfa_token
+					}));
+					return response;
+				}
+
 				// Set token in API client (authApi.login also does this, but we do it here too for test compatibility)
 				api.setToken(response.token);
 
@@ -66,7 +81,9 @@ function createAuthStore() {
 					user: response.user,
 					token: response.token,
 					refreshToken: response.refresh_token,
-					isLoading: false
+					isLoading: false,
+					mfaRequired: false,
+					mfaToken: null
 				}));
 
 				return response;
@@ -74,6 +91,50 @@ function createAuthStore() {
 				update((state) => ({ ...state, isLoading: false }));
 				throw error;
 			}
+		},
+
+		async verifyMFA(code: string) {
+			const state = get({ subscribe });
+			if (!state.mfaToken) {
+				throw new Error('No MFA token available');
+			}
+
+			update((s) => ({ ...s, isLoading: true }));
+
+			try {
+				const response = await authApi.verifyMFA(state.mfaToken, code);
+
+				api.setToken(response.token);
+
+				if (browser) {
+					localStorage.setItem('token', response.token);
+					localStorage.setItem('refreshToken', response.refresh_token);
+					localStorage.setItem('user', JSON.stringify(response.user));
+				}
+
+				update((s) => ({
+					...s,
+					user: response.user,
+					token: response.token,
+					refreshToken: response.refresh_token,
+					isLoading: false,
+					mfaRequired: false,
+					mfaToken: null
+				}));
+
+				return response;
+			} catch (error) {
+				update((s) => ({ ...s, isLoading: false }));
+				throw error;
+			}
+		},
+
+		cancelMFA() {
+			update((state) => ({
+				...state,
+				mfaRequired: false,
+				mfaToken: null
+			}));
 		},
 
 		async logout() {

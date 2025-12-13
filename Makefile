@@ -14,7 +14,7 @@ help: ## Show available commands
 
 # Setup
 .PHONY: setup
-setup: env keys ## Initial setup (create .env and generate keys)
+setup: env keys ssl ## Initial setup (create .env and generate keys)
 	@echo "Setup complete. Run 'make up' to start services."
 
 .PHONY: env
@@ -26,13 +26,64 @@ keys: ## Generate RSA keys for JWT signing
 	@mkdir -p certs
 	@[ -f certs/private_key.pem ] || openssl genrsa -out certs/private_key.pem 4096 2>/dev/null
 	@[ -f certs/public_key.pem ] || openssl rsa -in certs/private_key.pem -pubout -out certs/public_key.pem 2>/dev/null
-	@echo "Keys generated in certs/"
+	@echo "JWT keys generated in certs/"
+
+.PHONY: ssl
+ssl: ## Generate self-signed SSL certificates (development)
+	@mkdir -p certs
+	@[ -f certs/ssl_cert.pem ] || openssl req -x509 -nodes -days 365 -newkey rsa:2048 \
+		-keyout certs/ssl_key.pem -out certs/ssl_cert.pem \
+		-subj "/CN=localhost/O=OryxID/C=US" 2>/dev/null
+	@chmod 644 certs/ssl_key.pem 2>/dev/null || true
+	@echo "SSL certificates generated in certs/"
+
+.PHONY: cert-init
+cert-init: ## Get Let's Encrypt certificate (requires SSL_DOMAIN and SSL_EMAIL in .env)
+	@DOMAIN=$$(grep SSL_DOMAIN .env | cut -d '=' -f2); \
+	EMAIL=$$(grep SSL_EMAIL .env | cut -d '=' -f2); \
+	if [ -z "$$DOMAIN" ] || [ "$$DOMAIN" = "localhost" ]; then \
+		echo "Error: Set SSL_DOMAIN in .env to your domain name"; exit 1; \
+	fi; \
+	if [ -z "$$EMAIL" ] || [ "$$EMAIL" = "admin@example.com" ]; then \
+		echo "Error: Set SSL_EMAIL in .env to your email"; exit 1; \
+	fi; \
+	echo "Requesting certificate for $$DOMAIN..."; \
+	docker run --rm \
+		-v $$(pwd)/certs:/etc/letsencrypt \
+		-v oryxid_certbot_webroot:/var/www/certbot \
+		-p 80:80 \
+		certbot/certbot certonly --standalone \
+		--email $$EMAIL \
+		--agree-tos \
+		--no-eff-email \
+		-d $$DOMAIN && \
+	cp certs/live/$$DOMAIN/fullchain.pem certs/ssl_cert.pem && \
+	cp certs/live/$$DOMAIN/privkey.pem certs/ssl_key.pem && \
+	chmod 644 certs/ssl_key.pem && \
+	echo "Certificate installed! Restart nginx: make restart"
+
+.PHONY: cert-renew
+cert-renew: ## Renew Let's Encrypt certificate
+	@DOMAIN=$$(grep SSL_DOMAIN .env | cut -d '=' -f2); \
+	if [ -z "$$DOMAIN" ] || [ "$$DOMAIN" = "localhost" ]; then \
+		echo "Error: Set SSL_DOMAIN in .env"; exit 1; \
+	fi; \
+	echo "Renewing certificate for $$DOMAIN..."; \
+	docker run --rm \
+		-v $$(pwd)/certs:/etc/letsencrypt \
+		-v oryxid_certbot_webroot:/var/www/certbot \
+		certbot/certbot renew --webroot -w /var/www/certbot && \
+	cp certs/live/$$DOMAIN/fullchain.pem certs/ssl_cert.pem && \
+	cp certs/live/$$DOMAIN/privkey.pem certs/ssl_key.pem && \
+	chmod 644 certs/ssl_key.pem && \
+	$(COMPOSE) exec nginx nginx -s reload && \
+	echo "Certificate renewed!"
 
 # Docker commands
 .PHONY: up
 up: ## Start all services
 	@$(COMPOSE) up -d
-	@echo "Services started. Access at http://localhost:8080"
+	@echo "Services started. Access at https://localhost:8443"
 
 .PHONY: down
 down: ## Stop all services
@@ -74,7 +125,7 @@ status: ## Show service health status
 	@echo "Health Checks:"
 	@curl -sf http://localhost:9000/health >/dev/null && echo "  Backend:  OK" || echo "  Backend:  FAIL"
 	@curl -sf http://localhost:3000/health >/dev/null && echo "  Frontend: OK" || echo "  Frontend: FAIL"
-	@curl -sf http://localhost:8080/health >/dev/null && echo "  Nginx:    OK" || echo "  Nginx:    FAIL"
+	@curl -skf https://localhost:8443/health >/dev/null && echo "  Nginx:    OK" || echo "  Nginx:    FAIL"
 
 # Development
 .PHONY: dev
@@ -196,4 +247,60 @@ version: ## Show version information
 info: ## Show environment info
 	@echo "Frontend: http://localhost:$$(grep FRONTEND_PORT .env | cut -d '=' -f2)"
 	@echo "Backend:  http://localhost:$$(grep SERVER_PORT .env | cut -d '=' -f2)"
-	@echo "Proxy:    http://localhost:$$(grep HTTP_PORT .env | cut -d '=' -f2)"
+	@echo "Proxy:    https://localhost:$$(grep HTTPS_PORT .env | cut -d '=' -f2)"
+
+# Kubernetes / Helm
+HELM_RELEASE := oryxid
+HELM_NAMESPACE := oryxid
+HELM_CHART := ./helm/oryxid
+
+.PHONY: helm-deps
+helm-deps: ## Install Helm chart dependencies
+	@helm dependency update $(HELM_CHART)
+
+.PHONY: helm-lint
+helm-lint: ## Lint Helm chart
+	@helm lint $(HELM_CHART)
+
+.PHONY: helm-template
+helm-template: ## Render Helm templates locally
+	@helm template $(HELM_RELEASE) $(HELM_CHART) --namespace $(HELM_NAMESPACE)
+
+.PHONY: helm-install
+helm-install: helm-deps ## Install OryxID to Kubernetes
+	@helm upgrade --install $(HELM_RELEASE) $(HELM_CHART) \
+		--namespace $(HELM_NAMESPACE) \
+		--create-namespace \
+		--wait
+
+.PHONY: helm-install-prod
+helm-install-prod: helm-deps ## Install OryxID to Kubernetes (production)
+	@helm upgrade --install $(HELM_RELEASE) $(HELM_CHART) \
+		--namespace $(HELM_NAMESPACE) \
+		--create-namespace \
+		-f $(HELM_CHART)/values-production.yaml \
+		--wait
+
+.PHONY: helm-uninstall
+helm-uninstall: ## Uninstall OryxID from Kubernetes
+	@helm uninstall $(HELM_RELEASE) --namespace $(HELM_NAMESPACE)
+
+.PHONY: helm-status
+helm-status: ## Show Helm release status
+	@helm status $(HELM_RELEASE) --namespace $(HELM_NAMESPACE)
+
+.PHONY: k8s-logs
+k8s-logs: ## Show logs from all OryxID pods
+	@kubectl logs -n $(HELM_NAMESPACE) -l app.kubernetes.io/name=oryxid --all-containers -f
+
+.PHONY: k8s-pods
+k8s-pods: ## Show OryxID pods
+	@kubectl get pods -n $(HELM_NAMESPACE) -l app.kubernetes.io/name=oryxid
+
+.PHONY: docker-build-push
+docker-build-push: ## Build and push Docker images (requires REGISTRY variable)
+	@if [ -z "$(REGISTRY)" ]; then echo "Error: Set REGISTRY variable"; exit 1; fi
+	@docker build -t $(REGISTRY)/oryxid-backend:latest ./backend
+	@docker build -t $(REGISTRY)/oryxid-frontend:latest ./frontend
+	@docker push $(REGISTRY)/oryxid-backend:latest
+	@docker push $(REGISTRY)/oryxid-frontend:latest

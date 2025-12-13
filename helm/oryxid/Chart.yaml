@@ -1,0 +1,27 @@
+apiVersion: v2
+name: oryxid
+description: OryxID - OAuth 2.1 / OpenID Connect Identity Provider
+type: application
+version: 0.1.0
+appVersion: "1.0.0"
+keywords:
+  - oauth2
+  - openid-connect
+  - identity-provider
+  - authentication
+  - authorization
+maintainers:
+  - name: OryxID Team
+home: https://github.com/royzah/OryxID
+sources:
+  - https://github.com/royzah/OryxID
+
+dependencies:
+  - name: postgresql
+    version: "13.2.24"
+    repository: https://charts.bitnami.com/bitnami
+    condition: postgresql.enabled
+  - name: redis
+    version: "18.6.1"
+    repository: https://charts.bitnami.com/bitnami
+    condition: redis.enabled

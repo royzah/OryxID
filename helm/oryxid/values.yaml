@@ -1,0 +1,212 @@
+# Default values for OryxID
+
+# Global settings
+global:
+  imageRegistry: ""
+  imagePullSecrets: []
+
+# Backend configuration
+backend:
+  replicaCount: 2
+  image:
+    repository: oryxid/backend
+    tag: "latest"
+    pullPolicy: IfNotPresent
+
+  resources:
+    limits:
+      cpu: 500m
+      memory: 512Mi
+    requests:
+      cpu: 100m
+      memory: 128Mi
+
+  autoscaling:
+    enabled: false
+    minReplicas: 2
+    maxReplicas: 10
+    targetCPUUtilizationPercentage: 80
+
+  nodeSelector: {}
+  tolerations: []
+  affinity: {}
+
+  # Server configuration
+  config:
+    mode: release  # debug or release
+    port: 9000
+
+  # OAuth configuration
+  oauth:
+    issuer: "https://auth.example.com"
+    accessTokenLifespan: "3600s"
+    refreshTokenLifespan: "2592000s"
+    authorizationCodeLifespan: "600s"
+
+  # Security configuration
+  security:
+    bcryptCost: 12
+    rateLimitEnabled: true
+    rateLimitRPS: 100
+    rateLimitBurst: 10
+    pkceRequired: true
+    csrfEnabled: true
+
+# Frontend configuration
+frontend:
+  replicaCount: 2
+  image:
+    repository: oryxid/frontend
+    tag: "latest"
+    pullPolicy: IfNotPresent
+
+  resources:
+    limits:
+      cpu: 200m
+      memory: 256Mi
+    requests:
+      cpu: 50m
+      memory: 64Mi
+
+  autoscaling:
+    enabled: false
+    minReplicas: 2
+    maxReplicas: 10
+    targetCPUUtilizationPercentage: 80
+
+  nodeSelector: {}
+  tolerations: []
+  affinity: {}
+
+# Ingress configuration
+ingress:
+  enabled: true
+  className: "nginx"
+  annotations:
+    nginx.ingress.kubernetes.io/ssl-redirect: "true"
+    nginx.ingress.kubernetes.io/proxy-body-size: "10m"
+    cert-manager.io/cluster-issuer: "letsencrypt-prod"
+  hosts:
+    - host: auth.example.com
+      paths:
+        - path: /api
+          pathType: Prefix
+          service: backend
+        - path: /oauth
+          pathType: Prefix
+          service: backend
+        - path: /auth
+          pathType: Prefix
+          service: backend
+        - path: /.well-known
+          pathType: Prefix
+          service: backend
+        - path: /
+          pathType: Prefix
+          service: frontend
+  tls:
+    - secretName: oryxid-tls
+      hosts:
+        - auth.example.com
+
+# Service configuration
+service:
+  type: ClusterIP
+  backend:
+    port: 9000
+  frontend:
+    port: 3000
+
+# Admin user (created on first run)
+admin:
+  username: admin
+  email: admin@example.com
+  # Password should be set via --set or external secret
+  password: ""
+  existingSecret: ""
+  existingSecretKey: "admin-password"
+
+# JWT configuration
+jwt:
+  kid: "oryxid-key-1"
+  # Auto-generate keys if not provided
+  existingSecret: ""
+  privateKeySecretKey: "private-key"
+  publicKeySecretKey: "public-key"
+
+# PostgreSQL configuration
+postgresql:
+  enabled: true
+  auth:
+    username: oryxid
+    password: ""
+    database: oryxid
+    existingSecret: ""
+  primary:
+    persistence:
+      enabled: true
+      size: 10Gi
+
+# External PostgreSQL (if postgresql.enabled=false)
+externalDatabase:
+  host: ""
+  port: 5432
+  user: oryxid
+  password: ""
+  database: oryxid
+  sslMode: require
+  existingSecret: ""
+  existingSecretKey: "password"
+
+# Redis configuration
+redis:
+  enabled: true
+  auth:
+    enabled: true
+    password: ""
+    existingSecret: ""
+  master:
+    persistence:
+      enabled: true
+      size: 2Gi
+
+# External Redis (if redis.enabled=false)
+externalRedis:
+  host: ""
+  port: 6379
+  password: ""
+  existingSecret: ""
+  existingSecretKey: "password"
+
+# Pod Disruption Budget
+podDisruptionBudget:
+  enabled: true
+  minAvailable: 1
+
+# Service Account
+serviceAccount:
+  create: true
+  annotations: {}
+  name: ""
+
+# Pod Security Context
+podSecurityContext:
+  fsGroup: 1000
+
+# Container Security Context
+securityContext:
+  runAsNonRoot: true
+  runAsUser: 1000
+  allowPrivilegeEscalation: false
+  readOnlyRootFilesystem: true
+  capabilities:
+    drop:
+      - ALL
+
+# Health checks
+healthCheck:
+  enabled: true
+  initialDelaySeconds: 30
+  periodSeconds: 10
+  timeoutSeconds: 5
+  failureThreshold: 3

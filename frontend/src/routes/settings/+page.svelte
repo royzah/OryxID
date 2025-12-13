@@ -1,21 +1,23 @@
 <script lang="ts">
+	import { onMount } from 'svelte';
 	import { Card, Button, Input, Label, Badge } from '$lib/components/ui';
 	import { auth } from '$lib/stores';
+	import { api } from '$lib/api/client';
 
 	let saving = false;
+	let loading = true;
 	let message: { type: 'success' | 'error'; text: string } | null = null;
 
-	// Server settings (would be loaded from API in real implementation)
+	// Server settings
 	let settings = {
-		issuer: 'https://auth.example.com',
-		accessTokenLifespan: 3600,
-		refreshTokenLifespan: 86400,
-		idTokenLifespan: 3600,
-		authCodeLifespan: 600,
-		requirePKCE: true,
-		allowImplicit: false,
-		rotateRefreshTokens: true,
-		revokeOldRefreshTokens: true
+		issuer: '',
+		access_token_lifespan: 3600,
+		refresh_token_lifespan: 86400,
+		id_token_lifespan: 3600,
+		auth_code_lifespan: 600,
+		require_pkce: true,
+		rotate_refresh_tokens: true,
+		revoke_old_refresh_tokens: true
 	};
 
 	// Password change form
@@ -25,13 +27,38 @@
 		confirmPassword: ''
 	};
 
+	// MFA state
+	let mfaEnabled = false;
+	let mfaSetup: { secret: string; qr_code: string; backup_codes: string[] } | null = null;
+	let mfaVerifyCode = '';
+	let mfaDisableForm = { password: '', code: '' };
+
+	onMount(async () => {
+		// Load MFA status
+		try {
+			const status = await api.getDirect<{ mfa_enabled: boolean }>('/auth/mfa/status');
+			mfaEnabled = status.mfa_enabled;
+		} catch (e) {
+			// Ignore error, MFA just won't show status
+		}
+
+		if ($auth.user?.is_admin) {
+			try {
+				const data = await api.get<typeof settings>('/settings');
+				settings = data;
+			} catch (e) {
+				message = { type: 'error', text: e instanceof Error ? e.message : 'Failed to load settings' };
+			}
+		}
+		loading = false;
+	});
+
 	async function saveSettings() {
 		saving = true;
 		message = null;
 
 		try {
-			// TODO: Implement API call to save settings
-			await new Promise((resolve) => setTimeout(resolve, 1000));
+			await api.put('/settings', settings);
 			message = { type: 'success', text: 'Settings saved successfully' };
 		} catch (e) {
 			message = { type: 'error', text: e instanceof Error ? e.message : 'Failed to save settings' };
@@ -55,8 +82,10 @@
 		message = null;
 
 		try {
-			// TODO: Implement API call to change password
-			await new Promise((resolve) => setTimeout(resolve, 1000));
+			await api.postDirect('/auth/change-password', {
+				current_password: passwordForm.currentPassword,
+				new_password: passwordForm.newPassword
+			});
 			message = { type: 'success', text: 'Password changed successfully' };
 			passwordForm = { currentPassword: '', newPassword: '', confirmPassword: '' };
 		} catch (e) {
@@ -69,11 +98,111 @@
 		}
 	}
 
+	async function revokeAllTokens() {
+		if (!confirm('Are you sure you want to revoke all tokens? This will invalidate all active sessions.')) {
+			return;
+		}
+
+		saving = true;
+		message = null;
+
+		try {
+			const result = await api.post<{ message: string; tokens_revoked: number }>('/settings/revoke-all-tokens');
+			message = { type: 'success', text: `${result.message} (${result.tokens_revoked} tokens revoked)` };
+		} catch (e) {
+			message = { type: 'error', text: e instanceof Error ? e.message : 'Failed to revoke tokens' };
+		} finally {
+			saving = false;
+		}
+	}
+
+	async function clearAllSessions() {
+		if (!confirm('Are you sure you want to clear all sessions? This will log out all users.')) {
+			return;
+		}
+
+		saving = true;
+		message = null;
+
+		try {
+			const result = await api.post<{ message: string; sessions_cleared: number }>('/settings/clear-sessions');
+			message = { type: 'success', text: `${result.message} (${result.sessions_cleared} sessions cleared)` };
+		} catch (e) {
+			message = { type: 'error', text: e instanceof Error ? e.message : 'Failed to clear sessions' };
+		} finally {
+			saving = false;
+		}
+	}
+
 	function formatDuration(seconds: number): string {
 		if (seconds < 60) return `${seconds} seconds`;
 		if (seconds < 3600) return `${Math.floor(seconds / 60)} minutes`;
 		if (seconds < 86400) return `${Math.floor(seconds / 3600)} hours`;
 		return `${Math.floor(seconds / 86400)} days`;
+	}
+
+	async function setupMFA() {
+		saving = true;
+		message = null;
+
+		try {
+			mfaSetup = await api.postDirect<typeof mfaSetup>('/auth/mfa/setup', {});
+		} catch (e) {
+			message = { type: 'error', text: e instanceof Error ? e.message : 'Failed to setup MFA' };
+		} finally {
+			saving = false;
+		}
+	}
+
+	async function verifyMFA() {
+		if (!mfaVerifyCode || mfaVerifyCode.length !== 6) {
+			message = { type: 'error', text: 'Please enter a 6-digit code' };
+			return;
+		}
+
+		saving = true;
+		message = null;
+
+		try {
+			await api.postDirect('/auth/mfa/verify', { code: mfaVerifyCode });
+			mfaEnabled = true;
+			mfaSetup = null;
+			mfaVerifyCode = '';
+			message = { type: 'success', text: 'MFA enabled successfully!' };
+		} catch (e) {
+			message = { type: 'error', text: e instanceof Error ? e.message : 'Invalid verification code' };
+		} finally {
+			saving = false;
+		}
+	}
+
+	async function disableMFA() {
+		if (!mfaDisableForm.password || !mfaDisableForm.code) {
+			message = { type: 'error', text: 'Please enter your password and verification code' };
+			return;
+		}
+
+		saving = true;
+		message = null;
+
+		try {
+			await api.postDirect('/auth/mfa/disable', {
+				password: mfaDisableForm.password,
+				code: mfaDisableForm.code
+			});
+			mfaEnabled = false;
+			mfaDisableForm = { password: '', code: '' };
+			message = { type: 'success', text: 'MFA disabled successfully' };
+		} catch (e) {
+			message = { type: 'error', text: e instanceof Error ? e.message : 'Failed to disable MFA' };
+		} finally {
+			saving = false;
+		}
+	}
+
+	function cancelMFASetup() {
+		mfaSetup = null;
+		mfaVerifyCode = '';
 	}
 </script>
 
@@ -152,135 +281,223 @@
 		</form>
 	</Card>
 
+	<!-- Two-Factor Authentication -->
+	<Card class="p-6">
+		<h2 class="text-lg font-semibold text-gray-900 mb-4">Two-Factor Authentication</h2>
+
+		{#if mfaEnabled}
+			<div class="space-y-4">
+				<div class="flex items-center gap-3 p-4 bg-green-50 border border-green-200 rounded-lg">
+					<svg class="w-6 h-6 text-green-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+						<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12l2 2 4-4m5.618-4.016A11.955 11.955 0 0112 2.944a11.955 11.955 0 01-8.618 3.04A12.02 12.02 0 003 9c0 5.591 3.824 10.29 9 11.622 5.176-1.332 9-6.03 9-11.622 0-1.042-.133-2.052-.382-3.016z" />
+					</svg>
+					<div>
+						<p class="font-medium text-green-800">MFA is enabled</p>
+						<p class="text-sm text-green-600">Your account is protected with two-factor authentication.</p>
+					</div>
+				</div>
+
+				<div class="border-t pt-4">
+					<h3 class="font-medium text-gray-700 mb-3">Disable MFA</h3>
+					<form on:submit|preventDefault={disableMFA} class="space-y-3 max-w-md">
+						<div>
+							<Label for="disable-password">Password</Label>
+							<Input id="disable-password" type="password" bind:value={mfaDisableForm.password} required />
+						</div>
+						<div>
+							<Label for="disable-code">Verification Code</Label>
+							<Input id="disable-code" type="text" bind:value={mfaDisableForm.code} placeholder="000000" maxlength={6} required />
+						</div>
+						<Button type="submit" variant="destructive" disabled={saving}>
+							{saving ? 'Disabling...' : 'Disable MFA'}
+						</Button>
+					</form>
+				</div>
+			</div>
+		{:else if mfaSetup}
+			<div class="space-y-6">
+				<div class="p-4 bg-blue-50 border border-blue-200 rounded-lg">
+					<p class="text-sm text-blue-800">
+						Scan the QR code below with your authenticator app (Google Authenticator, Authy, etc.)
+					</p>
+				</div>
+
+				<div class="flex flex-col items-center gap-4">
+					<img
+						src={mfaSetup.qr_code}
+						alt="QR Code"
+						class="w-48 h-48 border rounded-lg"
+					/>
+					<div class="text-center">
+						<p class="text-xs text-gray-500 mb-1">Or enter this code manually:</p>
+						<code class="text-sm bg-gray-100 px-3 py-1 rounded font-mono">{mfaSetup.secret}</code>
+					</div>
+				</div>
+
+				<div class="p-4 bg-yellow-50 border border-yellow-200 rounded-lg">
+					<p class="font-medium text-yellow-800 mb-2">Save your backup codes</p>
+					<p class="text-sm text-yellow-700 mb-3">
+						These codes can be used to access your account if you lose your authenticator device.
+					</p>
+					<div class="grid grid-cols-2 gap-2 max-w-xs">
+						{#each mfaSetup.backup_codes as code}
+							<code class="text-sm bg-white px-2 py-1 rounded border font-mono text-center">{code}</code>
+						{/each}
+					</div>
+				</div>
+
+				<form on:submit|preventDefault={verifyMFA} class="space-y-4 max-w-md">
+					<div>
+						<Label for="verify-code">Enter the 6-digit code from your app</Label>
+						<Input
+							id="verify-code"
+							type="text"
+							bind:value={mfaVerifyCode}
+							placeholder="000000"
+							maxlength={6}
+							class="text-center text-2xl tracking-widest font-mono"
+							required
+						/>
+					</div>
+					<div class="flex gap-3">
+						<Button type="button" variant="outline" on:click={cancelMFASetup}>Cancel</Button>
+						<Button type="submit" disabled={saving}>
+							{saving ? 'Verifying...' : 'Enable MFA'}
+						</Button>
+					</div>
+				</form>
+			</div>
+		{:else}
+			<div class="space-y-4">
+				<p class="text-gray-600">
+					Add an extra layer of security to your account by enabling two-factor authentication.
+				</p>
+				<Button on:click={setupMFA} disabled={saving}>
+					{saving ? 'Setting up...' : 'Enable MFA'}
+				</Button>
+			</div>
+		{/if}
+	</Card>
+
 	<!-- Server Configuration (Admin only) -->
 	{#if $auth.user?.is_admin}
 		<Card class="p-6">
 			<h2 class="text-lg font-semibold text-gray-900 mb-4">Server Configuration</h2>
-			<form on:submit|preventDefault={saveSettings} class="space-y-6">
-				<div>
-					<Label for="issuer">Issuer URL</Label>
-					<Input id="issuer" bind:value={settings.issuer} placeholder="https://auth.example.com" />
-					<p class="mt-1 text-xs text-gray-500">
-						The issuer identifier for your OAuth2/OIDC server
-					</p>
-				</div>
+			{#if loading}
+				<p class="text-gray-500">Loading settings...</p>
+			{:else}
+				<form on:submit|preventDefault={saveSettings} class="space-y-6">
+					<div>
+						<Label for="issuer">Issuer URL</Label>
+						<Input id="issuer" bind:value={settings.issuer} placeholder="https://auth.example.com" />
+						<p class="mt-1 text-xs text-gray-500">
+							The issuer identifier for your OAuth2/OIDC server
+						</p>
+					</div>
 
-				<div class="grid grid-cols-1 md:grid-cols-2 gap-4">
-					<div>
-						<Label for="access-token-lifespan">Access Token Lifespan (seconds)</Label>
-						<Input
-							id="access-token-lifespan"
-							type="number"
-							bind:value={settings.accessTokenLifespan}
-							min="60"
-						/>
-						<p class="mt-1 text-xs text-gray-500">
-							{formatDuration(settings.accessTokenLifespan)}
-						</p>
-					</div>
-					<div>
-						<Label for="refresh-token-lifespan">Refresh Token Lifespan (seconds)</Label>
-						<Input
-							id="refresh-token-lifespan"
-							type="number"
-							bind:value={settings.refreshTokenLifespan}
-							min="3600"
-						/>
-						<p class="mt-1 text-xs text-gray-500">
-							{formatDuration(settings.refreshTokenLifespan)}
-						</p>
-					</div>
-					<div>
-						<Label for="id-token-lifespan">ID Token Lifespan (seconds)</Label>
-						<Input
-							id="id-token-lifespan"
-							type="number"
-							bind:value={settings.idTokenLifespan}
-							min="60"
-						/>
-						<p class="mt-1 text-xs text-gray-500">
-							{formatDuration(settings.idTokenLifespan)}
-						</p>
-					</div>
-					<div>
-						<Label for="auth-code-lifespan">Authorization Code Lifespan (seconds)</Label>
-						<Input
-							id="auth-code-lifespan"
-							type="number"
-							bind:value={settings.authCodeLifespan}
-							min="60"
-							max="600"
-						/>
-						<p class="mt-1 text-xs text-gray-500">
-							{formatDuration(settings.authCodeLifespan)}
-						</p>
-					</div>
-				</div>
-
-				<div class="space-y-3">
-					<h3 class="font-medium text-gray-700">Security Options</h3>
-
-					<label class="flex items-center gap-3">
-						<input
-							type="checkbox"
-							bind:checked={settings.requirePKCE}
-							class="rounded text-purple-600"
-						/>
+					<div class="grid grid-cols-1 md:grid-cols-2 gap-4">
 						<div>
-							<span class="text-sm font-medium">Require PKCE</span>
-							<p class="text-xs text-gray-500">
-								Require Proof Key for Code Exchange for all authorization code flows
+							<Label for="access-token-lifespan">Access Token Lifespan (seconds)</Label>
+							<Input
+								id="access-token-lifespan"
+								type="number"
+								bind:value={settings.access_token_lifespan}
+								min="60"
+							/>
+							<p class="mt-1 text-xs text-gray-500">
+								{formatDuration(settings.access_token_lifespan)}
 							</p>
 						</div>
-					</label>
-
-					<label class="flex items-center gap-3">
-						<input
-							type="checkbox"
-							bind:checked={settings.allowImplicit}
-							class="rounded text-purple-600"
-						/>
 						<div>
-							<span class="text-sm font-medium">Allow Implicit Flow</span>
-							<p class="text-xs text-gray-500">
-								Enable the legacy implicit grant type (not recommended)
+							<Label for="refresh-token-lifespan">Refresh Token Lifespan (seconds)</Label>
+							<Input
+								id="refresh-token-lifespan"
+								type="number"
+								bind:value={settings.refresh_token_lifespan}
+								min="3600"
+							/>
+							<p class="mt-1 text-xs text-gray-500">
+								{formatDuration(settings.refresh_token_lifespan)}
 							</p>
 						</div>
-					</label>
-
-					<label class="flex items-center gap-3">
-						<input
-							type="checkbox"
-							bind:checked={settings.rotateRefreshTokens}
-							class="rounded text-purple-600"
-						/>
 						<div>
-							<span class="text-sm font-medium">Rotate Refresh Tokens</span>
-							<p class="text-xs text-gray-500">Issue a new refresh token with each token refresh</p>
-						</div>
-					</label>
-
-					<label class="flex items-center gap-3">
-						<input
-							type="checkbox"
-							bind:checked={settings.revokeOldRefreshTokens}
-							class="rounded text-purple-600"
-						/>
-						<div>
-							<span class="text-sm font-medium">Revoke Old Refresh Tokens</span>
-							<p class="text-xs text-gray-500">
-								Automatically revoke old refresh tokens when rotating
+							<Label for="id-token-lifespan">ID Token Lifespan (seconds)</Label>
+							<Input
+								id="id-token-lifespan"
+								type="number"
+								bind:value={settings.id_token_lifespan}
+								min="60"
+							/>
+							<p class="mt-1 text-xs text-gray-500">
+								{formatDuration(settings.id_token_lifespan)}
 							</p>
 						</div>
-					</label>
-				</div>
+						<div>
+							<Label for="auth-code-lifespan">Authorization Code Lifespan (seconds)</Label>
+							<Input
+								id="auth-code-lifespan"
+								type="number"
+								bind:value={settings.auth_code_lifespan}
+								min="60"
+								max="600"
+							/>
+							<p class="mt-1 text-xs text-gray-500">
+								{formatDuration(settings.auth_code_lifespan)}
+							</p>
+						</div>
+					</div>
 
-				<div class="flex gap-3">
-					<Button type="submit" disabled={saving}>
-						{saving ? 'Saving...' : 'Save Settings'}
-					</Button>
-				</div>
-			</form>
+					<div class="space-y-3">
+						<h3 class="font-medium text-gray-700">Security Options</h3>
+
+						<label class="flex items-center gap-3">
+							<input
+								type="checkbox"
+								bind:checked={settings.require_pkce}
+								class="rounded text-purple-600"
+							/>
+							<div>
+								<span class="text-sm font-medium">Require PKCE</span>
+								<p class="text-xs text-gray-500">
+									Require Proof Key for Code Exchange for all authorization code flows
+								</p>
+							</div>
+						</label>
+
+						<label class="flex items-center gap-3">
+							<input
+								type="checkbox"
+								bind:checked={settings.rotate_refresh_tokens}
+								class="rounded text-purple-600"
+							/>
+							<div>
+								<span class="text-sm font-medium">Rotate Refresh Tokens</span>
+								<p class="text-xs text-gray-500">Issue a new refresh token with each token refresh</p>
+							</div>
+						</label>
+
+						<label class="flex items-center gap-3">
+							<input
+								type="checkbox"
+								bind:checked={settings.revoke_old_refresh_tokens}
+								class="rounded text-purple-600"
+							/>
+							<div>
+								<span class="text-sm font-medium">Revoke Old Refresh Tokens</span>
+								<p class="text-xs text-gray-500">
+									Automatically revoke old refresh tokens when rotating
+								</p>
+							</div>
+						</label>
+					</div>
+
+					<div class="flex gap-3">
+						<Button type="submit" disabled={saving}>
+							{saving ? 'Saving...' : 'Save Settings'}
+						</Button>
+					</div>
+				</form>
+			{/if}
 		</Card>
 
 		<!-- Danger Zone -->
@@ -289,18 +506,10 @@
 			<div class="space-y-4">
 				<div class="flex items-center justify-between p-4 bg-red-50 rounded-lg">
 					<div>
-						<h3 class="font-medium text-gray-900">Rotate Signing Keys</h3>
-						<p class="text-sm text-gray-500">Generate new signing keys. Old tokens will be invalidated.</p>
-					</div>
-					<Button variant="destructive">Rotate Keys</Button>
-				</div>
-
-				<div class="flex items-center justify-between p-4 bg-red-50 rounded-lg">
-					<div>
 						<h3 class="font-medium text-gray-900">Revoke All Tokens</h3>
 						<p class="text-sm text-gray-500">Invalidate all active access and refresh tokens.</p>
 					</div>
-					<Button variant="destructive">Revoke All</Button>
+					<Button variant="destructive" on:click={revokeAllTokens} disabled={saving}>Revoke All</Button>
 				</div>
 
 				<div class="flex items-center justify-between p-4 bg-red-50 rounded-lg">
@@ -308,7 +517,7 @@
 						<h3 class="font-medium text-gray-900">Clear All Sessions</h3>
 						<p class="text-sm text-gray-500">Log out all users and clear all sessions.</p>
 					</div>
-					<Button variant="destructive">Clear Sessions</Button>
+					<Button variant="destructive" on:click={clearAllSessions} disabled={saving}>Clear Sessions</Button>
 				</div>
 			</div>
 		</Card>
