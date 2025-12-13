@@ -31,31 +31,36 @@ Go API server for OryxID. See [main README](../README.md) for project overview.
 Base path: `/api/v1`. Requires Bearer token authentication.
 
 ### Applications
-```
+
+```text
 GET/POST   /api/v1/applications
 GET/PUT/DELETE /api/v1/applications/:id
 ```
 
 ### Users
-```
+
+```text
 GET/POST   /api/v1/users
 GET/PUT/DELETE /api/v1/users/:id
 ```
 
 ### Scopes
-```
+
+```text
 GET/POST   /api/v1/scopes
 GET/PUT/DELETE /api/v1/scopes/:id
 ```
 
 ### Audiences
-```
+
+```text
 GET/POST   /api/v1/audiences
 GET/PUT/DELETE /api/v1/audiences/:id
 ```
 
 ### Other
-```
+
+```text
 GET /api/v1/audit-logs    # Audit logs (admin only)
 GET /api/v1/stats         # Dashboard statistics
 ```
@@ -116,7 +121,7 @@ Environment variables (prefix: `ORYXID_`):
 | `REDIS_HOST` | localhost |
 | `REDIS_PORT` | 6379 |
 | `JWT_PRIVATEKEYPATH` | certs/private_key.pem |
-| `OAUTH_ISSUER` | http://localhost:8080 |
+| `OAUTH_ISSUER` | <http://localhost:8080> |
 | `OAUTH_ACCESSTOKENLIFESPAN` | 3600s |
 | `OAUTH_REFRESHTOKENLIFESPAN` | 2592000s |
 

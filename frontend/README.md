@@ -41,14 +41,14 @@ npm install
 npm run dev
 ```
 
-Access: http://localhost:3000
+Access: <http://localhost:3000>
 
 ### Environment
 
 | Variable | Default |
 |----------|---------|
-| `PUBLIC_API_URL` | http://localhost:9000 |
-| `ORIGIN` | http://localhost:3000 |
+| `PUBLIC_API_URL` | <http://localhost:9000> |
+| `ORIGIN` | <http://localhost:3000> |
 
 ## Commands
 
@@ -64,7 +64,7 @@ npm test          # Vitest
 
 ## Directory Layout
 
-```
+```text
 src/
 ├── routes/           # Pages
 │   ├── +layout.svelte

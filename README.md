@@ -40,7 +40,7 @@ make up       # Start all services
 make status   # Health check
 ```
 
-Access: https://localhost:8443 (default: admin / admin123)
+Access: <https://localhost:8443> (default: admin / admin123)
 
 ## Documentation
 
@@ -53,7 +53,7 @@ Access: https://localhost:8443 (default: admin / admin123)
 
 ## Project Structure
 
-```
+```text
 .
 ├── backend/          # Go API server (see backend/README.md)
 ├── frontend/         # SvelteKit admin UI (see frontend/README.md)
@@ -103,7 +103,7 @@ Environment variables (prefix: `ORYXID_`):
 | `SERVER_MODE` | debug / release | debug |
 | `DATABASE_HOST` | PostgreSQL host | localhost |
 | `REDIS_HOST` | Redis host | localhost |
-| `OAUTH_ISSUER` | Token issuer URL | http://localhost:8080 |
+| `OAUTH_ISSUER` | Token issuer URL | <http://localhost:8080> |
 | `JWT_PRIVATEKEYPATH` | RSA private key | certs/private_key.pem |
 
 Full configuration: see `.env.example`
@@ -145,6 +145,7 @@ docker compose -f docker-compose.prod.yaml up -d
 ```
 
 Images:
+
 - `ghcr.io/<owner>/oryxid-backend:latest`
 - `ghcr.io/<owner>/oryxid-frontend:latest`
 - `ghcr.io/<owner>/oryxid-nginx:latest`
@@ -156,7 +157,3 @@ make helm-install --set ingress.hosts[0].host=auth.example.com
 ```
 
 See [Helm Chart documentation](helm/oryxid/README.md).
-
-## License
-
-MIT

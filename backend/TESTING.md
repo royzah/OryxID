@@ -30,6 +30,7 @@ go test ./tests/security/...
 ```
 
 Covers:
+
 - PKCE validation
 - SQL injection prevention
 - Token replay attacks
