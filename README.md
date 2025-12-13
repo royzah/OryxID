@@ -117,13 +117,37 @@ Full configuration: see `.env.example`
 - TLS 1.2+ with modern cipher suites
 - MFA with TOTP (RFC 6238)
 
+## CI/CD
+
+GitHub Actions workflow (`.github/workflows/ci.yaml`):
+
+| Trigger | Actions |
+|---------|---------|
+| Push/PR to main | Run tests, security audit (govulncheck, npm audit) |
+| Push tag `v*` | Build and push images to ghcr.io |
+
 ## Deployment
 
-### Docker Compose
+### Docker Compose (Development)
 
 ```bash
-make prod-up
+make setup && make up
 ```
+
+### Docker Compose (Production Images)
+
+Use pre-built images from GitHub Container Registry:
+
+```bash
+cp .env.example .env
+# Edit .env with production values
+docker compose -f docker-compose.prod.yaml up -d
+```
+
+Images:
+- `ghcr.io/<owner>/oryxid-backend:latest`
+- `ghcr.io/<owner>/oryxid-frontend:latest`
+- `ghcr.io/<owner>/oryxid-nginx:latest`
 
 ### Kubernetes
 
