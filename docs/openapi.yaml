@@ -1,0 +1,1527 @@
+openapi: 3.0.3
+info:
+  title: OryxID API
+  description: |
+    OAuth 2.1 authorization server for securing internal APIs with scope-based access control.
+
+    ## Authentication
+
+    Most endpoints require authentication via Bearer token. Obtain a token using the `/oauth/token` endpoint.
+
+    ## OAuth 2.1 Compliance
+
+    OryxID implements OAuth 2.1 with the following grants:
+    - Client Credentials (for M2M)
+    - Authorization Code with PKCE (for user flows)
+    - Refresh Token (with rotation)
+    - Device Authorization (RFC 8628)
+    - Token Exchange (RFC 8693)
+    - CIBA (OpenID Connect Backchannel Authentication)
+  version: 1.0.0
+  contact:
+    name: OryxID Team
+  license:
+    name: Apache 2.0
+    url: https://www.apache.org/licenses/LICENSE-2.0
+
+servers:
+  - url: https://auth.example.com
+    description: Production server
+  - url: http://localhost:8080
+    description: Local development
+
+tags:
+  - name: OAuth
+    description: OAuth 2.1 endpoints
+  - name: OIDC
+    description: OpenID Connect endpoints
+  - name: Applications
+    description: OAuth application management
+  - name: Scopes
+    description: Scope management
+  - name: Audiences
+    description: Audience (API resource) management
+  - name: Users
+    description: User management (admin only)
+  - name: Auth
+    description: Admin authentication
+  - name: Health
+    description: Health and monitoring endpoints
+
+paths:
+  # OAuth Endpoints
+  /oauth/authorize:
+    get:
+      tags: [OAuth]
+      summary: Authorization endpoint
+      description: Initiates the OAuth authorization code flow
+      parameters:
+        - name: response_type
+          in: query
+          required: true
+          schema:
+            type: string
+            enum: [code]
+        - name: client_id
+          in: query
+          required: true
+          schema:
+            type: string
+        - name: redirect_uri
+          in: query
+          required: true
+          schema:
+            type: string
+            format: uri
+        - name: scope
+          in: query
+          schema:
+            type: string
+          description: Space-separated list of scopes
+        - name: state
+          in: query
+          schema:
+            type: string
+          description: CSRF protection state value
+        - name: code_challenge
+          in: query
+          required: true
+          schema:
+            type: string
+          description: PKCE code challenge (S256)
+        - name: code_challenge_method
+          in: query
+          required: true
+          schema:
+            type: string
+            enum: [S256]
+        - name: nonce
+          in: query
+          schema:
+            type: string
+          description: OpenID Connect nonce
+        - name: request_uri
+          in: query
+          schema:
+            type: string
+          description: PAR request URI (RFC 9126)
+      responses:
+        '302':
+          description: Redirect to consent page or callback with code
+        '400':
+          $ref: '#/components/responses/OAuthError'
+
+  /oauth/token:
+    post:
+      tags: [OAuth]
+      summary: Token endpoint
+      description: |
+        Exchange credentials for access tokens.
+
+        Supports multiple grant types:
+        - `client_credentials`: For M2M authentication
+        - `authorization_code`: Exchange auth code for tokens
+        - `refresh_token`: Refresh an access token
+        - `password`: Resource Owner Password Credentials (legacy)
+        - `urn:ietf:params:oauth:grant-type:device_code`: Device authorization
+        - `urn:ietf:params:oauth:grant-type:token-exchange`: Token exchange (RFC 8693)
+        - `urn:openid:params:grant-type:ciba`: CIBA polling
+      requestBody:
+        required: true
+        content:
+          application/x-www-form-urlencoded:
+            schema:
+              type: object
+              required:
+                - grant_type
+              properties:
+                grant_type:
+                  type: string
+                  enum:
+                    - client_credentials
+                    - authorization_code
+                    - refresh_token
+                    - password
+                    - urn:ietf:params:oauth:grant-type:device_code
+                    - urn:ietf:params:oauth:grant-type:token-exchange
+                    - urn:openid:params:grant-type:ciba
+                code:
+                  type: string
+                  description: Authorization code (for authorization_code grant)
+                redirect_uri:
+                  type: string
+                  format: uri
+                code_verifier:
+                  type: string
+                  description: PKCE code verifier
+                refresh_token:
+                  type: string
+                scope:
+                  type: string
+                  description: Space-separated scopes
+                username:
+                  type: string
+                password:
+                  type: string
+                device_code:
+                  type: string
+                  description: Device code (for device authorization grant)
+                auth_req_id:
+                  type: string
+                  description: CIBA auth request ID
+      security:
+        - basicAuth: []
+        - clientCredentialsPost: []
+      responses:
+        '200':
+          description: Token response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TokenResponse'
+        '400':
+          $ref: '#/components/responses/OAuthError'
+        '401':
+          $ref: '#/components/responses/OAuthError'
+
+  /oauth/introspect:
+    post:
+      tags: [OAuth]
+      summary: Token introspection (RFC 7662)
+      description: Check if a token is active and get its metadata
+      requestBody:
+        required: true
+        content:
+          application/x-www-form-urlencoded:
+            schema:
+              type: object
+              required:
+                - token
+              properties:
+                token:
+                  type: string
+                token_type_hint:
+                  type: string
+                  enum: [access_token, refresh_token]
+      security:
+        - basicAuth: []
+      responses:
+        '200':
+          description: Introspection response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/IntrospectionResponse'
+
+  /oauth/revoke:
+    post:
+      tags: [OAuth]
+      summary: Token revocation (RFC 7009)
+      description: Revoke an access or refresh token
+      requestBody:
+        required: true
+        content:
+          application/x-www-form-urlencoded:
+            schema:
+              type: object
+              required:
+                - token
+              properties:
+                token:
+                  type: string
+                token_type_hint:
+                  type: string
+                  enum: [access_token, refresh_token]
+      security:
+        - basicAuth: []
+      responses:
+        '200':
+          description: Token revoked successfully
+        '401':
+          $ref: '#/components/responses/OAuthError'
+
+  /oauth/par:
+    post:
+      tags: [OAuth]
+      summary: Pushed Authorization Request (RFC 9126)
+      description: Push authorization parameters before redirect
+      requestBody:
+        required: true
+        content:
+          application/x-www-form-urlencoded:
+            schema:
+              type: object
+              required:
+                - response_type
+                - redirect_uri
+              properties:
+                response_type:
+                  type: string
+                  enum: [code]
+                redirect_uri:
+                  type: string
+                  format: uri
+                scope:
+                  type: string
+                state:
+                  type: string
+                code_challenge:
+                  type: string
+                code_challenge_method:
+                  type: string
+                  enum: [S256]
+                nonce:
+                  type: string
+                authorization_details:
+                  type: string
+                  description: RAR authorization details (RFC 9396)
+      security:
+        - basicAuth: []
+      responses:
+        '201':
+          description: PAR created
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  request_uri:
+                    type: string
+                  expires_in:
+                    type: integer
+
+  /oauth/device_authorization:
+    post:
+      tags: [OAuth]
+      summary: Device authorization (RFC 8628)
+      description: Initiate device authorization flow
+      requestBody:
+        required: true
+        content:
+          application/x-www-form-urlencoded:
+            schema:
+              type: object
+              properties:
+                scope:
+                  type: string
+                audience:
+                  type: string
+      security:
+        - basicAuth: []
+      responses:
+        '200':
+          description: Device authorization response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/DeviceAuthorizationResponse'
+
+  /oauth/bc-authorize:
+    post:
+      tags: [OAuth]
+      summary: CIBA backchannel authentication
+      description: Initiate CIBA authentication request
+      requestBody:
+        required: true
+        content:
+          application/x-www-form-urlencoded:
+            schema:
+              type: object
+              properties:
+                scope:
+                  type: string
+                login_hint:
+                  type: string
+                login_hint_token:
+                  type: string
+                id_token_hint:
+                  type: string
+                binding_message:
+                  type: string
+                requested_expiry:
+                  type: integer
+      security:
+        - basicAuth: []
+      responses:
+        '200':
+          description: CIBA response
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  auth_req_id:
+                    type: string
+                  expires_in:
+                    type: integer
+                  interval:
+                    type: integer
+
+  /oauth/userinfo:
+    get:
+      tags: [OIDC]
+      summary: UserInfo endpoint
+      description: Get claims about the authenticated user
+      security:
+        - bearerAuth: []
+      responses:
+        '200':
+          description: User claims
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  sub:
+                    type: string
+                  username:
+                    type: string
+                  email:
+                    type: string
+                  email_verified:
+                    type: boolean
+                  roles:
+                    type: array
+                    items:
+                      type: string
+        '401':
+          $ref: '#/components/responses/OAuthError'
+
+  # OIDC Discovery
+  /.well-known/openid-configuration:
+    get:
+      tags: [OIDC]
+      summary: OpenID Connect Discovery
+      description: Returns OpenID Provider metadata
+      responses:
+        '200':
+          description: Discovery document
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/DiscoveryDocument'
+
+  /.well-known/jwks.json:
+    get:
+      tags: [OIDC]
+      summary: JSON Web Key Set
+      description: Returns the public keys used to sign tokens
+      responses:
+        '200':
+          description: JWKS
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  keys:
+                    type: array
+                    items:
+                      type: object
+
+  # Admin API - Applications
+  /api/v1/applications:
+    get:
+      tags: [Applications]
+      summary: List applications
+      parameters:
+        - name: search
+          in: query
+          schema:
+            type: string
+      security:
+        - bearerAuth: []
+      responses:
+        '200':
+          description: List of applications
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/Application'
+    post:
+      tags: [Applications]
+      summary: Create application
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateApplicationRequest'
+      responses:
+        '201':
+          description: Application created
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/Application'
+                  - type: object
+                    properties:
+                      client_secret:
+                        type: string
+                        description: Only returned once on creation
+
+  /api/v1/applications/{id}:
+    parameters:
+      - name: id
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+    get:
+      tags: [Applications]
+      summary: Get application
+      security:
+        - bearerAuth: []
+      responses:
+        '200':
+          description: Application details
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Application'
+        '404':
+          $ref: '#/components/responses/NotFound'
+    put:
+      tags: [Applications]
+      summary: Update application
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/UpdateApplicationRequest'
+      responses:
+        '200':
+          description: Application updated
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Application'
+    delete:
+      tags: [Applications]
+      summary: Delete application
+      security:
+        - bearerAuth: []
+      responses:
+        '204':
+          description: Application deleted
+
+  /api/v1/applications/{id}/rotate-secret:
+    post:
+      tags: [Applications]
+      summary: Rotate client secret
+      description: Generate a new client secret for the application
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      security:
+        - bearerAuth: []
+      responses:
+        '200':
+          description: New client secret
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  client_id:
+                    type: string
+                  client_secret:
+                    type: string
+                  message:
+                    type: string
+
+  # Admin API - Scopes
+  /api/v1/scopes:
+    get:
+      tags: [Scopes]
+      summary: List scopes
+      security:
+        - bearerAuth: []
+      responses:
+        '200':
+          description: List of scopes
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/Scope'
+    post:
+      tags: [Scopes]
+      summary: Create scope
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - name
+              properties:
+                name:
+                  type: string
+                description:
+                  type: string
+                is_default:
+                  type: boolean
+      responses:
+        '201':
+          description: Scope created
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Scope'
+
+  /api/v1/scopes/{id}:
+    parameters:
+      - name: id
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+    get:
+      tags: [Scopes]
+      summary: Get scope
+      security:
+        - bearerAuth: []
+      responses:
+        '200':
+          description: Scope details
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Scope'
+    put:
+      tags: [Scopes]
+      summary: Update scope
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                name:
+                  type: string
+                description:
+                  type: string
+                is_default:
+                  type: boolean
+      responses:
+        '200':
+          description: Scope updated
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Scope'
+    delete:
+      tags: [Scopes]
+      summary: Delete scope
+      security:
+        - bearerAuth: []
+      responses:
+        '204':
+          description: Scope deleted
+
+  # Admin API - Audiences
+  /api/v1/audiences:
+    get:
+      tags: [Audiences]
+      summary: List audiences (API resources)
+      security:
+        - bearerAuth: []
+      responses:
+        '200':
+          description: List of audiences
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/Audience'
+    post:
+      tags: [Audiences]
+      summary: Create audience
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - identifier
+                - name
+              properties:
+                identifier:
+                  type: string
+                  description: API identifier (e.g., https://api.example.com)
+                name:
+                  type: string
+                description:
+                  type: string
+                scope_ids:
+                  type: array
+                  items:
+                    type: string
+                    format: uuid
+      responses:
+        '201':
+          description: Audience created
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Audience'
+
+  /api/v1/audiences/{id}:
+    parameters:
+      - name: id
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+    get:
+      tags: [Audiences]
+      summary: Get audience
+      security:
+        - bearerAuth: []
+      responses:
+        '200':
+          description: Audience details
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Audience'
+    put:
+      tags: [Audiences]
+      summary: Update audience
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                identifier:
+                  type: string
+                name:
+                  type: string
+                description:
+                  type: string
+                scope_ids:
+                  type: array
+                  items:
+                    type: string
+                    format: uuid
+      responses:
+        '200':
+          description: Audience updated
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Audience'
+    delete:
+      tags: [Audiences]
+      summary: Delete audience
+      security:
+        - bearerAuth: []
+      responses:
+        '204':
+          description: Audience deleted
+
+  # Admin API - Users
+  /api/v1/users:
+    get:
+      tags: [Users]
+      summary: List users (admin only)
+      parameters:
+        - name: search
+          in: query
+          schema:
+            type: string
+      security:
+        - bearerAuth: []
+      responses:
+        '200':
+          description: List of users
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/User'
+    post:
+      tags: [Users]
+      summary: Create user (admin only)
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateUserRequest'
+      responses:
+        '201':
+          description: User created
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/User'
+
+  /api/v1/users/{id}:
+    parameters:
+      - name: id
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+    get:
+      tags: [Users]
+      summary: Get user
+      security:
+        - bearerAuth: []
+      responses:
+        '200':
+          description: User details
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/User'
+    put:
+      tags: [Users]
+      summary: Update user
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/UpdateUserRequest'
+      responses:
+        '200':
+          description: User updated
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/User'
+    delete:
+      tags: [Users]
+      summary: Delete user
+      security:
+        - bearerAuth: []
+      responses:
+        '204':
+          description: User deleted
+
+  # Admin API - Audit Logs
+  /api/v1/audit-logs:
+    get:
+      tags: [Users]
+      summary: List audit logs (admin only)
+      parameters:
+        - name: user_id
+          in: query
+          schema:
+            type: string
+            format: uuid
+        - name: application_id
+          in: query
+          schema:
+            type: string
+            format: uuid
+        - name: action
+          in: query
+          schema:
+            type: string
+        - name: page
+          in: query
+          schema:
+            type: integer
+            default: 1
+        - name: limit
+          in: query
+          schema:
+            type: integer
+            default: 50
+      security:
+        - bearerAuth: []
+      responses:
+        '200':
+          description: Audit logs
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  logs:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/AuditLog'
+                  total:
+                    type: integer
+                  page:
+                    type: integer
+                  limit:
+                    type: integer
+
+  # Admin API - Statistics
+  /api/v1/stats:
+    get:
+      tags: [Applications]
+      summary: Get statistics
+      security:
+        - bearerAuth: []
+      responses:
+        '200':
+          description: System statistics
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  applications:
+                    type: integer
+                  users:
+                    type: integer
+                  scopes:
+                    type: integer
+                  audiences:
+                    type: integer
+                  active_tokens:
+                    type: integer
+
+  # Auth Endpoints
+  /auth/login:
+    post:
+      tags: [Auth]
+      summary: Login to admin panel
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - username
+                - password
+              properties:
+                username:
+                  type: string
+                password:
+                  type: string
+      responses:
+        '200':
+          description: Login successful
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  access_token:
+                    type: string
+                  refresh_token:
+                    type: string
+                  expires_in:
+                    type: integer
+                  user:
+                    $ref: '#/components/schemas/User'
+        '401':
+          description: Invalid credentials
+
+  /auth/logout:
+    post:
+      tags: [Auth]
+      summary: Logout
+      security:
+        - bearerAuth: []
+      responses:
+        '200':
+          description: Logged out successfully
+
+  /auth/me:
+    get:
+      tags: [Auth]
+      summary: Get current user
+      security:
+        - bearerAuth: []
+      responses:
+        '200':
+          description: Current user
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/User'
+
+  /auth/refresh:
+    post:
+      tags: [Auth]
+      summary: Refresh access token
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - refresh_token
+              properties:
+                refresh_token:
+                  type: string
+      responses:
+        '200':
+          description: New tokens
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  access_token:
+                    type: string
+                  refresh_token:
+                    type: string
+                  expires_in:
+                    type: integer
+
+  # Health Endpoints
+  /health:
+    get:
+      tags: [Health]
+      summary: Basic health check
+      responses:
+        '200':
+          description: Service is healthy
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  status:
+                    type: string
+                    enum: [healthy, unhealthy]
+                  database:
+                    type: string
+
+  /health/live:
+    get:
+      tags: [Health]
+      summary: Kubernetes liveness probe
+      responses:
+        '200':
+          description: Service is alive
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  status:
+                    type: string
+                    enum: [ok]
+
+  /health/ready:
+    get:
+      tags: [Health]
+      summary: Kubernetes readiness probe
+      responses:
+        '200':
+          description: Service is ready
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  status:
+                    type: string
+                    enum: [ready, not_ready]
+                  database:
+                    type: string
+
+  /health/detailed:
+    get:
+      tags: [Health]
+      summary: Detailed health check
+      responses:
+        '200':
+          description: Detailed health status
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  status:
+                    type: string
+                  database:
+                    type: object
+                    properties:
+                      status:
+                        type: string
+                      latency_ms:
+                        type: number
+                  redis:
+                    type: object
+                    properties:
+                      status:
+                        type: string
+                      latency_ms:
+                        type: number
+                  uptime_seconds:
+                    type: number
+
+  /metrics:
+    get:
+      tags: [Health]
+      summary: Prometheus metrics
+      responses:
+        '200':
+          description: Prometheus-formatted metrics
+          content:
+            text/plain:
+              schema:
+                type: string
+
+components:
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+    basicAuth:
+      type: http
+      scheme: basic
+      description: Client ID as username, client secret as password
+    clientCredentialsPost:
+      type: apiKey
+      in: query
+      name: client_id
+      description: Client credentials in POST body
+
+  schemas:
+    TokenResponse:
+      type: object
+      properties:
+        access_token:
+          type: string
+        token_type:
+          type: string
+          enum: [Bearer]
+        expires_in:
+          type: integer
+        refresh_token:
+          type: string
+        scope:
+          type: string
+        id_token:
+          type: string
+          description: Only for OpenID Connect flows
+
+    IntrospectionResponse:
+      type: object
+      properties:
+        active:
+          type: boolean
+        scope:
+          type: string
+        client_id:
+          type: string
+        username:
+          type: string
+        token_type:
+          type: string
+        exp:
+          type: integer
+        iat:
+          type: integer
+        sub:
+          type: string
+        aud:
+          type: string
+        iss:
+          type: string
+
+    DeviceAuthorizationResponse:
+      type: object
+      properties:
+        device_code:
+          type: string
+        user_code:
+          type: string
+        verification_uri:
+          type: string
+        verification_uri_complete:
+          type: string
+        expires_in:
+          type: integer
+        interval:
+          type: integer
+
+    DiscoveryDocument:
+      type: object
+      properties:
+        issuer:
+          type: string
+        authorization_endpoint:
+          type: string
+        token_endpoint:
+          type: string
+        userinfo_endpoint:
+          type: string
+        jwks_uri:
+          type: string
+        introspection_endpoint:
+          type: string
+        revocation_endpoint:
+          type: string
+        scopes_supported:
+          type: array
+          items:
+            type: string
+        response_types_supported:
+          type: array
+          items:
+            type: string
+        grant_types_supported:
+          type: array
+          items:
+            type: string
+        code_challenge_methods_supported:
+          type: array
+          items:
+            type: string
+
+    Application:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        name:
+          type: string
+        description:
+          type: string
+        client_id:
+          type: string
+        client_type:
+          type: string
+          enum: [confidential, public]
+        grant_types:
+          type: array
+          items:
+            type: string
+        response_types:
+          type: array
+          items:
+            type: string
+        redirect_uris:
+          type: array
+          items:
+            type: string
+        post_logout_uris:
+          type: array
+          items:
+            type: string
+        scopes:
+          type: array
+          items:
+            $ref: '#/components/schemas/Scope'
+        audiences:
+          type: array
+          items:
+            $ref: '#/components/schemas/Audience'
+        skip_authorization:
+          type: boolean
+        created_at:
+          type: string
+          format: date-time
+        updated_at:
+          type: string
+          format: date-time
+
+    CreateApplicationRequest:
+      type: object
+      required:
+        - name
+        - client_type
+        - grant_types
+        - redirect_uris
+      properties:
+        name:
+          type: string
+        description:
+          type: string
+        client_type:
+          type: string
+          enum: [confidential, public]
+        grant_types:
+          type: array
+          items:
+            type: string
+            enum:
+              - authorization_code
+              - client_credentials
+              - refresh_token
+              - password
+        response_types:
+          type: array
+          items:
+            type: string
+        redirect_uris:
+          type: array
+          items:
+            type: string
+            format: uri
+        post_logout_uris:
+          type: array
+          items:
+            type: string
+        scope_ids:
+          type: array
+          items:
+            type: string
+            format: uuid
+        audience_ids:
+          type: array
+          items:
+            type: string
+            format: uuid
+        skip_authorization:
+          type: boolean
+
+    UpdateApplicationRequest:
+      type: object
+      properties:
+        name:
+          type: string
+        description:
+          type: string
+        redirect_uris:
+          type: array
+          items:
+            type: string
+        post_logout_uris:
+          type: array
+          items:
+            type: string
+        scope_ids:
+          type: array
+          items:
+            type: string
+            format: uuid
+        audience_ids:
+          type: array
+          items:
+            type: string
+            format: uuid
+        skip_authorization:
+          type: boolean
+
+    Scope:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        name:
+          type: string
+        description:
+          type: string
+        is_default:
+          type: boolean
+        created_at:
+          type: string
+          format: date-time
+
+    Audience:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        identifier:
+          type: string
+        name:
+          type: string
+        description:
+          type: string
+        scopes:
+          type: array
+          items:
+            $ref: '#/components/schemas/Scope'
+        created_at:
+          type: string
+          format: date-time
+
+    User:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        username:
+          type: string
+        email:
+          type: string
+        is_active:
+          type: boolean
+        is_admin:
+          type: boolean
+        email_verified:
+          type: boolean
+        mfa_enabled:
+          type: boolean
+        roles:
+          type: array
+          items:
+            $ref: '#/components/schemas/Role'
+        created_at:
+          type: string
+          format: date-time
+
+    CreateUserRequest:
+      type: object
+      required:
+        - username
+        - email
+        - password
+      properties:
+        username:
+          type: string
+        email:
+          type: string
+          format: email
+        password:
+          type: string
+          minLength: 8
+        is_active:
+          type: boolean
+        is_admin:
+          type: boolean
+        role_ids:
+          type: array
+          items:
+            type: string
+            format: uuid
+
+    UpdateUserRequest:
+      type: object
+      properties:
+        username:
+          type: string
+        email:
+          type: string
+          format: email
+        password:
+          type: string
+          minLength: 8
+        is_active:
+          type: boolean
+        is_admin:
+          type: boolean
+        role_ids:
+          type: array
+          items:
+            type: string
+            format: uuid
+
+    Role:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        name:
+          type: string
+        description:
+          type: string
+
+    AuditLog:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        user_id:
+          type: string
+          format: uuid
+        application_id:
+          type: string
+          format: uuid
+        action:
+          type: string
+        resource:
+          type: string
+        resource_id:
+          type: string
+        ip_address:
+          type: string
+        user_agent:
+          type: string
+        status_code:
+          type: integer
+        metadata:
+          type: object
+        created_at:
+          type: string
+          format: date-time
+
+    Error:
+      type: object
+      properties:
+        error:
+          type: string
+        message:
+          type: string
+
+    OAuthError:
+      type: object
+      properties:
+        error:
+          type: string
+          enum:
+            - invalid_request
+            - invalid_client
+            - invalid_grant
+            - unauthorized_client
+            - unsupported_grant_type
+            - invalid_scope
+            - invalid_token
+            - insufficient_scope
+        error_description:
+          type: string
+
+  responses:
+    OAuthError:
+      description: OAuth 2.0 error response
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/OAuthError'
+    NotFound:
+      description: Resource not found
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'

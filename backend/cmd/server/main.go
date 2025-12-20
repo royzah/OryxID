@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"github.com/gin-gonic/gin"
+	"github.com/tiiuae/oryxid/internal/alerting"
 	"github.com/tiiuae/oryxid/internal/auth"
 	"github.com/tiiuae/oryxid/internal/config"
 	"github.com/tiiuae/oryxid/internal/database"
@@ -100,6 +101,19 @@ func main() {
 		}
 	}
 
+	// Initialize alerting
+	alertManager := alerting.Initialize(alerting.Config{
+		Enabled:     cfg.Alerting.Enabled,
+		WebhookURL:  cfg.Alerting.WebhookURL,
+		Timeout:     cfg.Alerting.Timeout,
+		MaxRetries:  cfg.Alerting.MaxRetries,
+		RateLimitMS: cfg.Alerting.RateLimitMS,
+	})
+	if cfg.Alerting.Enabled {
+		defer alertManager.Close()
+		logger.Info("Alerting enabled", "webhook", cfg.Alerting.WebhookURL)
+	}
+
 	// Initialize token manager
 	tokenManager, err := tokens.NewTokenManager(&cfg.JWT, cfg.OAuth.Issuer)
 	if err != nil {
@@ -158,8 +172,11 @@ func main() {
 		router.Use(middleware.CSRF(csrfConfig))
 	}
 
-	// Health check
+	// Health checks
 	router.GET("/health", handlers.HealthHandler(db))
+	router.GET("/health/live", handlers.LiveHandler())
+	router.GET("/health/ready", handlers.ReadyHandler(db))
+	router.GET("/health/detailed", handlers.DetailedHealthHandler(db, redisClient))
 
 	// Metrics endpoint
 	router.GET("/metrics", handlers.MetricsHandler())
@@ -207,6 +224,7 @@ func main() {
 		apiGroup.GET("/applications/:id", adminHandler.GetApplication)
 		apiGroup.PUT("/applications/:id", adminHandler.UpdateApplication)
 		apiGroup.DELETE("/applications/:id", adminHandler.DeleteApplication)
+		apiGroup.POST("/applications/:id/rotate-secret", adminHandler.RotateClientSecret)
 
 		// Scopes
 		apiGroup.GET("/scopes", adminHandler.ListScopes)

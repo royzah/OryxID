@@ -309,6 +309,58 @@ func (h *AdminHandler) DeleteApplication(c *gin.Context) {
 	c.JSON(http.StatusNoContent, nil)
 }
 
+// RotateClientSecret generates a new client secret for an application
+func (h *AdminHandler) RotateClientSecret(c *gin.Context) {
+	id := c.Param("id")
+
+	var app database.Application
+	if err := h.db.Where("id = ?", id).First(&app).Error; err != nil {
+		if err == gorm.ErrRecordNotFound {
+			c.JSON(http.StatusNotFound, gin.H{"error": "Application not found"})
+			return
+		}
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to fetch application"})
+		return
+	}
+
+	// Only confidential clients have secrets
+	if app.ClientType != "confidential" {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "Public clients do not have secrets"})
+		return
+	}
+
+	// Generate new secret
+	newSecret, err := crypto.GenerateSecureToken(64)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to generate new secret"})
+		return
+	}
+
+	// Hash the new secret
+	hashedSecret, err := bcrypt.GenerateFromPassword([]byte(newSecret), bcrypt.DefaultCost)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to hash secret"})
+		return
+	}
+
+	// Update the application
+	app.HashedClientSecret = string(hashedSecret)
+	if err := h.db.Save(&app).Error; err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to update application"})
+		return
+	}
+
+	// Log audit event
+	h.logAudit(c, "application.rotate_secret", "application", app.ID.String(), http.StatusOK)
+
+	// Return the new secret (only shown once)
+	c.JSON(http.StatusOK, gin.H{
+		"client_id":     app.ClientID,
+		"client_secret": newSecret,
+		"message":       "Client secret rotated successfully. Save this secret - it will not be shown again.",
+	})
+}
+
 // Scope Handlers
 
 func (h *AdminHandler) ListScopes(c *gin.Context) {

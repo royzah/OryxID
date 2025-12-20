@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"github.com/gin-gonic/gin"
+	"github.com/tiiuae/oryxid/internal/metrics"
 	"github.com/tiiuae/oryxid/internal/redis"
 	"golang.org/x/time/rate"
 )
@@ -78,6 +79,9 @@ func RateLimit(limiter RateLimiter) gin.HandlerFunc {
 		key := fmt.Sprintf("%s:%s:%s", c.ClientIP(), c.Request.Method, c.Request.URL.Path)
 
 		if !limiter.Allow(key) {
+			// Record rate limit violation
+			metrics.Get().RecordRateLimitViolation(c.ClientIP())
+
 			c.Header("X-RateLimit-Limit", fmt.Sprintf("%d", 100))
 			c.Header("X-RateLimit-Remaining", "0")
 			c.Header("X-RateLimit-Reset", fmt.Sprintf("%d", time.Now().Add(time.Second).Unix()))
@@ -108,6 +112,9 @@ func RateLimitByClient(limiter RateLimiter) gin.HandlerFunc {
 		key := fmt.Sprintf("client:%s", clientID)
 
 		if !limiter.Allow(key) {
+			// Record rate limit violation
+			metrics.Get().RecordRateLimitViolation(clientID)
+
 			c.JSON(http.StatusTooManyRequests, gin.H{
 				"error":   "rate limit exceeded",
 				"message": "Client has exceeded rate limit",

@@ -325,6 +325,12 @@ func (s *Server) ClientCredentialsGrant(req *TokenRequest) (*tokens.TokenRespons
 		return nil, errors.New("grant type not allowed for this client")
 	}
 
+	// Build map of allowed scopes for this client
+	allowedScopes := make(map[string]bool)
+	for _, s := range app.Scopes {
+		allowedScopes[s.Name] = true
+	}
+
 	// Validate scopes
 	scope := req.Scope
 	if scope == "" {
@@ -336,6 +342,14 @@ func (s *Server) ClientCredentialsGrant(req *TokenRequest) (*tokens.TokenRespons
 			}
 		}
 		scope = strings.Join(scopes, " ")
+	} else {
+		// Validate that requested scopes are allowed for this client
+		requestedScopes := strings.Split(scope, " ")
+		for _, s := range requestedScopes {
+			if !allowedScopes[s] {
+				return nil, fmt.Errorf("scope '%s' is not allowed for this client", s)
+			}
+		}
 	}
 
 	// Generate access token
@@ -506,20 +520,35 @@ func (s *Server) PasswordGrant(req *TokenRequest) (*tokens.TokenResponse, error)
 		return nil, errors.New("user account is disabled")
 	}
 
+	// Load scopes for the application
+	var appScopes []database.Scope
+	s.db.Model(&app).Association("Scopes").Find(&appScopes)
+
+	// Build map of allowed scopes for this client
+	allowedScopes := make(map[string]bool)
+	for _, sc := range appScopes {
+		allowedScopes[sc.Name] = true
+	}
+
 	// Generate tokens
 	scope := req.Scope
 	if scope == "" {
 		// Use default scopes
 		scopes := []string{}
-		var appScopes []database.Scope
-		if err := s.db.Model(&app).Association("Scopes").Find(&appScopes); err == nil {
-			for _, s := range appScopes {
-				if s.IsDefault {
-					scopes = append(scopes, s.Name)
-				}
+		for _, sc := range appScopes {
+			if sc.IsDefault {
+				scopes = append(scopes, sc.Name)
 			}
 		}
 		scope = strings.Join(scopes, " ")
+	} else {
+		// Validate that requested scopes are allowed for this client
+		requestedScopes := strings.Split(scope, " ")
+		for _, sc := range requestedScopes {
+			if !allowedScopes[sc] {
+				return nil, fmt.Errorf("scope '%s' is not allowed for this client", sc)
+			}
+		}
 	}
 
 	accessToken, err := s.TokenManager.GenerateAccessToken(&app, &user, scope, req.Audience, nil)

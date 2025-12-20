@@ -43,6 +43,11 @@ func (c *Client) Close() error {
 	return c.client.Close()
 }
 
+// Ping checks if the Redis connection is alive
+func (c *Client) Ping() error {
+	return c.client.Ping(c.ctx).Err()
+}
+
 // Session Management
 
 // SetSession stores a session in Redis

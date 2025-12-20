@@ -95,6 +95,17 @@ func setupTestEnvironment(t *testing.T) (*gin.Engine, *gorm.DB, *tokens.TokenMan
 	// Use Table() to explicitly specify table name and bypass some GORM model introspection
 	require.NoError(t, db.Create(app).Error)
 
+	// Create test scopes and assign to app
+	scopes := []database.Scope{
+		{Name: "openid", Description: "OpenID Connect scope", IsDefault: true},
+		{Name: "profile", Description: "User profile scope", IsDefault: true},
+		{Name: "email", Description: "User email scope", IsDefault: false},
+	}
+	for i := range scopes {
+		require.NoError(t, db.Create(&scopes[i]).Error)
+	}
+	require.NoError(t, db.Model(app).Association("Scopes").Replace(scopes))
+
 	// Create test user
 	hashedPassword, _ := bcrypt.GenerateFromPassword([]byte("password123"), bcrypt.DefaultCost)
 	user := &database.User{

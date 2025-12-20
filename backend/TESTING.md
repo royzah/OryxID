@@ -145,7 +145,7 @@ jobs:
 ## Troubleshooting
 
 | Issue | Solution |
-|-------|----------|
+| ------- | ---------- |
 | Tests skip with "not configured" | Set `TEST_CLIENT_ID`, `TEST_CLIENT_SECRET`, `API_URL` |
 | Cached results | Use `go test -count=1` |
 | JSONB errors | Run database migration script |
