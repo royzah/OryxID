@@ -1,235 +1,183 @@
 # OryxID Roadmap
 
-## Overview
+## Mission
+
+Lightweight OAuth 2.1 authorization server for securing internal APIs with scope-based access control.
 
 ```mermaid
 flowchart LR
-    P1[Phase 1: Security] --> P2[Phase 2: Self-Service]
-    P2 --> P3[Phase 3: Operations]
-    P3 --> P4[Phase 4: Enterprise]
-    P4 --> P5[Phase 5: Advanced]
-```
-
-## Current Status
-
-```mermaid
-pie title Production Readiness
-    "Completed" : 55
-    "Remaining" : 45
+    Client -->|client_credentials| OryxID
+    OryxID -->|JWT + scopes| Client
+    Client -->|Bearer token| API
+    API -->|validate| OryxID
 ```
 
 ---
 
-## Phase 1: Security Hardening
+## Phase 1: API Security Foundation
 
-Critical security features required before production deployment.
+Core features for securing APIs with tokens and scopes.
+
+```mermaid
+flowchart TD
+    A[Token Validation SDK] --> B[Scope Hierarchy]
+    B --> C[API Resource Registry]
+    C --> D[Client Management]
+```
+
+### Token Validation SDK
+
+- [ ] Go middleware package for API servers
+- [ ] JWT validation with JWKS caching
+- [ ] Token introspection client
+- [ ] Scope enforcement helpers
+- [ ] Example integration code
+
+### Scope Hierarchy
+
+- [ ] Wildcard scopes (billing:* grants billing:read, billing:write)
+- [ ] Scope inheritance model
+- [ ] Scope validation with hierarchy
+
+### API Resource Registry
+
+- [ ] Register API resources in admin
+- [ ] Map scopes to API resources
+- [ ] Resource-based token audience
+
+### Client Management
+
+- [ ] Client credentials rotation
+- [ ] Client scope restrictions
+- [ ] Client rate limiting
+- [ ] Client activity logs
+
+---
+
+## Phase 2: Operational Readiness
+
+Production operations and observability.
+
+```mermaid
+flowchart TD
+    A[Metrics] --> B[Documentation]
+    B --> C[Health Monitoring]
+```
+
+### Metrics
+
+- [ ] Token issuance counter (by client, grant type)
+- [ ] Token validation latency
+- [ ] Failed authentication counter
+- [ ] Rate limit violations
+- [ ] Active tokens gauge
+
+### Documentation
+
+- [ ] M2M integration guide
+- [ ] API security patterns
+- [ ] Scope design guidelines
+- [ ] OpenAPI specification
+
+### Health Monitoring
+
+- [ ] Detailed health endpoints
+- [ ] Dependency health (database, redis)
+- [ ] Alerting integration
+
+---
+
+## Phase 3: Admin Security
+
+Secure the admin interface and operators.
 
 ```mermaid
 flowchart TD
     A[Account Lockout] --> B[Password Policy]
-    B --> C[Session Security]
-    C --> D[Security Logging]
+    B --> C[Audit Enhancement]
 ```
 
-### Account Protection
+### Account Lockout
 
-- [ ] Account lockout after failed login attempts
-- [ ] Configurable lockout threshold and duration
-- [ ] Exponential backoff on repeated failures
+- [ ] Lockout after failed attempts
+- [ ] Configurable threshold
 - [ ] Admin unlock capability
 
 ### Password Policy
 
-- [ ] Minimum length configuration (default: 12)
-- [ ] Complexity requirements (uppercase, lowercase, number, special)
-- [ ] Password history prevention
-- [ ] Password expiration policy
-- [ ] Force password change on first login
+- [ ] Minimum length (12+)
+- [ ] Complexity requirements
+- [ ] Password expiration
 
-### Session Security
+### Audit Enhancement
 
-- [ ] Maximum concurrent sessions per user
-- [ ] Session timeout on inactivity
-- [ ] Revoke all sessions on password change
-- [ ] Token binding to IP/fingerprint (optional)
-
-### Security Events
-
-- [ ] Failed login attempt logging with alerts
-- [ ] Suspicious activity detection
-- [ ] Security event webhook notifications
+- [ ] Client credential usage logs
+- [ ] Scope grant audit trail
+- [ ] Admin action logs
 
 ---
 
-## Phase 2: User Self-Service
+## Phase 4: Advanced Token Features
 
-Enable users to manage their own accounts.
-
-```mermaid
-flowchart TD
-    A[Email Integration] --> B[Password Reset]
-    B --> C[Email Verification]
-    C --> D[Self-Registration]
-```
-
-### Email Integration
-
-- [ ] Email provider abstraction (SMTP, SendGrid, AWS SES)
-- [ ] Email templates (HTML + plaintext)
-- [ ] Email queue with retry logic
-
-### Password Reset
-
-- [ ] Forgot password endpoint
-- [ ] Secure reset token generation
-- [ ] Reset token expiration
-- [ ] Reset confirmation email
-
-### Email Verification
-
-- [ ] Verification email on registration
-- [ ] Resend verification endpoint
-- [ ] Enforce verified email for login (configurable)
-
-### Self-Registration
-
-- [ ] Public registration endpoint (configurable)
-- [ ] CAPTCHA integration
-- [ ] Registration approval workflow (optional)
-
----
-
-## Phase 3: Operations
-
-Production observability and operational tooling.
+Enhanced token capabilities.
 
 ```mermaid
 flowchart TD
-    A[Metrics] --> B[Dashboards]
-    B --> C[Alerting]
-    C --> D[Backup/Restore]
-    D --> E[Documentation]
+    A[Token Binding] --> B[Custom Claims]
+    B --> C[Token Analytics]
 ```
 
-### Prometheus Metrics
-
-- [ ] HTTP request latency histograms
-- [ ] OAuth flow counters (by grant type)
-- [ ] Token issuance rates
-- [ ] Failed authentication counter
-- [ ] Active sessions gauge
-- [ ] Rate limit violation counter
-- [ ] Database connection pool stats
-- [ ] Redis connection pool stats
-
-### Dashboards
-
-- [ ] Grafana dashboard templates
-- [ ] Authentication overview
-- [ ] OAuth flow analytics
-- [ ] Error rate monitoring
-- [ ] Resource utilization
-
-### Alerting
-
-- [ ] High error rate alerts
-- [ ] Failed login spike detection
-- [ ] Database connection exhaustion
-- [ ] Certificate expiration warning
-
-### Backup and Recovery
-
-- [ ] Automated database backup script
-- [ ] Point-in-time recovery documentation
-- [ ] Backup verification procedure
-- [ ] Disaster recovery runbook
-
-### Documentation
-
-- [ ] OpenAPI/Swagger specification
-- [ ] Deployment runbook
-- [ ] Upgrade procedures
-- [ ] Rollback procedures
-- [ ] Troubleshooting guide
-- [ ] Security hardening guide
-
----
-
-## Phase 4: Enterprise Features
-
-Features required for enterprise adoption.
-
-```mermaid
-flowchart TD
-    A[LDAP/AD] --> B[Social Login]
-    B --> C[User Groups]
-    C --> D[Multi-Tenancy]
-```
-
-### Directory Integration
-
-- [ ] LDAP connector
-- [ ] Active Directory support
-- [ ] User sync scheduling
-- [ ] Group mapping to roles
-
-### Social Login
-
-- [ ] OAuth provider abstraction
-- [ ] Google connector
-- [ ] GitHub connector
-- [ ] Microsoft connector
-- [ ] Custom provider support
-
-### User Groups
-
-- [ ] Group management API
-- [ ] Group-based role assignment
-- [ ] Nested groups support
-
-### Multi-Tenancy
-
-- [ ] Tenant/organization model
-- [ ] Tenant isolation
-- [ ] Per-tenant configuration
-- [ ] Tenant admin delegation
-
----
-
-## Phase 5: Advanced Features
-
-Extended functionality for specialized use cases.
-
-```mermaid
-flowchart TD
-    A[DPoP] --> B[Step-Up Auth]
-    B --> C[WebAuthn]
-    C --> D[Analytics]
-```
-
-### Token Security
+### Token Binding
 
 - [ ] DPoP (Demonstrating Proof of Possession)
-- [ ] Sender-constrained tokens
+- [ ] Client certificate binding
 
-### Adaptive Authentication
+### Custom Claims
 
-- [ ] Step-up authentication
-- [ ] Risk-based authentication
-- [ ] Geolocation policies
+- [ ] Custom claim configuration per client
+- [ ] Claim transformations
+- [ ] External claim sources
 
-### Passwordless
+### Token Analytics
 
-- [ ] WebAuthn/FIDO2 support
-- [ ] Passkey registration
-- [ ] Passkey authentication
+- [ ] Token usage dashboard
+- [ ] Client activity reports
+- [ ] Scope usage statistics
 
-### Analytics
+---
 
-- [ ] Login analytics dashboard
-- [ ] User activity reports
-- [ ] OAuth client usage statistics
-- [ ] Export capabilities
+## Phase 5: Extended Use Cases
+
+Additional flows when needed.
+
+```mermaid
+flowchart TD
+    A[User Authentication] --> B[External Identity]
+```
+
+### User Authentication
+
+- [ ] Authorization Code flow improvements
+- [ ] Session management
+- [ ] User consent UI
+
+### External Identity
+
+- [ ] LDAP connector
+- [ ] OIDC federation
+- [ ] Social login
+
+---
+
+## Out of Scope
+
+Not needed for M2M API security:
+
+- Self-registration
+- Password reset flow
+- Email integration
+- WebAuthn/Passkeys
+- Multi-tenancy
 
 ---
 
@@ -237,46 +185,48 @@ flowchart TD
 
 ### OAuth 2.1 Core
 
-- [x] Authorization Code with PKCE (S256)
+- [x] Authorization Code with PKCE
 - [x] Client Credentials
 - [x] Refresh Token with rotation
 - [x] Token Introspection (RFC 7662)
 - [x] Token Revocation (RFC 7009)
-- [x] OIDC Discovery
+
+### Token Infrastructure
+
+- [x] OIDC Discovery endpoint
 - [x] JWKS endpoint
+- [x] JWT signing (RS256)
+- [x] Configurable token expiry
 
-### Advanced OAuth
+### Scope and Audience
 
-- [x] Device Authorization (RFC 8628)
-- [x] Token Exchange (RFC 8693)
-- [x] Pushed Authorization Requests (RFC 9126)
-- [x] Rich Authorization Requests (RFC 9396)
-- [x] CIBA (OpenID Connect Backchannel Authentication)
+- [x] Scope CRUD in admin
+- [x] Audience CRUD in admin
+- [x] Scope validation on token request
+- [x] Audience in token claims
 
 ### Security
 
-- [x] MFA/2FA with TOTP
-- [x] Backup codes
-- [x] CSRF protection
+- [x] PKCE enforcement (S256)
+- [x] Client secret hashing
 - [x] Rate limiting
+- [x] CSRF protection
 - [x] Security headers
-- [x] TLS 1.2+ support
-- [x] Let's Encrypt integration
-
-### Infrastructure
-
-- [x] Docker support
-- [x] Docker Compose (dev + prod)
-- [x] Kubernetes Helm chart
-- [x] PostgreSQL support
-- [x] Redis integration
-- [x] Nginx reverse proxy
+- [x] TLS support
 
 ### Admin
 
 - [x] Admin dashboard
-- [x] User management
 - [x] Application management
+- [x] User management
 - [x] Scope management
 - [x] Audience management
 - [x] Audit logging
+
+### Infrastructure
+
+- [x] Docker support
+- [x] Kubernetes Helm chart
+- [x] PostgreSQL support
+- [x] Redis integration
+- [x] Health endpoint
