@@ -20,5 +20,9 @@ export const applicationsApi = {
 
 	async delete(id: string): Promise<void> {
 		return api.delete(`/applications/${id}`);
+	},
+
+	async rotateSecret(id: string): Promise<{ client_id: string; client_secret: string; message: string }> {
+		return api.post(`/applications/${id}/rotate-secret`, {});
 	}
 };

@@ -41,14 +41,14 @@ flowchart TD
 
 ### API Resource Registry
 
-- [ ] Register API resources in admin
-- [ ] Map scopes to API resources
-- [ ] Resource-based token audience
+- [x] Register API resources in admin
+- [x] Map scopes to API resources
+- [x] Resource-based token audience
 
 ### Client Management
 
-- [ ] Client credentials rotation
-- [ ] Client scope restrictions
+- [x] Client credentials rotation
+- [x] Client scope restrictions
 - [x] Client rate limiting
 - [x] Client activity logs
 
@@ -249,3 +249,10 @@ Not needed for M2M API security:
 - [x] Gin middleware
 - [x] Standard http middleware
 - [x] Unit tests
+
+### Phase 1 Complete
+
+- [x] API Resources page in admin UI
+- [x] Client secret rotation endpoint
+- [x] Client scope restriction enforcement
+- [x] All Phase 1 items completed

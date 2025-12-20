@@ -207,6 +207,7 @@ func main() {
 		apiGroup.GET("/applications/:id", adminHandler.GetApplication)
 		apiGroup.PUT("/applications/:id", adminHandler.UpdateApplication)
 		apiGroup.DELETE("/applications/:id", adminHandler.DeleteApplication)
+		apiGroup.POST("/applications/:id/rotate-secret", adminHandler.RotateClientSecret)
 
 		// Scopes
 		apiGroup.GET("/scopes", adminHandler.ListScopes)
