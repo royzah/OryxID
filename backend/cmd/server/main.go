@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"github.com/gin-gonic/gin"
+	"github.com/tiiuae/oryxid/internal/alerting"
 	"github.com/tiiuae/oryxid/internal/auth"
 	"github.com/tiiuae/oryxid/internal/config"
 	"github.com/tiiuae/oryxid/internal/database"
@@ -98,6 +99,19 @@ func main() {
 			defer redisClient.Close()
 			logger.Info("Redis connected", "host", cfg.Redis.Host)
 		}
+	}
+
+	// Initialize alerting
+	alertManager := alerting.Initialize(alerting.Config{
+		Enabled:     cfg.Alerting.Enabled,
+		WebhookURL:  cfg.Alerting.WebhookURL,
+		Timeout:     cfg.Alerting.Timeout,
+		MaxRetries:  cfg.Alerting.MaxRetries,
+		RateLimitMS: cfg.Alerting.RateLimitMS,
+	})
+	if cfg.Alerting.Enabled {
+		defer alertManager.Close()
+		logger.Info("Alerting enabled", "webhook", cfg.Alerting.WebhookURL)
 	}
 
 	// Initialize token manager

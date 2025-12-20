@@ -14,6 +14,7 @@ import (
 	"github.com/boombuler/barcode/qr"
 	"github.com/gin-gonic/gin"
 	"github.com/pquerna/otp/totp"
+	"github.com/tiiuae/oryxid/internal/alerting"
 	"github.com/tiiuae/oryxid/internal/database"
 	"github.com/tiiuae/oryxid/internal/logger"
 	"github.com/tiiuae/oryxid/internal/tokens"
@@ -774,12 +775,20 @@ func checkDatabase(db *gorm.DB) DependencyCheck {
 	if err != nil {
 		check.Status = "unhealthy"
 		check.Error = "connection error: " + err.Error()
+		// Send alert if alerting is configured
+		if am := alerting.Get(); am != nil {
+			am.AlertDatabaseDown(err)
+		}
 		return check
 	}
 
 	if err := sqlDB.Ping(); err != nil {
 		check.Status = "unhealthy"
 		check.Error = "ping failed: " + err.Error()
+		// Send alert if alerting is configured
+		if am := alerting.Get(); am != nil {
+			am.AlertDatabaseDown(err)
+		}
 		return check
 	}
 
@@ -797,6 +806,10 @@ func checkRedis(client interface{ Ping() error }) DependencyCheck {
 	if err := client.Ping(); err != nil {
 		check.Status = "unhealthy"
 		check.Error = "ping failed: " + err.Error()
+		// Send alert if alerting is configured
+		if am := alerting.Get(); am != nil {
+			am.AlertRedisDown(err)
+		}
 		return check
 	}
 

@@ -77,13 +77,13 @@ flowchart TD
 - [x] M2M integration guide
 - [x] API security patterns (in M2M guide)
 - [x] Scope design guidelines (in M2M guide)
-- [ ] OpenAPI specification
+- [x] OpenAPI specification
 
 ### Health Monitoring
 
 - [x] Detailed health endpoints
 - [x] Dependency health (database, redis)
-- [ ] Alerting integration
+- [x] Alerting integration
 
 ---
 
@@ -257,7 +257,7 @@ Not needed for M2M API security:
 - [x] Client scope restriction enforcement
 - [x] All Phase 1 items completed
 
-### Phase 2 Progress
+### Phase 2 Complete
 
 - [x] Prometheus metrics (internal/metrics package)
 - [x] Token issuance, validation, auth failure counters
@@ -265,3 +265,5 @@ Not needed for M2M API security:
 - [x] Active tokens gauge
 - [x] Detailed health endpoints (/health/live, /health/ready, /health/detailed)
 - [x] M2M integration guide (docs/m2m-integration.md)
+- [x] OpenAPI specification (docs/openapi.yaml)
+- [x] Alerting integration (internal/alerting package)

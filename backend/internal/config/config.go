@@ -20,6 +20,15 @@ type Config struct {
 	Security SecurityConfig
 	Admin    AdminConfig
 	Log      LogConfig
+	Alerting AlertingConfig
+}
+
+type AlertingConfig struct {
+	Enabled     bool
+	WebhookURL  string
+	Timeout     time.Duration
+	MaxRetries  int
+	RateLimitMS int
 }
 
 type LogConfig struct {
@@ -207,6 +216,13 @@ func bindEnvVars() {
 		// Log
 		"log.level",
 		"log.format",
+
+		// Alerting
+		"alerting.enabled",
+		"alerting.webhookurl",
+		"alerting.timeout",
+		"alerting.maxretries",
+		"alerting.ratelimitms",
 	}
 
 	for _, key := range envKeys {
@@ -266,6 +282,13 @@ func setDefaults() {
 	// Log defaults
 	viper.SetDefault("log.level", "info")
 	viper.SetDefault("log.format", "json")
+
+	// Alerting defaults
+	viper.SetDefault("alerting.enabled", false)
+	viper.SetDefault("alerting.webhookurl", "")
+	viper.SetDefault("alerting.timeout", "10s")
+	viper.SetDefault("alerting.maxretries", 3)
+	viper.SetDefault("alerting.ratelimitms", 1000)
 }
 
 // Get returns the loaded config (or panics if Load() wasn't called).
