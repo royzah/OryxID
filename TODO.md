@@ -66,23 +66,23 @@ flowchart TD
 
 ### Metrics
 
-- [ ] Token issuance counter (by client, grant type)
-- [ ] Token validation latency
-- [ ] Failed authentication counter
-- [ ] Rate limit violations
-- [ ] Active tokens gauge
+- [x] Token issuance counter (by client, grant type)
+- [x] Token validation latency
+- [x] Failed authentication counter
+- [x] Rate limit violations
+- [x] Active tokens gauge
 
 ### Documentation
 
-- [ ] M2M integration guide
-- [ ] API security patterns
-- [ ] Scope design guidelines
+- [x] M2M integration guide
+- [x] API security patterns (in M2M guide)
+- [x] Scope design guidelines (in M2M guide)
 - [ ] OpenAPI specification
 
 ### Health Monitoring
 
-- [ ] Detailed health endpoints
-- [ ] Dependency health (database, redis)
+- [x] Detailed health endpoints
+- [x] Dependency health (database, redis)
 - [ ] Alerting integration
 
 ---
@@ -256,3 +256,12 @@ Not needed for M2M API security:
 - [x] Client secret rotation endpoint
 - [x] Client scope restriction enforcement
 - [x] All Phase 1 items completed
+
+### Phase 2 Progress
+
+- [x] Prometheus metrics (internal/metrics package)
+- [x] Token issuance, validation, auth failure counters
+- [x] Rate limit violation tracking
+- [x] Active tokens gauge
+- [x] Detailed health endpoints (/health/live, /health/ready, /health/detailed)
+- [x] M2M integration guide (docs/m2m-integration.md)

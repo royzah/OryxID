@@ -707,3 +707,135 @@ func HealthHandler(db *gorm.DB) gin.HandlerFunc {
 		})
 	}
 }
+
+// DependencyCheck represents the health status of a dependency
+type DependencyCheck struct {
+	Name    string `json:"name"`
+	Status  string `json:"status"`
+	Latency string `json:"latency,omitempty"`
+	Error   string `json:"error,omitempty"`
+}
+
+// DetailedHealthResponse represents the detailed health check response
+type DetailedHealthResponse struct {
+	Status       string            `json:"status"`
+	Timestamp    time.Time         `json:"timestamp"`
+	Service      string            `json:"service"`
+	Version      string            `json:"version"`
+	Dependencies []DependencyCheck `json:"dependencies"`
+}
+
+// DetailedHealthHandler returns detailed health information including all dependencies
+func DetailedHealthHandler(db *gorm.DB, redisClient interface{ Ping() error }) gin.HandlerFunc {
+	return func(c *gin.Context) {
+		response := DetailedHealthResponse{
+			Timestamp:    time.Now().UTC(),
+			Service:      "oryxid",
+			Version:      "1.0.0",
+			Dependencies: []DependencyCheck{},
+		}
+
+		overallHealthy := true
+
+		// Check database
+		dbCheck := checkDatabase(db)
+		response.Dependencies = append(response.Dependencies, dbCheck)
+		if dbCheck.Status != "healthy" {
+			overallHealthy = false
+		}
+
+		// Check Redis if available
+		if redisClient != nil {
+			redisCheck := checkRedis(redisClient)
+			response.Dependencies = append(response.Dependencies, redisCheck)
+			if redisCheck.Status != "healthy" {
+				// Redis is optional, don't fail overall health
+				// overallHealthy = false
+			}
+		}
+
+		if overallHealthy {
+			response.Status = "healthy"
+			c.JSON(http.StatusOK, response)
+		} else {
+			response.Status = "unhealthy"
+			c.JSON(http.StatusServiceUnavailable, response)
+		}
+	}
+}
+
+func checkDatabase(db *gorm.DB) DependencyCheck {
+	start := time.Now()
+	check := DependencyCheck{
+		Name: "database",
+	}
+
+	sqlDB, err := db.DB()
+	if err != nil {
+		check.Status = "unhealthy"
+		check.Error = "connection error: " + err.Error()
+		return check
+	}
+
+	if err := sqlDB.Ping(); err != nil {
+		check.Status = "unhealthy"
+		check.Error = "ping failed: " + err.Error()
+		return check
+	}
+
+	check.Status = "healthy"
+	check.Latency = time.Since(start).String()
+	return check
+}
+
+func checkRedis(client interface{ Ping() error }) DependencyCheck {
+	start := time.Now()
+	check := DependencyCheck{
+		Name: "redis",
+	}
+
+	if err := client.Ping(); err != nil {
+		check.Status = "unhealthy"
+		check.Error = "ping failed: " + err.Error()
+		return check
+	}
+
+	check.Status = "healthy"
+	check.Latency = time.Since(start).String()
+	return check
+}
+
+// ReadyHandler checks if the service is ready to receive traffic
+func ReadyHandler(db *gorm.DB) gin.HandlerFunc {
+	return func(c *gin.Context) {
+		sqlDB, err := db.DB()
+		if err != nil {
+			c.JSON(http.StatusServiceUnavailable, gin.H{
+				"ready": false,
+				"error": "database unavailable",
+			})
+			return
+		}
+
+		if err := sqlDB.Ping(); err != nil {
+			c.JSON(http.StatusServiceUnavailable, gin.H{
+				"ready": false,
+				"error": "database ping failed",
+			})
+			return
+		}
+
+		c.JSON(http.StatusOK, gin.H{
+			"ready": true,
+		})
+	}
+}
+
+// LiveHandler checks if the service is alive (for Kubernetes liveness probe)
+func LiveHandler() gin.HandlerFunc {
+	return func(c *gin.Context) {
+		c.JSON(http.StatusOK, gin.H{
+			"alive": true,
+		})
+	}
+}

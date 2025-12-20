@@ -158,8 +158,11 @@ func main() {
 		router.Use(middleware.CSRF(csrfConfig))
 	}
 
-	// Health check
+	// Health checks
 	router.GET("/health", handlers.HealthHandler(db))
+	router.GET("/health/live", handlers.LiveHandler())
+	router.GET("/health/ready", handlers.ReadyHandler(db))
+	router.GET("/health/detailed", handlers.DetailedHealthHandler(db, redisClient))
 
 	// Metrics endpoint
 	router.GET("/metrics", handlers.MetricsHandler())

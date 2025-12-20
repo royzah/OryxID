@@ -12,6 +12,7 @@ import (
 	"github.com/google/uuid"
 	"github.com/tiiuae/oryxid/internal/database"
 	"github.com/tiiuae/oryxid/internal/logger"
+	"github.com/tiiuae/oryxid/internal/metrics"
 	"github.com/tiiuae/oryxid/internal/oauth"
 	"golang.org/x/crypto/bcrypt"
 	"gorm.io/gorm"
@@ -272,12 +273,18 @@ func (h *OAuthHandler) TokenHandler(c *gin.Context) {
 	}
 
 	if err != nil {
+		// Record failed authentication
+		metrics.Get().RecordFailedAuth(req.GrantType)
 		c.JSON(http.StatusBadRequest, gin.H{
 			"error":             "invalid_request",
 			"error_description": err.Error(),
 		})
 		return
 	}
+
+	// Record successful token issuance
+	metrics.Get().RecordTokenIssuance(clientID, req.GrantType)
+	metrics.Get().IncrementActiveTokens()
 
 	// Log successful token generation
 	h.logAudit(c, app, "oauth.token", "token", req.GrantType)
@@ -287,6 +294,11 @@ func (h *OAuthHandler) TokenHandler(c *gin.Context) {
 
 // IntrospectHandler handles POST /oauth/introspect
 func (h *OAuthHandler) IntrospectHandler(c *gin.Context) {
+	start := time.Now()
+	defer func() {
+		metrics.Get().RecordValidationLatency(time.Since(start))
+	}()
+
 	token := c.PostForm("token")
 	if token == "" {
 		c.JSON(http.StatusBadRequest, gin.H{
@@ -305,6 +317,7 @@ func (h *OAuthHandler) IntrospectHandler(c *gin.Context) {
 	// Validate client
 	app, err := h.validateClient(clientID, clientSecret)
 	if err != nil {
+		metrics.Get().RecordFailedAuth("introspect_invalid_client")
 		c.JSON(http.StatusUnauthorized, gin.H{
 			"error": "invalid_client",
 		})
@@ -380,6 +393,9 @@ func (h *OAuthHandler) RevokeHandler(c *gin.Context) {
 		})
 		return
 	}
+
+	// Decrement active tokens
+	metrics.Get().DecrementActiveTokens()
 
 	// Log token revocation
 	h.logAudit(c, app, "oauth.revoke", "token", tokenTypeHint)
