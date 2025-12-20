@@ -17,7 +17,9 @@ import (
 // Test Helpers
 // =============================================================================
 
-func createDeviceCodeApplication(t *testing.T, db interface{ Create(interface{}) interface{ Error() error } }) *database.Application {
+func createDeviceCodeApplication(t *testing.T, db interface {
+	Create(interface{}) interface{ Error() error }
+}) *database.Application {
 	hashedSecret, err := bcrypt.GenerateFromPassword([]byte("test-secret"), bcrypt.DefaultCost)
 	require.NoError(t, err)
 
@@ -39,7 +41,9 @@ func createDeviceCodeApplication(t *testing.T, db interface{ Create(interface{})
 	return app
 }
 
-func createTokenExchangeApplication(t *testing.T, db interface{ Create(interface{}) interface{ Error() error } }) *database.Application {
+func createTokenExchangeApplication(t *testing.T, db interface {
+	Create(interface{}) interface{ Error() error }
+}) *database.Application {
 	hashedSecret, err := bcrypt.GenerateFromPassword([]byte("test-secret"), bcrypt.DefaultCost)
 	require.NoError(t, err)
 
@@ -60,7 +64,9 @@ func createTokenExchangeApplication(t *testing.T, db interface{ Create(interface
 	return app
 }
 
-func createCIBAApplication(t *testing.T, db interface{ Create(interface{}) interface{ Error() error } }) *database.Application {
+func createCIBAApplication(t *testing.T, db interface {
+	Create(interface{}) interface{ Error() error }
+}) *database.Application {
 	hashedSecret, err := bcrypt.GenerateFromPassword([]byte("test-secret"), bcrypt.DefaultCost)
 	require.NoError(t, err)
 

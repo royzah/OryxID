@@ -62,9 +62,9 @@ type User struct {
 	Password      string      `gorm:"not null" json:"-"`
 	IsActive      bool        `gorm:"default:true" json:"is_active"`
 	IsAdmin       bool        `gorm:"default:false" json:"is_admin"`
-	TOTPSecret    string      `json:"-"`                              // Encrypted TOTP secret
+	TOTPSecret    string      `json:"-"`                                // Encrypted TOTP secret
 	TOTPEnabled   bool        `gorm:"default:false" json:"mfa_enabled"` // Whether MFA is enabled
-	BackupCodes   StringArray `gorm:"type:jsonb" json:"-"`            // Hashed backup codes
+	BackupCodes   StringArray `gorm:"type:jsonb" json:"-"`              // Hashed backup codes
 	Roles         []Role      `gorm:"many2many:user_roles" json:"roles,omitempty"`
 }
 
@@ -239,37 +239,37 @@ type CIBAAuthenticationRequest struct {
 	User              *User       `gorm:"foreignKey:UserID" json:"-"`            // The user
 	BindingMessage    string      `json:"binding_message,omitempty"`             // Message shown to user
 	ClientNotifyToken string      `json:"client_notify_token,omitempty"`         // Token for callback notification
-	Scope             string      `json:"scope,omitempty"`                        // Requested scopes
-	ACRValues         string      `json:"acr_values,omitempty"`                   // Requested authentication context
-	LoginHint         string      `json:"login_hint,omitempty"`                   // Hint to identify user
-	LoginHintToken    string      `json:"login_hint_token,omitempty"`             // JWT containing user hint
-	IDTokenHint       string      `json:"id_token_hint,omitempty"`                // Previous ID token as hint
-	RequestedExpiry   int         `json:"requested_expiry,omitempty"`             // Requested auth expiry
-	ExpiresAt         time.Time   `gorm:"not null;index" json:"expires_at"`       // When the request expires
-	Interval          int         `gorm:"default:5" json:"interval"`              // Polling interval in seconds
-	Status            string      `gorm:"default:'pending';index" json:"status"`  // pending, authorized, denied, expired
-	AuthorizedAt      *time.Time  `json:"authorized_at,omitempty"`                // When user authorized
-	LastPollAt        *time.Time  `json:"last_poll_at,omitempty"`                 // Last time client polled
+	Scope             string      `json:"scope,omitempty"`                       // Requested scopes
+	ACRValues         string      `json:"acr_values,omitempty"`                  // Requested authentication context
+	LoginHint         string      `json:"login_hint,omitempty"`                  // Hint to identify user
+	LoginHintToken    string      `json:"login_hint_token,omitempty"`            // JWT containing user hint
+	IDTokenHint       string      `json:"id_token_hint,omitempty"`               // Previous ID token as hint
+	RequestedExpiry   int         `json:"requested_expiry,omitempty"`            // Requested auth expiry
+	ExpiresAt         time.Time   `gorm:"not null;index" json:"expires_at"`      // When the request expires
+	Interval          int         `gorm:"default:5" json:"interval"`             // Polling interval in seconds
+	Status            string      `gorm:"default:'pending';index" json:"status"` // pending, authorized, denied, expired
+	AuthorizedAt      *time.Time  `json:"authorized_at,omitempty"`               // When user authorized
+	LastPollAt        *time.Time  `json:"last_poll_at,omitempty"`                // Last time client polled
 }
 
 // DeviceCode represents a device authorization request (RFC 8628)
 type DeviceCode struct {
 	BaseModel
-	DeviceCode       string      `gorm:"uniqueIndex;not null" json:"device_code"`    // Secret code for device
-	UserCode         string      `gorm:"uniqueIndex;not null" json:"user_code"`      // Code displayed to user (e.g., "WDJB-MJHT")
-	ApplicationID    uuid.UUID   `gorm:"not null;index" json:"application_id"`       // Which app requested this
-	Application      Application `gorm:"foreignKey:ApplicationID" json:"-"`          // The application
-	UserID           *uuid.UUID  `json:"user_id,omitempty"`                          // User who authorized (set after authorization)
-	User             *User       `gorm:"foreignKey:UserID" json:"-"`                 // The authorizing user
-	Scope            string      `json:"scope,omitempty"`                            // Requested scopes
-	Audience         string      `json:"audience,omitempty"`                         // Target audience
-	VerificationURI  string      `json:"verification_uri"`                           // Where user should go to authorize
-	ExpiresAt        time.Time   `gorm:"not null;index" json:"expires_at"`           // When the codes expire
-	Interval         int         `gorm:"default:5" json:"interval"`                  // Polling interval in seconds
-	Status           string      `gorm:"default:'pending';index" json:"status"`      // pending, authorized, denied, expired
-	AuthorizedAt     *time.Time  `json:"authorized_at,omitempty"`                    // When user authorized
-	LastPollAt       *time.Time  `json:"last_poll_at,omitempty"`                     // Last time device polled
-	ClientIP         string      `json:"client_ip,omitempty"`                        // Device IP address
+	DeviceCode      string      `gorm:"uniqueIndex;not null" json:"device_code"` // Secret code for device
+	UserCode        string      `gorm:"uniqueIndex;not null" json:"user_code"`   // Code displayed to user (e.g., "WDJB-MJHT")
+	ApplicationID   uuid.UUID   `gorm:"not null;index" json:"application_id"`    // Which app requested this
+	Application     Application `gorm:"foreignKey:ApplicationID" json:"-"`       // The application
+	UserID          *uuid.UUID  `json:"user_id,omitempty"`                       // User who authorized (set after authorization)
+	User            *User       `gorm:"foreignKey:UserID" json:"-"`              // The authorizing user
+	Scope           string      `json:"scope,omitempty"`                         // Requested scopes
+	Audience        string      `json:"audience,omitempty"`                      // Target audience
+	VerificationURI string      `json:"verification_uri"`                        // Where user should go to authorize
+	ExpiresAt       time.Time   `gorm:"not null;index" json:"expires_at"`        // When the codes expire
+	Interval        int         `gorm:"default:5" json:"interval"`               // Polling interval in seconds
+	Status          string      `gorm:"default:'pending';index" json:"status"`   // pending, authorized, denied, expired
+	AuthorizedAt    *time.Time  `json:"authorized_at,omitempty"`                 // When user authorized
+	LastPollAt      *time.Time  `json:"last_poll_at,omitempty"`                  // Last time device polled
+	ClientIP        string      `json:"client_ip,omitempty"`                     // Device IP address
 }
 
 // PushedAuthorizationRequest represents a PAR object (RFC 9126)
@@ -285,7 +285,7 @@ type PushedAuthorizationRequest struct {
 	Nonce                string    `json:"nonce,omitempty"`
 	CodeChallenge        string    `json:"code_challenge,omitempty"`
 	CodeChallengeMethod  string    `json:"code_challenge_method,omitempty"`
-	AuthorizationDetails string    `json:"authorization_details,omitempty"` // RAR (RFC 9396) - JSON array of authorization details
+	AuthorizationDetails string    `json:"authorization_details,omitempty"`  // RAR (RFC 9396) - JSON array of authorization details
 	ExpiresAt            time.Time `gorm:"not null;index" json:"expires_at"` // PAR requests expire quickly (typically 90 seconds)
 	Used                 bool      `gorm:"default:false;index" json:"used"`  // One-time use
 }
@@ -300,10 +300,10 @@ type ServerSettings struct {
 // ServerSettingsData is the structure stored in ServerSettings.Value
 type ServerSettingsData struct {
 	Issuer                 string `json:"issuer"`
-	AccessTokenLifespan    int    `json:"access_token_lifespan"`    // seconds
-	RefreshTokenLifespan   int    `json:"refresh_token_lifespan"`   // seconds
-	IDTokenLifespan        int    `json:"id_token_lifespan"`        // seconds
-	AuthCodeLifespan       int    `json:"auth_code_lifespan"`       // seconds
+	AccessTokenLifespan    int    `json:"access_token_lifespan"`  // seconds
+	RefreshTokenLifespan   int    `json:"refresh_token_lifespan"` // seconds
+	IDTokenLifespan        int    `json:"id_token_lifespan"`      // seconds
+	AuthCodeLifespan       int    `json:"auth_code_lifespan"`     // seconds
 	RequirePKCE            bool   `json:"require_pkce"`
 	RotateRefreshTokens    bool   `json:"rotate_refresh_tokens"`
 	RevokeOldRefreshTokens bool   `json:"revoke_old_refresh_tokens"`
