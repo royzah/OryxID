@@ -5,7 +5,7 @@ Go API server for OryxID. See [main README](../README.md) for project overview.
 ## OAuth Endpoints
 
 | Endpoint | Method | Description | RFC |
-|----------|--------|-------------|-----|
+| ---------- | -------- | ------------- | ----- |
 | `/oauth/authorize` | GET | Authorization | RFC 6749 |
 | `/oauth/token` | POST | Token | RFC 6749 |
 | `/oauth/revoke` | POST | Revocation | RFC 7009 |
@@ -18,7 +18,7 @@ Go API server for OryxID. See [main README](../README.md) for project overview.
 ### Grant Types
 
 | Grant Type | Description |
-|------------|-------------|
+| ------------ | ------------- |
 | `authorization_code` | Authorization code with PKCE |
 | `client_credentials` | Machine-to-machine |
 | `refresh_token` | Token refresh with rotation |
@@ -68,7 +68,7 @@ GET /api/v1/stats         # Dashboard statistics
 ## Auth Endpoints
 
 | Endpoint | Method | Description |
-|----------|--------|-------------|
+| ---------- | -------- | ------------- |
 | `/auth/login` | POST | Login, returns JWT |
 | `/auth/logout` | POST | Logout (requires auth) |
 | `/auth/me` | GET | Current user info |
@@ -80,10 +80,10 @@ GET /api/v1/stats         # Dashboard statistics
 
 ## Discovery
 
-| Endpoint | Description |
-|----------|-------------|
-| `/.well-known/openid-configuration` | OIDC Discovery |
-| `/.well-known/jwks.json` | JSON Web Key Set |
+| Endpoint                                | Description       |
+|-----------------------------------------|-------------------|
+| `/.well-known/openid-configuration`     | OIDC Discovery    |
+| `/.well-known/jwks.json`                | JSON Web Key Set  |
 
 ## Development
 
@@ -111,7 +111,7 @@ make dev-backend
 Environment variables (prefix: `ORYXID_`):
 
 | Variable | Default |
-|----------|---------|
+| ---------- | --------- |
 | `SERVER_PORT` | 9000 |
 | `SERVER_MODE` | debug |
 | `DATABASE_HOST` | localhost |
@@ -217,7 +217,7 @@ curl -X POST http://localhost:9000/oauth/introspect \
 
 ## Health
 
-| Endpoint | Description |
-|----------|-------------|
-| `/health` | Liveness (includes DB check) |
-| `/metrics` | Prometheus metrics |
+| Endpoint   | Description                  |
+|------------|------------------------------|
+| `/health`  | Liveness (includes DB check) |
+| `/metrics` | Prometheus metrics           |

@@ -107,7 +107,7 @@ client, err := oryxid.New(oryxid.Config{
 ## Scope Patterns
 
 | Token Scope | Required Scope | Match |
-|-------------|----------------|-------|
+| ------------- | ---------------- | ------- |
 | `billing:read` | `billing:read` | Yes |
 | `billing:read` | `billing:write` | No |
 | `billing:*` | `billing:read` | Yes |

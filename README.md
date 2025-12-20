@@ -45,7 +45,7 @@ Access: <https://localhost:8443> (default: admin / admin123)
 ## Documentation
 
 | Document | Description |
-|----------|-------------|
+| ---------- | ------------- |
 | [Backend API](backend/README.md) | API endpoints, configuration, database schema |
 | [Backend Testing](backend/TESTING.md) | Unit, integration, and security tests |
 | [Frontend](frontend/README.md) | Admin UI development |
@@ -66,7 +66,7 @@ Access: <https://localhost:8443> (default: admin / admin123)
 ## Make Commands
 
 | Command | Description |
-|---------|-------------|
+| --------- | ------------- |
 | `make setup` | Initial setup (env, keys, SSL) |
 | `make up` / `make down` | Start/stop services |
 | `make status` | Health check all services |
@@ -81,7 +81,7 @@ Full list: `make help`
 ## OAuth Endpoints
 
 | Endpoint | Description |
-|----------|-------------|
+| ---------- | ------------- |
 | `/oauth/authorize` | Authorization endpoint |
 | `/oauth/token` | Token endpoint |
 | `/oauth/introspect` | Token introspection (RFC 7662) |
@@ -98,7 +98,7 @@ Full list: `make help`
 Environment variables (prefix: `ORYXID_`):
 
 | Variable | Description | Default |
-|----------|-------------|---------|
+| ---------- | ------------- | --------- |
 | `SERVER_PORT` | API server port | 9000 |
 | `SERVER_MODE` | debug / release | debug |
 | `DATABASE_HOST` | PostgreSQL host | localhost |
@@ -121,10 +121,10 @@ Full configuration: see `.env.example`
 
 GitHub Actions workflow (`.github/workflows/ci.yaml`):
 
-| Trigger | Actions |
-|---------|---------|
-| Push/PR to main | Run tests, security audit (govulncheck, npm audit) |
-| Push tag `v*` | Build and push images to ghcr.io |
+| Trigger         | Actions                                             |
+| --------------- | --------------------------------------------------- |
+| Push/PR to main | Run tests, security audit (govulncheck, npm audit)  |
+| Push tag `v*`   | Build and push images to ghcr.io                    |
 
 ## Deployment
 

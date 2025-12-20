@@ -15,7 +15,7 @@ graph LR
 ## Routes
 
 | Route | Purpose | Auth |
-|-------|---------|------|
+| ------- | --------- | ------ |
 | `/` | Dashboard | Yes |
 | `/login` | Admin login | No |
 | `/applications` | OAuth app management | Yes |
@@ -45,10 +45,10 @@ Access: <http://localhost:3000>
 
 ### Environment
 
-| Variable | Default |
-|----------|---------|
+| Variable         | Default                 |
+|------------------|-------------------------|
 | `PUBLIC_API_URL` | <http://localhost:9000> |
-| `ORIGIN` | <http://localhost:3000> |
+| `ORIGIN`         | <http://localhost:3000> |
 
 ## Commands
 
@@ -86,7 +86,7 @@ src/
 ## API Clients
 
 | Module | Purpose |
-|--------|---------|
+| -------- | --------- |
 | `auth.ts` | Login, logout, MFA |
 | `applications.ts` | OAuth apps CRUD |
 | `users.ts` | User management |
@@ -112,7 +112,7 @@ sequenceDiagram
 ## Tech Stack
 
 | Technology | Purpose |
-|------------|---------|
+| ------------ | --------- |
 | SvelteKit | Framework |
 | TypeScript | Type safety |
 | Tailwind CSS | Styling |
