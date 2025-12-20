@@ -27,17 +27,17 @@ flowchart TD
 
 ### Token Validation SDK
 
-- [ ] Go middleware package for API servers
-- [ ] JWT validation with JWKS caching
-- [ ] Token introspection client
-- [ ] Scope enforcement helpers
-- [ ] Example integration code
+- [x] Go middleware package for API servers
+- [x] JWT validation with JWKS caching
+- [x] Token introspection client
+- [x] Scope enforcement helpers
+- [x] Example integration code
 
 ### Scope Hierarchy
 
-- [ ] Wildcard scopes (billing:* grants billing:read, billing:write)
-- [ ] Scope inheritance model
-- [ ] Scope validation with hierarchy
+- [x] Wildcard scopes (billing:* grants billing:read, billing:write)
+- [x] Scope inheritance model
+- [x] Scope validation with hierarchy
 
 ### API Resource Registry
 
@@ -49,8 +49,8 @@ flowchart TD
 
 - [ ] Client credentials rotation
 - [ ] Client scope restrictions
-- [ ] Client rate limiting
-- [ ] Client activity logs
+- [x] Client rate limiting
+- [x] Client activity logs
 
 ---
 
@@ -230,3 +230,22 @@ Not needed for M2M API security:
 - [x] PostgreSQL support
 - [x] Redis integration
 - [x] Health endpoint
+
+### CI/CD
+
+- [x] GitHub Actions workflow
+- [x] go fmt check
+- [x] go vet static analysis
+- [x] go build verification
+- [x] go test with race detection
+- [x] govulncheck CVE scanning
+- [x] npm audit for frontend
+
+### SDK
+
+- [x] Token validation SDK (backend/pkg/sdk)
+- [x] JWKS caching with configurable TTL
+- [x] Wildcard scope matching
+- [x] Gin middleware
+- [x] Standard http middleware
+- [x] Unit tests
