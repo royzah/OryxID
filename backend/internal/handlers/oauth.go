@@ -421,18 +421,18 @@ func (h *OAuthHandler) DiscoveryHandler(c *gin.Context) {
 	baseURL := getBaseURL(c)
 
 	discovery := gin.H{
-		"issuer":                                     baseURL,
-		"authorization_endpoint":                     baseURL + "/oauth/authorize",
-		"token_endpoint":                             baseURL + "/oauth/token",
-		"userinfo_endpoint":                          baseURL + "/oauth/userinfo",
-		"jwks_uri":                                   baseURL + "/.well-known/jwks.json",
-		"registration_endpoint":                      baseURL + "/oauth/register",
-		"introspection_endpoint":                     baseURL + "/oauth/introspect",
-		"revocation_endpoint":                        baseURL + "/oauth/revoke",
-		"pushed_authorization_request_endpoint":      baseURL + "/oauth/par",                  // RFC 9126
-		"device_authorization_endpoint":              baseURL + "/oauth/device_authorization", // RFC 8628
-		"backchannel_authentication_endpoint":        baseURL + "/oauth/bc-authorize",         // OpenID Connect CIBA
-		"require_pushed_authorization_requests":      false,                                   // PAR is optional (can be made required per client)
+		"issuer":                                baseURL,
+		"authorization_endpoint":                baseURL + "/oauth/authorize",
+		"token_endpoint":                        baseURL + "/oauth/token",
+		"userinfo_endpoint":                     baseURL + "/oauth/userinfo",
+		"jwks_uri":                              baseURL + "/.well-known/jwks.json",
+		"registration_endpoint":                 baseURL + "/oauth/register",
+		"introspection_endpoint":                baseURL + "/oauth/introspect",
+		"revocation_endpoint":                   baseURL + "/oauth/revoke",
+		"pushed_authorization_request_endpoint": baseURL + "/oauth/par",                  // RFC 9126
+		"device_authorization_endpoint":         baseURL + "/oauth/device_authorization", // RFC 8628
+		"backchannel_authentication_endpoint":   baseURL + "/oauth/bc-authorize",         // OpenID Connect CIBA
+		"require_pushed_authorization_requests": false,                                   // PAR is optional (can be made required per client)
 		// Scopes include OIDC standard scopes and TrustSky USSP integration scopes
 		"scopes_supported": []string{
 			"openid", "profile", "email", "offline_access",

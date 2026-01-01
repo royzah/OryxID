@@ -1209,7 +1209,7 @@ func (h *AdminHandler) DeleteTenant(c *gin.Context) {
 	h.db.Model(&database.Application{}).Where("tenant_id = ?", id).Count(&appCount)
 	if appCount > 0 {
 		c.JSON(http.StatusConflict, gin.H{
-			"error":            "Cannot delete tenant with associated applications",
+			"error":             "Cannot delete tenant with associated applications",
 			"application_count": appCount,
 		})
 		return

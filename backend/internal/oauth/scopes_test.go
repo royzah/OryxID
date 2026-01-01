@@ -32,8 +32,8 @@ func TestExpandScopes(t *testing.T) {
 			expected: []string{"trustsky:nfz:write", "trustsky:nfz:read"},
 		},
 		{
-			name:     "admin expands to all trustsky scopes",
-			input:    "trustsky:admin",
+			name:  "admin expands to all trustsky scopes",
+			input: "trustsky:admin",
 			expected: []string{
 				"trustsky:admin",
 				"trustsky:flight:read",

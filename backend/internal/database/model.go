@@ -134,8 +134,8 @@ type Application struct {
 	RefreshTokenLifespan    int         `json:"refresh_token_lifespan"` // seconds, 0 means use default
 	Owner                   *User       `gorm:"foreignKey:OwnerID" json:"owner,omitempty"`
 	OwnerID                 *uuid.UUID  `json:"owner_id,omitempty"`
-	TenantID                *uuid.UUID  `gorm:"index" json:"tenant_id,omitempty"`    // Multi-tenancy: operator/organization
-	Tenant                  *Tenant     `gorm:"foreignKey:TenantID" json:"-"`        // Tenant relationship
+	TenantID                *uuid.UUID  `gorm:"index" json:"tenant_id,omitempty"` // Multi-tenancy: operator/organization
+	Tenant                  *Tenant     `gorm:"foreignKey:TenantID" json:"-"`     // Tenant relationship
 	Metadata                JSONB       `gorm:"type:jsonb" json:"metadata,omitempty"`
 }
 
