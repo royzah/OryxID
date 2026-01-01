@@ -1,61 +1,121 @@
 # TrustSky USSP Integration Guide
 
-This document explains how to integrate OryxID with TrustSky UTM Service Supplier Platform.
+This document explains how to integrate TrustSky with OryxID as the authentication provider.
 
-## Overview
+## What OryxID Provides
 
-OryxID provides OAuth 2.1 / OpenID Connect compliant identity services for TrustSky USSP integration. Key features:
+| TrustSky Requirement | OryxID Feature | Status |
+|---------------------|----------------|--------|
+| JWT Authentication | RS256 signed JWTs with configurable issuer | Ready |
+| JWKS Endpoint | `/.well-known/jwks.json` for public key distribution | Ready |
+| Multi-tenancy | `tenant_id` claim in all tokens | Ready |
+| Scope Hierarchy | `trustsky:admin` -> all, `write` -> `read` auto-expansion | Ready |
+| Token Introspection | RFC 7662 compliant `/oauth/introspect` endpoint | Ready |
+| DPoP (Optional) | RFC 9449 sender-constrained tokens | Ready |
+| Client Credentials | Machine-to-machine authentication | Ready |
+| Token Revocation | RFC 7009 compliant `/oauth/revoke` endpoint | Ready |
 
-- Multi-tenancy with `tenant_id` claim in JWT tokens
-- DPoP (RFC 9449) for sender-constrained tokens
-- TrustSky-specific scope hierarchy
-- Token introspection (RFC 7662)
-- JWKS endpoint for token validation
+## TrustSky Environment Configuration
 
-## Quick Start
-
-### 1. Create a Tenant
-
-Each operator/organization needs a tenant:
+Add these environment variables to your TrustSky deployment:
 
 ```bash
-curl -X POST https://oryxid.example.com/api/tenants \
-  -H "Authorization: Bearer <admin_token>" \
-  -H "Content-Type: application/json" \
-  -d '{
-    "name": "Acme Drone Operations",
-    "type": "operator",
-    "email": "admin@acme.com"
-  }'
+# =============================================================================
+# AUTHENTICATION (OryxID)
+# =============================================================================
+AUTH_ENABLED=true
+AUTH_ISSUER=http://localhost:9000
+AUTH_JWKS_URL=http://localhost:9000/.well-known/jwks.json
+AUTH_AUDIENCE=trustsky
+
+# Clock skew tolerance for JWT validation
+AUTH_CLOCK_SKEW=30s
+
+# Client credentials for obtaining access tokens
+AUTH_CLIENT_ID=your-trustsky-client-id
+AUTH_CLIENT_SECRET=your-trustsky-client-secret
 ```
 
-Response includes `id` which becomes the `tenant_id` in tokens.
+## OryxID Endpoints
 
-### 2. Create an Application for the Tenant
+| Purpose | Endpoint |
+|---------|----------|
+| OpenID Discovery | `$AUTH_ISSUER/.well-known/openid-configuration` |
+| JWKS (Public Keys) | `$AUTH_ISSUER/.well-known/jwks.json` |
+| Token Endpoint | `$AUTH_ISSUER/oauth/token` |
+| Introspection | `$AUTH_ISSUER/oauth/introspect` |
+| Revocation | `$AUTH_ISSUER/oauth/revoke` |
+
+## Setup Steps
+
+### 1. Create TrustSky Application in OryxID
+
+Create an application for TrustSky backend services:
 
 ```bash
-curl -X POST https://oryxid.example.com/api/applications \
+curl -X POST $AUTH_ISSUER/api/applications \
   -H "Authorization: Bearer <admin_token>" \
   -H "Content-Type: application/json" \
   -d '{
-    "name": "Acme Flight Control",
+    "name": "TrustSky Backend",
     "client_type": "confidential",
     "grant_types": ["client_credentials"],
-    "redirect_uris": ["https://acme.com/callback"],
-    "scope_ids": ["<scope_id_for_trustsky_flight_write>"],
-    "tenant_id": "<tenant_id_from_step_1>"
+    "token_endpoint_auth_method": "client_secret_basic"
   }'
 ```
 
-Save the `client_id` and `client_secret` from the response.
+Response:
+```json
+{
+  "id": "uuid",
+  "client_id": "ts_abc123",
+  "client_secret": "secret_xyz789",
+  "name": "TrustSky Backend"
+}
+```
 
-### 3. Obtain Access Token
+Use these values for `AUTH_CLIENT_ID` and `AUTH_CLIENT_SECRET`.
+
+### 2. Create Scopes
+
+Create the TrustSky scopes in OryxID:
 
 ```bash
-curl -X POST https://oryxid.example.com/oauth/token \
-  -u "<client_id>:<client_secret>" \
+# Create scopes
+for scope in trustsky:admin trustsky:flight:read trustsky:flight:write \
+             trustsky:nfz:read trustsky:nfz:write trustsky:telemetry:write \
+             trustsky:sky:read trustsky:operator:read trustsky:operator:write; do
+  curl -X POST $AUTH_ISSUER/api/scopes \
+    -H "Authorization: Bearer <admin_token>" \
+    -H "Content-Type: application/json" \
+    -d "{\"name\": \"$scope\"}"
+done
+```
+
+### 3. Assign Scopes to Application
+
+```bash
+curl -X PUT $AUTH_ISSUER/api/applications/<app_id>/scopes \
+  -H "Authorization: Bearer <admin_token>" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "scope_ids": ["<scope_id_1>", "<scope_id_2>", "..."]
+  }'
+```
+
+## Obtaining Access Tokens
+
+### Client Credentials Grant
+
+TrustSky backend services obtain tokens using client credentials:
+
+```bash
+curl -X POST $AUTH_ISSUER/oauth/token \
+  -u "$AUTH_CLIENT_ID:$AUTH_CLIENT_SECRET" \
+  -H "Content-Type: application/x-www-form-urlencoded" \
   -d "grant_type=client_credentials" \
-  -d "scope=trustsky:flight:write"
+  -d "scope=trustsky:flight:write" \
+  -d "audience=$AUTH_AUDIENCE"
 ```
 
 Response:
@@ -68,133 +128,63 @@ Response:
 }
 ```
 
-Note: `trustsky:flight:write` automatically includes `trustsky:flight:read` via scope hierarchy.
+Note: Scope expansion is automatic. Requesting `trustsky:flight:write` returns both `write` and `read`.
 
-## JWT Token Structure
+### Token Structure
 
-Decoded access token payload:
+Decoded JWT payload:
 
 ```json
 {
-  "iss": "https://oryxid.example.com",
-  "sub": "client_id_here",
-  "aud": "trustsky-api",
+  "iss": "$AUTH_ISSUER",
+  "sub": "$AUTH_CLIENT_ID",
+  "aud": "$AUTH_AUDIENCE",
   "exp": 1704067200,
   "iat": 1704063600,
   "scope": "trustsky:flight:write trustsky:flight:read",
-  "client_id": "client_id_here",
+  "client_id": "$AUTH_CLIENT_ID",
   "tenant_id": "uuid-of-tenant"
 }
 ```
 
-The `tenant_id` identifies which operator/organization the token belongs to.
+## Token Validation in TrustSky
 
-## DPoP (Proof-of-Possession Tokens)
+### Option 1: JWKS Validation (Recommended)
 
-DPoP binds tokens to a specific client key pair, preventing token theft.
+Validate JWTs locally using the JWKS endpoint:
 
-### Client Setup
+```go
+// Go example
+import "github.com/golang-jwt/jwt/v5"
 
-1. Generate an EC or RSA key pair
-2. Create DPoP proof JWT for each request
+// Fetch JWKS from $AUTH_JWKS_URL
+// Validate token signature using public key
+// Check claims: iss, aud, exp, scope
+```
 
-### Token Request with DPoP
+```javascript
+// Node.js example using jose
+import { createRemoteJWKSet, jwtVerify } from 'jose';
+
+const JWKS = createRemoteJWKSet(new URL(process.env.AUTH_JWKS_URL));
+
+async function validateToken(token) {
+  const { payload } = await jwtVerify(token, JWKS, {
+    issuer: process.env.AUTH_ISSUER,
+    audience: process.env.AUTH_AUDIENCE,
+  });
+  return payload;
+}
+```
+
+### Option 2: Token Introspection
+
+For real-time token status (checks revocation):
 
 ```bash
-# Generate DPoP proof (example using jose-cli or similar)
-DPOP_PROOF=$(create_dpop_proof \
-  --method POST \
-  --uri https://oryxid.example.com/oauth/token \
-  --key private_key.pem)
-
-curl -X POST https://oryxid.example.com/oauth/token \
-  -H "DPoP: $DPOP_PROOF" \
-  -u "<client_id>:<client_secret>" \
-  -d "grant_type=client_credentials"
-```
-
-Response:
-```json
-{
-  "access_token": "eyJhbGciOiJSUzI1NiIsInR5cCI6IkpXVCJ9...",
-  "token_type": "DPoP",
-  "expires_in": 3600
-}
-```
-
-### DPoP Proof Structure
-
-```json
-{
-  "typ": "dpop+jwt",
-  "alg": "ES256",
-  "jwk": {
-    "kty": "EC",
-    "crv": "P-256",
-    "x": "...",
-    "y": "..."
-  }
-}
-```
-
-Claims:
-```json
-{
-  "jti": "unique-id",
-  "htm": "POST",
-  "htu": "https://oryxid.example.com/oauth/token",
-  "iat": 1704063600
-}
-```
-
-### DPoP-Bound Token
-
-The token includes a confirmation claim:
-```json
-{
-  "cnf": {
-    "jkt": "sha256-thumbprint-of-jwk"
-  }
-}
-```
-
-### Using DPoP Token at Resource Server
-
-```bash
-# For resource requests, include ath (access token hash)
-DPOP_PROOF=$(create_dpop_proof \
-  --method GET \
-  --uri https://trustsky.example.com/api/flights \
-  --key private_key.pem \
-  --access-token $ACCESS_TOKEN)
-
-curl https://trustsky.example.com/api/flights \
-  -H "Authorization: DPoP $ACCESS_TOKEN" \
-  -H "DPoP: $DPOP_PROOF"
-```
-
-## Scope Hierarchy
-
-TrustSky scopes follow a hierarchical model:
-
-| Scope | Includes |
-|-------|----------|
-| `trustsky:admin` | All scopes below |
-| `trustsky:flight:write` | `trustsky:flight:read` |
-| `trustsky:nfz:write` | `trustsky:nfz:read` |
-| `trustsky:operator:write` | `trustsky:operator:read` |
-| `trustsky:telemetry:write` | (no read equivalent) |
-| `trustsky:sky:read` | (read-only) |
-
-When a token has `trustsky:flight:write`, APIs requiring `trustsky:flight:read` will also accept it.
-
-## Token Introspection
-
-Resource servers validate tokens using introspection:
-
-```bash
-curl -X POST https://oryxid.example.com/oauth/introspect \
-  -u "<resource_server_client_id>:<client_secret>" \
+curl -X POST $AUTH_ISSUER/oauth/introspect \
+  -u "$AUTH_CLIENT_ID:$AUTH_CLIENT_SECRET" \
+  -H "Content-Type: application/x-www-form-urlencoded" \
   -d "token=<access_token>"
 ```
 
@@ -203,149 +193,70 @@ Response:
 {
   "active": true,
   "scope": "trustsky:flight:write trustsky:flight:read",
-  "client_id": "client_id_here",
+  "client_id": "ts_abc123",
   "tenant_id": "uuid-of-tenant",
   "exp": 1704067200,
-  "iat": 1704063600,
-  "sub": "client_id_here"
+  "iat": 1704063600
 }
 ```
 
-## JWKS Endpoint
+## Scope Hierarchy
 
-For JWT validation without introspection:
+OryxID automatically expands scopes based on hierarchy:
 
 ```
-GET https://oryxid.example.com/.well-known/jwks.json
+trustsky:admin
+    |
+    +-- trustsky:flight:write --> trustsky:flight:read
+    +-- trustsky:nfz:write --> trustsky:nfz:read
+    +-- trustsky:operator:write --> trustsky:operator:read
+    +-- trustsky:telemetry:write
+    +-- trustsky:sky:read
 ```
 
-Response:
-```json
-{
-  "keys": [
-    {
-      "kty": "RSA",
-      "use": "sig",
-      "kid": "key-id",
-      "alg": "RS256",
-      "n": "base64url-encoded-modulus",
-      "e": "AQAB"
+| Requested Scope | Token Contains |
+|-----------------|----------------|
+| `trustsky:admin` | All trustsky:* scopes |
+| `trustsky:flight:write` | `trustsky:flight:write` + `trustsky:flight:read` |
+| `trustsky:nfz:write` | `trustsky:nfz:write` + `trustsky:nfz:read` |
+| `trustsky:flight:read` | `trustsky:flight:read` only |
+
+### Checking Scopes in Code
+
+```go
+// Go example
+func hasScope(tokenScopes, requiredScope string) bool {
+    scopes := strings.Split(tokenScopes, " ")
+    for _, s := range scopes {
+        if s == requiredScope {
+            return true
+        }
     }
-  ]
+    return false
+}
+
+// Usage: check if token has flight:read access
+if hasScope(claims.Scope, "trustsky:flight:read") {
+    // Allow access
 }
 ```
 
-## Discovery Endpoint
+## Multi-Tenancy
 
+Each operator/organization has a tenant in OryxID. The `tenant_id` claim identifies which tenant the token belongs to.
+
+### Create Tenant
+
+```bash
+curl -X POST $AUTH_ISSUER/api/tenants \
+  -H "Authorization: Bearer <admin_token>" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "name": "Acme Drone Operations",
+    "type": "operator",
+    "email": "admin@acme.com"
+  }'
 ```
-GET https://oryxid.example.com/.well-known/openid-configuration
-```
-
-Key fields:
-- `token_endpoint`: Token issuance
-- `introspection_endpoint`: Token validation
-- `jwks_uri`: Public keys
-- `dpop_signing_alg_values_supported`: DPoP algorithms
-
-## Frontend DPoP Implementation (JavaScript)
-
-```javascript
-// Generate key pair (once, store securely)
-const keyPair = await crypto.subtle.generateKey(
-  { name: 'ECDSA', namedCurve: 'P-256' },
-  true,
-  ['sign', 'verify']
-);
-
-// Export public key as JWK
-const publicJwk = await crypto.subtle.exportKey('jwk', keyPair.publicKey);
-
-// Create DPoP proof
-async function createDPoPProof(method, uri, accessToken = null) {
-  const header = {
-    typ: 'dpop+jwt',
-    alg: 'ES256',
-    jwk: {
-      kty: publicJwk.kty,
-      crv: publicJwk.crv,
-      x: publicJwk.x,
-      y: publicJwk.y
-    }
-  };
-
-  const payload = {
-    jti: crypto.randomUUID(),
-    htm: method,
-    htu: uri,
-    iat: Math.floor(Date.now() / 1000)
-  };
-
-  // Add access token hash for resource requests
-  if (accessToken) {
-    const encoder = new TextEncoder();
-    const data = encoder.encode(accessToken);
-    const hash = await crypto.subtle.digest('SHA-256', data);
-    payload.ath = btoa(String.fromCharCode(...new Uint8Array(hash)))
-      .replace(/\+/g, '-')
-      .replace(/\//g, '_')
-      .replace(/=/g, '');
-  }
-
-  // Sign the JWT (use jose library or similar)
-  // return signedJwt;
-}
-
-// Token request
-const dpopProof = await createDPoPProof('POST', 'https://oryxid.example.com/oauth/token');
-
-const response = await fetch('https://oryxid.example.com/oauth/token', {
-  method: 'POST',
-  headers: {
-    'Content-Type': 'application/x-www-form-urlencoded',
-    'DPoP': dpopProof
-  },
-  body: new URLSearchParams({
-    grant_type: 'client_credentials',
-    client_id: 'your-client-id',
-    client_secret: 'your-client-secret'
-  })
-});
-```
-
-## Error Handling
-
-### Invalid DPoP Proof
-
-```json
-{
-  "error": "invalid_dpop_proof",
-  "error_description": "dpop htm mismatch: expected POST, got GET"
-}
-```
-
-Common issues:
-- Wrong HTTP method in proof
-- Wrong URI in proof
-- Proof expired (older than 5 minutes)
-- JTI reuse (replay attack prevention)
-
-### Token Validation Errors
-
-```json
-{
-  "active": false
-}
-```
-
-Or for DPoP-bound tokens presented without matching proof:
-```json
-{
-  "error": "invalid_token",
-  "error_description": "dpop proof thumbprint does not match token binding"
-}
-```
-
-## Configuration Reference
 
 ### Tenant Types
 
@@ -355,24 +266,153 @@ Or for DPoP-bound tokens presented without matching proof:
 | `authority` | Regulatory bodies, air traffic control |
 | `emergency_service` | Police, fire, medical services |
 
-### Token Lifetimes
+### Tenant Status
 
-| Token Type | Default Lifetime |
-|------------|-----------------|
-| Access Token | 1 hour |
-| Refresh Token | 30 days |
-| ID Token | 1 hour |
+| Status | Token Issuance |
+|--------|----------------|
+| `active` | Allowed |
+| `suspended` | Blocked (returns error) |
+| `revoked` | Blocked (returns error) |
 
-TrustSky recommends refresh token lifetime <= 7 days for production.
+TrustSky can rely on OryxID blocking tokens for suspended/revoked tenants.
+
+## DPoP (Optional)
+
+For sender-constrained tokens, use DPoP (RFC 9449).
+
+### Token Request with DPoP
+
+```bash
+curl -X POST $AUTH_ISSUER/oauth/token \
+  -H "DPoP: <dpop_proof_jwt>" \
+  -u "$AUTH_CLIENT_ID:$AUTH_CLIENT_SECRET" \
+  -d "grant_type=client_credentials"
+```
+
+Response:
+```json
+{
+  "access_token": "eyJ...",
+  "token_type": "DPoP",
+  "expires_in": 3600
+}
+```
+
+### DPoP Proof Structure
+
+Header:
+```json
+{
+  "typ": "dpop+jwt",
+  "alg": "ES256",
+  "jwk": { "kty": "EC", "crv": "P-256", "x": "...", "y": "..." }
+}
+```
+
+Payload:
+```json
+{
+  "jti": "unique-id",
+  "htm": "POST",
+  "htu": "$AUTH_ISSUER/oauth/token",
+  "iat": 1704063600
+}
+```
+
+### DPoP-Bound Token
+
+The access token contains a confirmation claim:
+```json
+{
+  "cnf": {
+    "jkt": "sha256-thumbprint-of-client-jwk"
+  }
+}
+```
+
+### Using DPoP Token
+
+```bash
+# Include ath (access token hash) for resource requests
+curl -X GET $TRUSTSKY_API/flights \
+  -H "Authorization: DPoP $ACCESS_TOKEN" \
+  -H "DPoP: <dpop_proof_with_ath>"
+```
+
+## Error Handling
+
+### Token Request Errors
+
+| Error | Description |
+|-------|-------------|
+| `invalid_client` | Wrong client_id or client_secret |
+| `tenant is suspended` | Tenant has been suspended |
+| `tenant is revoked` | Tenant has been revoked |
+| `invalid_scope` | Requested scope not allowed for client |
+| `invalid_dpop_proof` | DPoP proof validation failed |
+
+### Introspection Response
+
+Inactive token:
+```json
+{
+  "active": false
+}
+```
+
+## Quick Reference
+
+### Environment Variables Summary
+
+```bash
+# Required
+AUTH_ENABLED=true
+AUTH_ISSUER=http://localhost:9000
+AUTH_JWKS_URL=${AUTH_ISSUER}/.well-known/jwks.json
+AUTH_AUDIENCE=trustsky
+AUTH_CLIENT_ID=<from-oryxid-application>
+AUTH_CLIENT_SECRET=<from-oryxid-application>
+
+# Optional
+AUTH_CLOCK_SKEW=30s
+AUTH_INTROSPECT_URL=${AUTH_ISSUER}/oauth/introspect
+AUTH_TOKEN_URL=${AUTH_ISSUER}/oauth/token
+```
+
+### Common Operations
+
+```bash
+# Get access token
+curl -X POST $AUTH_ISSUER/oauth/token \
+  -u "$AUTH_CLIENT_ID:$AUTH_CLIENT_SECRET" \
+  -d "grant_type=client_credentials&scope=trustsky:flight:write"
+
+# Validate token
+curl -X POST $AUTH_ISSUER/oauth/introspect \
+  -u "$AUTH_CLIENT_ID:$AUTH_CLIENT_SECRET" \
+  -d "token=$ACCESS_TOKEN"
+
+# Revoke token
+curl -X POST $AUTH_ISSUER/oauth/revoke \
+  -u "$AUTH_CLIENT_ID:$AUTH_CLIENT_SECRET" \
+  -d "token=$ACCESS_TOKEN"
+
+# Get JWKS
+curl $AUTH_ISSUER/.well-known/jwks.json
+
+# Get OpenID configuration
+curl $AUTH_ISSUER/.well-known/openid-configuration
+```
 
 ## Checklist
 
-Before going to production:
+Before production deployment:
 
-- [ ] Create tenant for each operator/organization
-- [ ] Configure appropriate scopes for each application
-- [ ] Test token introspection from resource servers
-- [ ] Implement DPoP if sender-constrained tokens required
-- [ ] Configure refresh token rotation
-- [ ] Set up audit logging
-- [ ] Review token lifetimes for TrustSky compliance
+- [ ] OryxID deployed and accessible at `$AUTH_ISSUER`
+- [ ] TrustSky application created with `AUTH_CLIENT_ID` and `AUTH_CLIENT_SECRET`
+- [ ] Required scopes created and assigned to application
+- [ ] Tenants created for each operator/organization
+- [ ] TrustSky configured with environment variables above
+- [ ] Token validation working (JWKS or introspection)
+- [ ] Scope checking implemented in TrustSky APIs
+- [ ] Tenant isolation verified (check `tenant_id` in requests)
