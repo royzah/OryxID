@@ -2,6 +2,7 @@ package tokens
 
 import (
 	"crypto/rsa"
+	"encoding/base64"
 	"fmt"
 	"time"
 
@@ -23,6 +24,7 @@ type CustomClaims struct {
 	jwt.RegisteredClaims
 	Scope         string                 `json:"scope,omitempty"`
 	ClientID      string                 `json:"client_id,omitempty"`
+	TenantID      string                 `json:"tenant_id,omitempty"` // Multi-tenancy: operator/organization UUID (TrustSky USSP)
 	Username      string                 `json:"username,omitempty"`
 	Email         string                 `json:"email,omitempty"`
 	EmailVerified bool                   `json:"email_verified,omitempty"`
@@ -47,6 +49,7 @@ type IntrospectionResponse struct {
 	Active    bool   `json:"active"`
 	Scope     string `json:"scope,omitempty"`
 	ClientID  string `json:"client_id,omitempty"`
+	TenantID  string `json:"tenant_id,omitempty"` // Multi-tenancy: operator/organization UUID (TrustSky USSP)
 	Username  string `json:"username,omitempty"`
 	TokenType string `json:"token_type,omitempty"`
 	Exp       int64  `json:"exp,omitempty"`
@@ -69,6 +72,7 @@ func NewTokenManager(cfg *config.JWTConfig, issuer string) (*TokenManager, error
 }
 
 // GenerateAccessToken generates a JWT access token
+// tenantID is optional - if the application has a tenant, it will be included in the token
 func (tm *TokenManager) GenerateAccessToken(app *database.Application, user *database.User, scope, audience string, extra map[string]interface{}) (string, error) {
 	now := time.Now()
 	expiresAt := now.Add(time.Hour) // Default 1 hour, can be customized
@@ -87,6 +91,11 @@ func (tm *TokenManager) GenerateAccessToken(app *database.Application, user *dat
 		ClientID: app.ClientID,
 		Type:     "Bearer",
 		Extra:    extra,
+	}
+
+	// Add tenant_id if application has a tenant (TrustSky USSP integration)
+	if app.TenantID != nil {
+		claims.TenantID = app.TenantID.String()
 	}
 
 	// Add user info if present
@@ -221,6 +230,7 @@ func (tm *TokenManager) IntrospectToken(tokenString string) (*IntrospectionRespo
 		Active:    true,
 		Scope:     claims.Scope,
 		ClientID:  claims.ClientID,
+		TenantID:  claims.TenantID, // Include tenant_id for TrustSky USSP integration
 		Username:  claims.Username,
 		TokenType: claims.Type,
 		Exp:       claims.ExpiresAt.Unix(),
@@ -233,15 +243,29 @@ func (tm *TokenManager) IntrospectToken(tokenString string) (*IntrospectionRespo
 	}, nil
 }
 
-// GetJWKS returns the JSON Web Key Set
+// GetJWKS returns the JSON Web Key Set with proper base64url encoding per RFC 7517
 func (tm *TokenManager) GetJWKS() (map[string]interface{}, error) {
+	// Encode modulus (n) as base64url without padding
+	nBytes := tm.publicKey.N.Bytes()
+	nBase64 := base64.RawURLEncoding.EncodeToString(nBytes)
+
+	// Encode exponent (e) as base64url without padding
+	// The exponent is typically 65537 (0x010001)
+	e := tm.publicKey.E
+	eBytes := make([]byte, 0)
+	for e > 0 {
+		eBytes = append([]byte{byte(e & 0xff)}, eBytes...)
+		e >>= 8
+	}
+	eBase64 := base64.RawURLEncoding.EncodeToString(eBytes)
+
 	jwk := map[string]interface{}{
 		"kty": "RSA",
 		"use": "sig",
 		"kid": tm.kid,
 		"alg": "RS256",
-		"n":   tm.publicKey.N.String(),
-		"e":   fmt.Sprintf("%d", tm.publicKey.E),
+		"n":   nBase64,
+		"e":   eBase64,
 	}
 
 	jwks := map[string]interface{}{

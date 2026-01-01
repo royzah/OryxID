@@ -85,6 +85,33 @@ type Permission struct {
 	Roles       []Role `gorm:"many2many:role_permissions" json:"-"`
 }
 
+// Tenant represents an organization/operator in the multi-tenant system
+// For TrustSky USSP integration, tenant_id becomes the operator_id
+type Tenant struct {
+	BaseModel
+	Name               string `gorm:"not null" json:"name"`
+	Type               string `gorm:"not null;default:'operator'" json:"type"` // operator, authority, emergency_service
+	Status             string `gorm:"not null;default:'active'" json:"status"` // active, suspended, revoked
+	Email              string `gorm:"uniqueIndex;not null" json:"email"`
+	CertificateSubject string `json:"certificate_subject,omitempty"` // For mTLS binding
+	Description        string `json:"description,omitempty"`
+	Metadata           JSONB  `gorm:"type:jsonb" json:"metadata,omitempty"`
+}
+
+// TenantType constants for type validation
+const (
+	TenantTypeOperator         = "operator"
+	TenantTypeAuthority        = "authority"
+	TenantTypeEmergencyService = "emergency_service"
+)
+
+// TenantStatus constants for status validation
+const (
+	TenantStatusActive    = "active"
+	TenantStatusSuspended = "suspended"
+	TenantStatusRevoked   = "revoked"
+)
+
 // Application represents an OAuth2 client
 type Application struct {
 	BaseModel
@@ -107,6 +134,8 @@ type Application struct {
 	RefreshTokenLifespan    int         `json:"refresh_token_lifespan"` // seconds, 0 means use default
 	Owner                   *User       `gorm:"foreignKey:OwnerID" json:"owner,omitempty"`
 	OwnerID                 *uuid.UUID  `json:"owner_id,omitempty"`
+	TenantID                *uuid.UUID  `gorm:"index" json:"tenant_id,omitempty"`    // Multi-tenancy: operator/organization
+	Tenant                  *Tenant     `gorm:"foreignKey:TenantID" json:"-"`        // Tenant relationship
 	Metadata                JSONB       `gorm:"type:jsonb" json:"metadata,omitempty"`
 }
 
@@ -158,6 +187,8 @@ type Token struct {
 	Application          Application `gorm:"foreignKey:ApplicationID" json:"-"`
 	UserID               *uuid.UUID  `json:"user_id,omitempty"`
 	User                 *User       `gorm:"foreignKey:UserID" json:"-"`
+	TenantID             *uuid.UUID  `gorm:"index" json:"tenant_id,omitempty"` // Multi-tenancy: operator/organization
+	Tenant               *Tenant     `gorm:"foreignKey:TenantID" json:"-"`
 	Scope                string      `json:"scope"`
 	Audience             string      `json:"audience"`
 	AuthorizationDetails string      `json:"authorization_details,omitempty"` // RAR (RFC 9396)
@@ -185,12 +216,16 @@ type AuditLog struct {
 	User          *User        `gorm:"foreignKey:UserID" json:"-"`
 	ApplicationID *uuid.UUID   `json:"application_id,omitempty"`
 	Application   *Application `gorm:"foreignKey:ApplicationID" json:"-"`
+	TenantID      *uuid.UUID   `gorm:"index" json:"tenant_id,omitempty"` // Multi-tenancy: operator/organization
+	Tenant        *Tenant      `gorm:"foreignKey:TenantID" json:"-"`
 	Action        string       `gorm:"not null" json:"action"`
 	Resource      string       `json:"resource"`
 	ResourceID    string       `json:"resource_id"`
 	IPAddress     string       `json:"ip_address"`
 	UserAgent     string       `json:"user_agent"`
 	StatusCode    int          `json:"status_code"`
+	Scope         string       `json:"scope,omitempty"`          // Scope used in the request
+	CorrelationID string       `json:"correlation_id,omitempty"` // Request correlation ID
 	Metadata      JSONB        `gorm:"type:jsonb" json:"metadata,omitempty"`
 }
 

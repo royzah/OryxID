@@ -123,6 +123,37 @@ func Migrate(db *gorm.DB) error {
 		return fmt.Errorf("failed to create role_permissions table: %w", err)
 	}
 
+	// Create tenants table (multi-tenancy for TrustSky USSP integration)
+	if err := db.Exec(`
+		CREATE TABLE IF NOT EXISTS tenants (
+			id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+			created_at TIMESTAMP WITH TIME ZONE,
+			updated_at TIMESTAMP WITH TIME ZONE,
+			deleted_at TIMESTAMP WITH TIME ZONE,
+			name TEXT NOT NULL,
+			type TEXT NOT NULL DEFAULT 'operator',
+			status TEXT NOT NULL DEFAULT 'active',
+			email TEXT UNIQUE NOT NULL,
+			certificate_subject TEXT,
+			description TEXT,
+			metadata JSONB
+		)
+	`).Error; err != nil {
+		return fmt.Errorf("failed to create tenants table: %w", err)
+	}
+	if err := db.Exec(`CREATE INDEX IF NOT EXISTS idx_tenants_deleted_at ON tenants(deleted_at)`).Error; err != nil {
+		return fmt.Errorf("failed to create tenants index: %w", err)
+	}
+	if err := db.Exec(`CREATE INDEX IF NOT EXISTS idx_tenants_email ON tenants(email)`).Error; err != nil {
+		return fmt.Errorf("failed to create tenants email index: %w", err)
+	}
+	if err := db.Exec(`CREATE INDEX IF NOT EXISTS idx_tenants_type ON tenants(type)`).Error; err != nil {
+		return fmt.Errorf("failed to create tenants type index: %w", err)
+	}
+	if err := db.Exec(`CREATE INDEX IF NOT EXISTS idx_tenants_status ON tenants(status)`).Error; err != nil {
+		return fmt.Errorf("failed to create tenants status index: %w", err)
+	}
+
 	// Create users table
 	if err := db.Exec(`
 		CREATE TABLE IF NOT EXISTS users (
@@ -259,6 +290,9 @@ func Migrate(db *gorm.DB) error {
 	if err := db.Exec(`CREATE INDEX IF NOT EXISTS idx_applications_owner_id ON applications(owner_id)`).Error; err != nil {
 		return fmt.Errorf("failed to create applications owner_id index: %w", err)
 	}
+	// Add tenant_id column for multi-tenancy (TrustSky USSP integration)
+	db.Exec(`ALTER TABLE applications ADD COLUMN IF NOT EXISTS tenant_id UUID REFERENCES tenants(id)`)
+	db.Exec(`CREATE INDEX IF NOT EXISTS idx_applications_tenant_id ON applications(tenant_id)`)
 
 	// Create scopes table
 	if err := db.Exec(`
@@ -399,6 +433,9 @@ func Migrate(db *gorm.DB) error {
 	if err := db.Exec(`CREATE INDEX IF NOT EXISTS idx_tokens_user_id ON tokens(user_id)`).Error; err != nil {
 		return fmt.Errorf("failed to create tokens user_id index: %w", err)
 	}
+	// Add tenant_id column for multi-tenancy (TrustSky USSP integration)
+	db.Exec(`ALTER TABLE tokens ADD COLUMN IF NOT EXISTS tenant_id UUID REFERENCES tenants(id)`)
+	db.Exec(`CREATE INDEX IF NOT EXISTS idx_tokens_tenant_id ON tokens(tenant_id)`)
 
 	// Create audit_logs table
 	if err := db.Exec(`
@@ -435,6 +472,12 @@ func Migrate(db *gorm.DB) error {
 	if err := db.Exec(`CREATE INDEX IF NOT EXISTS idx_audit_logs_action ON audit_logs(action)`).Error; err != nil {
 		return fmt.Errorf("failed to create audit_logs action index: %w", err)
 	}
+	// Add tenant_id and enhanced audit columns for TrustSky USSP integration
+	db.Exec(`ALTER TABLE audit_logs ADD COLUMN IF NOT EXISTS tenant_id UUID REFERENCES tenants(id)`)
+	db.Exec(`ALTER TABLE audit_logs ADD COLUMN IF NOT EXISTS scope TEXT`)
+	db.Exec(`ALTER TABLE audit_logs ADD COLUMN IF NOT EXISTS correlation_id TEXT`)
+	db.Exec(`CREATE INDEX IF NOT EXISTS idx_audit_logs_tenant_id ON audit_logs(tenant_id)`)
+	db.Exec(`CREATE INDEX IF NOT EXISTS idx_audit_logs_correlation_id ON audit_logs(correlation_id)`)
 
 	// Create pushed_authorization_requests table
 	if err := db.Exec(`

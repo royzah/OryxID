@@ -266,6 +266,21 @@ func main() {
 			settingsGroup.POST("/revoke-all-tokens", adminHandler.RevokeAllTokens)
 			settingsGroup.POST("/clear-sessions", adminHandler.ClearAllSessions)
 		}
+
+		// Tenants (multi-tenancy for TrustSky USSP integration)
+		tenantGroup := apiGroup.Group("/tenants")
+		tenantGroup.Use(authMiddleware.RequireAdmin())
+		{
+			tenantGroup.GET("", adminHandler.ListTenants)
+			tenantGroup.POST("", adminHandler.CreateTenant)
+			tenantGroup.GET("/:id", adminHandler.GetTenant)
+			tenantGroup.PUT("/:id", adminHandler.UpdateTenant)
+			tenantGroup.DELETE("/:id", adminHandler.DeleteTenant)
+			tenantGroup.POST("/:id/suspend", adminHandler.SuspendTenant)
+			tenantGroup.POST("/:id/activate", adminHandler.ActivateTenant)
+			tenantGroup.GET("/:id/applications", adminHandler.GetTenantApplications)
+			tenantGroup.PUT("/:id/applications/:app_id", adminHandler.AssignApplicationToTenant)
+		}
 	}
 
 	// Auth endpoints (login for admin panel)

@@ -433,7 +433,17 @@ func (h *OAuthHandler) DiscoveryHandler(c *gin.Context) {
 		"device_authorization_endpoint":              baseURL + "/oauth/device_authorization", // RFC 8628
 		"backchannel_authentication_endpoint":        baseURL + "/oauth/bc-authorize",         // OpenID Connect CIBA
 		"require_pushed_authorization_requests":      false,                                   // PAR is optional (can be made required per client)
-		"scopes_supported":                           []string{"openid", "profile", "email", "offline_access"},
+		// Scopes include OIDC standard scopes and TrustSky USSP integration scopes
+		"scopes_supported": []string{
+			"openid", "profile", "email", "offline_access",
+			// TrustSky USSP scopes (dynamically created via admin API)
+			"trustsky:flight:read", "trustsky:flight:write",
+			"trustsky:nfz:read", "trustsky:nfz:write",
+			"trustsky:telemetry:write",
+			"trustsky:sky:read",
+			"trustsky:operator:read", "trustsky:operator:write",
+			"trustsky:admin",
+		},
 		"response_types_supported":                   []string{"code"}, // Only authorization code flow fully implemented
 		"response_modes_supported":                   []string{"query"},
 		"grant_types_supported":                      []string{"authorization_code", "client_credentials", "refresh_token", "password", "urn:ietf:params:oauth:grant-type:device_code", "urn:ietf:params:oauth:grant-type:token-exchange", "urn:openid:params:grant-type:ciba"},
@@ -442,7 +452,7 @@ func (h *OAuthHandler) DiscoveryHandler(c *gin.Context) {
 		"subject_types_supported":                    []string{"public"},
 		"id_token_signing_alg_values_supported":      []string{"RS256"},
 		"token_endpoint_auth_methods_supported":      []string{"client_secret_basic", "client_secret_post", "private_key_jwt"}, // RFC 7523
-		"claims_supported":                           []string{"sub", "iss", "aud", "exp", "iat", "nbf", "email", "email_verified", "username", "roles"},
+		"claims_supported":                           []string{"sub", "iss", "aud", "exp", "iat", "nbf", "jti", "scope", "client_id", "tenant_id", "email", "email_verified", "username", "roles"},
 		"code_challenge_methods_supported":           []string{"S256"}, // OAuth 2.1 - only S256 allowed
 		// RAR (RFC 9396) support
 		"authorization_details_types_supported":          []string{"payment_initiation", "account_information", "openid_credential"}, // Example types - extensible
