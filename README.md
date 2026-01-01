@@ -8,9 +8,11 @@ OAuth 2.1 / OpenID Connect Authorization Server.
 - OpenID Connect 1.0 Core
 - MFA/2FA with TOTP and backup codes
 - Multiple grant types: Authorization Code, Client Credentials, Device Authorization, Token Exchange, CIBA
+- DPoP - Demonstrating Proof of Possession (RFC 9449)
 - Rich Authorization Requests (RFC 9396)
 - Pushed Authorization Requests (RFC 9126)
 - Token Introspection and Revocation
+- Multi-tenancy with tenant isolation
 
 ## Architecture
 
@@ -111,6 +113,7 @@ Full configuration: see `.env.example`
 ## Security
 
 - PKCE required for authorization code flow (S256 only)
+- DPoP for sender-constrained tokens (RFC 9449)
 - Refresh token rotation with reuse detection
 - CSRF protection with SameSite cookies
 - Rate limiting (configurable)
