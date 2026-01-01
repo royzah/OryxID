@@ -158,7 +158,7 @@
 	<div class="flex items-center justify-between">
 		<div>
 			<h1 class="text-2xl font-semibold text-gray-900">Tenants</h1>
-			<p class="text-gray-500 mt-1">Manage multi-tenant organizations (TrustSky USSP)</p>
+			<p class="text-gray-500 mt-1">Manage multi-tenant organizations</p>
 		</div>
 		<Button on:click={openCreateModal}>
 			<svg class="w-4 h-4 mr-2" fill="none" viewBox="0 0 24 24" stroke="currentColor">
