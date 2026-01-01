@@ -1,56 +1,43 @@
 # TrustSky USSP Integration Guide
 
-This document explains how to integrate TrustSky with OryxID as the authentication provider.
+## OryxID Capabilities
 
-## What OryxID Provides
+| Requirement | Feature | Status |
+|-------------|---------|--------|
+| JWT Authentication | RS256 signed JWTs | Ready |
+| JWKS Endpoint | `/.well-known/jwks.json` | Ready |
+| Multi-tenancy | `tenant_id` claim in tokens | Ready |
+| Scope Hierarchy | Auto-expansion (write includes read) | Ready |
+| Token Introspection | RFC 7662 `/oauth/introspect` | Ready |
+| DPoP | RFC 9449 sender-constrained tokens | Ready |
+| Client Credentials | Machine-to-machine auth | Ready |
+| Token Revocation | RFC 7009 `/oauth/revoke` | Ready |
 
-| TrustSky Requirement | OryxID Feature | Status |
-|---------------------|----------------|--------|
-| JWT Authentication | RS256 signed JWTs with configurable issuer | Ready |
-| JWKS Endpoint | `/.well-known/jwks.json` for public key distribution | Ready |
-| Multi-tenancy | `tenant_id` claim in all tokens | Ready |
-| Scope Hierarchy | `trustsky:admin` -> all, `write` -> `read` auto-expansion | Ready |
-| Token Introspection | RFC 7662 compliant `/oauth/introspect` endpoint | Ready |
-| DPoP (Optional) | RFC 9449 sender-constrained tokens | Ready |
-| Client Credentials | Machine-to-machine authentication | Ready |
-| Token Revocation | RFC 7009 compliant `/oauth/revoke` endpoint | Ready |
-
-## TrustSky Environment Configuration
-
-Add these environment variables to your TrustSky deployment:
+## TrustSky Environment Variables
 
 ```bash
-# =============================================================================
-# AUTHENTICATION (OryxID)
-# =============================================================================
 AUTH_ENABLED=true
 AUTH_ISSUER=http://localhost:9000
-AUTH_JWKS_URL=http://localhost:9000/.well-known/jwks.json
+AUTH_JWKS_URL=${AUTH_ISSUER}/.well-known/jwks.json
 AUTH_AUDIENCE=trustsky
-
-# Clock skew tolerance for JWT validation
 AUTH_CLOCK_SKEW=30s
-
-# Client credentials for obtaining access tokens
-AUTH_CLIENT_ID=your-trustsky-client-id
-AUTH_CLIENT_SECRET=your-trustsky-client-secret
+AUTH_CLIENT_ID=<from-oryxid>
+AUTH_CLIENT_SECRET=<from-oryxid>
 ```
 
-## OryxID Endpoints
+## Endpoints
 
-| Purpose | Endpoint |
-|---------|----------|
-| OpenID Discovery | `$AUTH_ISSUER/.well-known/openid-configuration` |
-| JWKS (Public Keys) | `$AUTH_ISSUER/.well-known/jwks.json` |
-| Token Endpoint | `$AUTH_ISSUER/oauth/token` |
+| Purpose | URL |
+|---------|-----|
+| Discovery | `$AUTH_ISSUER/.well-known/openid-configuration` |
+| JWKS | `$AUTH_ISSUER/.well-known/jwks.json` |
+| Token | `$AUTH_ISSUER/oauth/token` |
 | Introspection | `$AUTH_ISSUER/oauth/introspect` |
 | Revocation | `$AUTH_ISSUER/oauth/revoke` |
 
-## Setup Steps
+## Setup
 
-### 1. Create TrustSky Application in OryxID
-
-Create an application for TrustSky backend services:
+### 1. Create Application
 
 ```bash
 curl -X POST $AUTH_ISSUER/api/applications \
@@ -64,24 +51,11 @@ curl -X POST $AUTH_ISSUER/api/applications \
   }'
 ```
 
-Response:
-```json
-{
-  "id": "uuid",
-  "client_id": "ts_abc123",
-  "client_secret": "secret_xyz789",
-  "name": "TrustSky Backend"
-}
-```
-
-Use these values for `AUTH_CLIENT_ID` and `AUTH_CLIENT_SECRET`.
+Response contains `client_id` and `client_secret` for `AUTH_CLIENT_ID` and `AUTH_CLIENT_SECRET`.
 
 ### 2. Create Scopes
 
-Create the TrustSky scopes in OryxID:
-
 ```bash
-# Create scopes
 for scope in trustsky:admin trustsky:flight:read trustsky:flight:write \
              trustsky:nfz:read trustsky:nfz:write trustsky:telemetry:write \
              trustsky:sky:read trustsky:operator:read trustsky:operator:write; do
@@ -98,16 +72,12 @@ done
 curl -X PUT $AUTH_ISSUER/api/applications/<app_id>/scopes \
   -H "Authorization: Bearer <admin_token>" \
   -H "Content-Type: application/json" \
-  -d '{
-    "scope_ids": ["<scope_id_1>", "<scope_id_2>", "..."]
-  }'
+  -d '{"scope_ids": ["<scope_id_1>", "<scope_id_2>"]}'
 ```
 
-## Obtaining Access Tokens
+## Token Operations
 
-### Client Credentials Grant
-
-TrustSky backend services obtain tokens using client credentials:
+### Obtain Token
 
 ```bash
 curl -X POST $AUTH_ISSUER/oauth/token \
@@ -121,18 +91,14 @@ curl -X POST $AUTH_ISSUER/oauth/token \
 Response:
 ```json
 {
-  "access_token": "eyJhbGciOiJSUzI1NiIsInR5cCI6IkpXVCJ9...",
+  "access_token": "eyJhbGciOiJSUzI1NiJ9...",
   "token_type": "Bearer",
   "expires_in": 3600,
   "scope": "trustsky:flight:write trustsky:flight:read"
 }
 ```
 
-Note: Scope expansion is automatic. Requesting `trustsky:flight:write` returns both `write` and `read`.
-
-### Token Structure
-
-Decoded JWT payload:
+### Token Claims
 
 ```json
 {
@@ -143,27 +109,41 @@ Decoded JWT payload:
   "iat": 1704063600,
   "scope": "trustsky:flight:write trustsky:flight:read",
   "client_id": "$AUTH_CLIENT_ID",
-  "tenant_id": "uuid-of-tenant"
+  "tenant_id": "uuid"
 }
 ```
 
-## Token Validation in TrustSky
+### Introspect Token
 
-### Option 1: JWKS Validation (Recommended)
+```bash
+curl -X POST $AUTH_ISSUER/oauth/introspect \
+  -u "$AUTH_CLIENT_ID:$AUTH_CLIENT_SECRET" \
+  -d "token=<access_token>"
+```
 
-Validate JWTs locally using the JWKS endpoint:
+### Revoke Token
 
+```bash
+curl -X POST $AUTH_ISSUER/oauth/revoke \
+  -u "$AUTH_CLIENT_ID:$AUTH_CLIENT_SECRET" \
+  -d "token=<access_token>"
+```
+
+## Token Validation
+
+### JWKS Validation (Recommended)
+
+Go:
 ```go
-// Go example
 import "github.com/golang-jwt/jwt/v5"
 
 // Fetch JWKS from $AUTH_JWKS_URL
-// Validate token signature using public key
-// Check claims: iss, aud, exp, scope
+// Validate signature with public key
+// Check iss, aud, exp, scope claims
 ```
 
+Node.js:
 ```javascript
-// Node.js example using jose
 import { createRemoteJWKSet, jwtVerify } from 'jose';
 
 const JWKS = createRemoteJWKSet(new URL(process.env.AUTH_JWKS_URL));
@@ -177,14 +157,11 @@ async function validateToken(token) {
 }
 ```
 
-### Option 2: Token Introspection
-
-For real-time token status (checks revocation):
+### Introspection Validation
 
 ```bash
 curl -X POST $AUTH_ISSUER/oauth/introspect \
   -u "$AUTH_CLIENT_ID:$AUTH_CLIENT_SECRET" \
-  -H "Content-Type: application/x-www-form-urlencoded" \
   -d "token=<access_token>"
 ```
 
@@ -194,56 +171,37 @@ Response:
   "active": true,
   "scope": "trustsky:flight:write trustsky:flight:read",
   "client_id": "ts_abc123",
-  "tenant_id": "uuid-of-tenant",
-  "exp": 1704067200,
-  "iat": 1704063600
+  "tenant_id": "uuid",
+  "exp": 1704067200
 }
 ```
 
 ## Scope Hierarchy
 
-OryxID automatically expands scopes based on hierarchy:
+OryxID auto-expands scopes:
 
-```
-trustsky:admin
-    |
-    +-- trustsky:flight:write --> trustsky:flight:read
-    +-- trustsky:nfz:write --> trustsky:nfz:read
-    +-- trustsky:operator:write --> trustsky:operator:read
-    +-- trustsky:telemetry:write
-    +-- trustsky:sky:read
-```
-
-| Requested Scope | Token Contains |
-|-----------------|----------------|
+| Requested | Token Contains |
+|-----------|----------------|
 | `trustsky:admin` | All trustsky:* scopes |
-| `trustsky:flight:write` | `trustsky:flight:write` + `trustsky:flight:read` |
-| `trustsky:nfz:write` | `trustsky:nfz:write` + `trustsky:nfz:read` |
-| `trustsky:flight:read` | `trustsky:flight:read` only |
+| `trustsky:flight:write` | `flight:write` + `flight:read` |
+| `trustsky:nfz:write` | `nfz:write` + `nfz:read` |
+| `trustsky:operator:write` | `operator:write` + `operator:read` |
+| `trustsky:flight:read` | `flight:read` only |
 
-### Checking Scopes in Code
+### Scope Check Example
 
 ```go
-// Go example
-func hasScope(tokenScopes, requiredScope string) bool {
-    scopes := strings.Split(tokenScopes, " ")
-    for _, s := range scopes {
-        if s == requiredScope {
+func hasScope(tokenScopes, required string) bool {
+    for _, s := range strings.Split(tokenScopes, " ") {
+        if s == required {
             return true
         }
     }
     return false
 }
-
-// Usage: check if token has flight:read access
-if hasScope(claims.Scope, "trustsky:flight:read") {
-    // Allow access
-}
 ```
 
 ## Multi-Tenancy
-
-Each operator/organization has a tenant in OryxID. The `tenant_id` claim identifies which tenant the token belongs to.
 
 ### Create Tenant
 
@@ -262,23 +220,19 @@ curl -X POST $AUTH_ISSUER/api/tenants \
 
 | Type | Description |
 |------|-------------|
-| `operator` | Commercial/recreational drone operators |
-| `authority` | Regulatory bodies, air traffic control |
-| `emergency_service` | Police, fire, medical services |
+| `operator` | Drone operators |
+| `authority` | Regulatory bodies |
+| `emergency_service` | Emergency services |
 
 ### Tenant Status
 
 | Status | Token Issuance |
 |--------|----------------|
 | `active` | Allowed |
-| `suspended` | Blocked (returns error) |
-| `revoked` | Blocked (returns error) |
-
-TrustSky can rely on OryxID blocking tokens for suspended/revoked tenants.
+| `suspended` | Blocked |
+| `revoked` | Blocked |
 
 ## DPoP (Optional)
-
-For sender-constrained tokens, use DPoP (RFC 9449).
 
 ### Token Request with DPoP
 
@@ -298,7 +252,7 @@ Response:
 }
 ```
 
-### DPoP Proof Structure
+### DPoP Proof
 
 Header:
 ```json
@@ -319,100 +273,31 @@ Payload:
 }
 ```
 
-### DPoP-Bound Token
+### DPoP Token Contains
 
-The access token contains a confirmation claim:
 ```json
 {
-  "cnf": {
-    "jkt": "sha256-thumbprint-of-client-jwk"
-  }
+  "cnf": { "jkt": "sha256-thumbprint" }
 }
 ```
 
-### Using DPoP Token
+## Errors
 
-```bash
-# Include ath (access token hash) for resource requests
-curl -X GET $TRUSTSKY_API/flights \
-  -H "Authorization: DPoP $ACCESS_TOKEN" \
-  -H "DPoP: <dpop_proof_with_ath>"
-```
-
-## Error Handling
-
-### Token Request Errors
-
-| Error | Description |
-|-------|-------------|
-| `invalid_client` | Wrong client_id or client_secret |
-| `tenant is suspended` | Tenant has been suspended |
-| `tenant is revoked` | Tenant has been revoked |
-| `invalid_scope` | Requested scope not allowed for client |
-| `invalid_dpop_proof` | DPoP proof validation failed |
-
-### Introspection Response
-
-Inactive token:
-```json
-{
-  "active": false
-}
-```
-
-## Quick Reference
-
-### Environment Variables Summary
-
-```bash
-# Required
-AUTH_ENABLED=true
-AUTH_ISSUER=http://localhost:9000
-AUTH_JWKS_URL=${AUTH_ISSUER}/.well-known/jwks.json
-AUTH_AUDIENCE=trustsky
-AUTH_CLIENT_ID=<from-oryxid-application>
-AUTH_CLIENT_SECRET=<from-oryxid-application>
-
-# Optional
-AUTH_CLOCK_SKEW=30s
-AUTH_INTROSPECT_URL=${AUTH_ISSUER}/oauth/introspect
-AUTH_TOKEN_URL=${AUTH_ISSUER}/oauth/token
-```
-
-### Common Operations
-
-```bash
-# Get access token
-curl -X POST $AUTH_ISSUER/oauth/token \
-  -u "$AUTH_CLIENT_ID:$AUTH_CLIENT_SECRET" \
-  -d "grant_type=client_credentials&scope=trustsky:flight:write"
-
-# Validate token
-curl -X POST $AUTH_ISSUER/oauth/introspect \
-  -u "$AUTH_CLIENT_ID:$AUTH_CLIENT_SECRET" \
-  -d "token=$ACCESS_TOKEN"
-
-# Revoke token
-curl -X POST $AUTH_ISSUER/oauth/revoke \
-  -u "$AUTH_CLIENT_ID:$AUTH_CLIENT_SECRET" \
-  -d "token=$ACCESS_TOKEN"
-
-# Get JWKS
-curl $AUTH_ISSUER/.well-known/jwks.json
-
-# Get OpenID configuration
-curl $AUTH_ISSUER/.well-known/openid-configuration
-```
+| Error | Cause |
+|-------|-------|
+| `invalid_client` | Wrong client_id or secret |
+| `tenant is suspended` | Tenant suspended |
+| `tenant is revoked` | Tenant revoked |
+| `invalid_scope` | Scope not allowed |
+| `invalid_dpop_proof` | DPoP validation failed |
 
 ## Checklist
 
-Before production deployment:
-
-- [ ] OryxID deployed and accessible at `$AUTH_ISSUER`
-- [ ] TrustSky application created with `AUTH_CLIENT_ID` and `AUTH_CLIENT_SECRET`
-- [ ] Required scopes created and assigned to application
-- [ ] Tenants created for each operator/organization
-- [ ] TrustSky configured with environment variables above
-- [ ] Token validation working (JWKS or introspection)
-- [ ] Scope checking implemented in TrustSky APIs
-- [ ] Tenant isolation verified (check `tenant_id` in requests)
+- [ ] OryxID deployed at `$AUTH_ISSUER`
+- [ ] Application created with client credentials
+- [ ] Scopes created and assigned
+- [ ] Tenants created for operators
+- [ ] Environment variables configured
+- [ ] Token validation implemented
+- [ ] Scope checking implemented
+- [ ] Tenant isolation verified
