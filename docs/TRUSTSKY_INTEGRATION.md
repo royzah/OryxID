@@ -13,7 +13,63 @@
 | Client Credentials | Machine-to-machine auth | Ready |
 | Token Revocation | RFC 7009 `/oauth/revoke` | Ready |
 
-## TrustSky Environment Variables
+---
+
+## Part 1: OryxID Admin Setup
+
+This section is for OryxID administrators. Configure via OryxID frontend.
+
+### 1.1 Create Scopes
+
+Navigate to **Scopes** in OryxID frontend and create:
+
+| Scope Name | Description |
+|------------|-------------|
+| `trustsky:admin` | Full admin access (expands to all scopes) |
+| `trustsky:flight:read` | Read flight data |
+| `trustsky:flight:write` | Write flight data (includes read) |
+| `trustsky:nfz:read` | Read no-fly zones |
+| `trustsky:nfz:write` | Write no-fly zones (includes read) |
+| `trustsky:operator:read` | Read operator data |
+| `trustsky:operator:write` | Write operator data (includes read) |
+| `trustsky:telemetry:write` | Write telemetry data |
+| `trustsky:sky:read` | Read sky data |
+
+### 1.2 Create Tenant (if multi-tenancy needed)
+
+Navigate to **Tenants** and create:
+
+| Field | Value |
+|-------|-------|
+| Name | Organization name (e.g., "Acme Drone Operations") |
+| Type | `operator`, `authority`, or `emergency_service` |
+| Email | Contact email |
+| Status | `active` |
+
+### 1.3 Create Application for TrustSky
+
+Navigate to **Applications** and create:
+
+| Field | Value |
+|-------|-------|
+| Name | `TrustSky Backend` |
+| Client Type | `confidential` |
+| Grant Types | `client_credentials` |
+| Token Endpoint Auth | `client_secret_basic` |
+| Scopes | Select all trustsky:* scopes needed |
+| Tenant | Select tenant (if multi-tenancy) |
+
+After creation, copy:
+- **Client ID** → provide to TrustSky as `AUTH_CLIENT_ID`
+- **Client Secret** → provide to TrustSky as `AUTH_CLIENT_SECRET`
+
+---
+
+## Part 2: TrustSky Client Configuration
+
+This section is for TrustSky deployment. Use credentials provided by OryxID admin.
+
+### 2.1 Environment Variables
 
 ```bash
 AUTH_ENABLED=true
@@ -21,71 +77,20 @@ AUTH_ISSUER=http://localhost:9000
 AUTH_JWKS_URL=${AUTH_ISSUER}/.well-known/jwks.json
 AUTH_AUDIENCE=trustsky
 AUTH_CLOCK_SKEW=30s
-AUTH_CLIENT_ID=<from-oryxid>
-AUTH_CLIENT_SECRET=<from-oryxid>
+AUTH_CLIENT_ID=<provided-by-oryxid-admin>
+AUTH_CLIENT_SECRET=<provided-by-oryxid-admin>
 ```
 
-## Endpoints
+### 2.2 Obtain Access Token
 
-| Purpose | URL |
-|---------|-----|
-| Discovery | `$AUTH_ISSUER/.well-known/openid-configuration` |
-| JWKS | `$AUTH_ISSUER/.well-known/jwks.json` |
-| Token | `$AUTH_ISSUER/oauth/token` |
-| Introspection | `$AUTH_ISSUER/oauth/introspect` |
-| Revocation | `$AUTH_ISSUER/oauth/revoke` |
-
-## Setup
-
-### 1. Create Application
-
-```bash
-curl -X POST $AUTH_ISSUER/api/applications \
-  -H "Authorization: Bearer <admin_token>" \
-  -H "Content-Type: application/json" \
-  -d '{
-    "name": "TrustSky Backend",
-    "client_type": "confidential",
-    "grant_types": ["client_credentials"],
-    "token_endpoint_auth_method": "client_secret_basic"
-  }'
-```
-
-Response contains `client_id` and `client_secret` for `AUTH_CLIENT_ID` and `AUTH_CLIENT_SECRET`.
-
-### 2. Create Scopes
-
-```bash
-for scope in trustsky:admin trustsky:flight:read trustsky:flight:write \
-             trustsky:nfz:read trustsky:nfz:write trustsky:telemetry:write \
-             trustsky:sky:read trustsky:operator:read trustsky:operator:write; do
-  curl -X POST $AUTH_ISSUER/api/scopes \
-    -H "Authorization: Bearer <admin_token>" \
-    -H "Content-Type: application/json" \
-    -d "{\"name\": \"$scope\"}"
-done
-```
-
-### 3. Assign Scopes to Application
-
-```bash
-curl -X PUT $AUTH_ISSUER/api/applications/<app_id>/scopes \
-  -H "Authorization: Bearer <admin_token>" \
-  -H "Content-Type: application/json" \
-  -d '{"scope_ids": ["<scope_id_1>", "<scope_id_2>"]}'
-```
-
-## Token Operations
-
-### Obtain Token
+Use `AUTH_CLIENT_ID` and `AUTH_CLIENT_SECRET` to get a bearer token:
 
 ```bash
 curl -X POST $AUTH_ISSUER/oauth/token \
   -u "$AUTH_CLIENT_ID:$AUTH_CLIENT_SECRET" \
   -H "Content-Type: application/x-www-form-urlencoded" \
   -d "grant_type=client_credentials" \
-  -d "scope=trustsky:flight:write" \
-  -d "audience=$AUTH_AUDIENCE"
+  -d "scope=trustsky:flight:write"
 ```
 
 Response:
@@ -98,36 +103,42 @@ Response:
 }
 ```
 
-### Token Claims
+Use `access_token` as bearer token for API requests:
+```bash
+curl -X GET $API_URL/flights \
+  -H "Authorization: Bearer $ACCESS_TOKEN"
+```
+
+### 2.3 Token Claims
+
+Decoded JWT contains:
 
 ```json
 {
-  "iss": "$AUTH_ISSUER",
-  "sub": "$AUTH_CLIENT_ID",
-  "aud": "$AUTH_AUDIENCE",
+  "iss": "http://localhost:9000",
+  "sub": "client-id",
+  "aud": "trustsky",
   "exp": 1704067200,
   "iat": 1704063600,
   "scope": "trustsky:flight:write trustsky:flight:read",
-  "client_id": "$AUTH_CLIENT_ID",
+  "client_id": "client-id",
   "tenant_id": "uuid"
 }
 ```
 
-### Introspect Token
+---
 
-```bash
-curl -X POST $AUTH_ISSUER/oauth/introspect \
-  -u "$AUTH_CLIENT_ID:$AUTH_CLIENT_SECRET" \
-  -d "token=<access_token>"
-```
+## Endpoints
 
-### Revoke Token
+| Purpose | URL |
+|---------|-----|
+| Discovery | `$AUTH_ISSUER/.well-known/openid-configuration` |
+| JWKS | `$AUTH_ISSUER/.well-known/jwks.json` |
+| Token | `$AUTH_ISSUER/oauth/token` |
+| Introspection | `$AUTH_ISSUER/oauth/introspect` |
+| Revocation | `$AUTH_ISSUER/oauth/revoke` |
 
-```bash
-curl -X POST $AUTH_ISSUER/oauth/revoke \
-  -u "$AUTH_CLIENT_ID:$AUTH_CLIENT_SECRET" \
-  -d "token=<access_token>"
-```
+---
 
 ## Token Validation
 
@@ -157,7 +168,7 @@ async function validateToken(token) {
 }
 ```
 
-### Introspection Validation
+### Introspection
 
 ```bash
 curl -X POST $AUTH_ISSUER/oauth/introspect \
@@ -170,11 +181,13 @@ Response:
 {
   "active": true,
   "scope": "trustsky:flight:write trustsky:flight:read",
-  "client_id": "ts_abc123",
+  "client_id": "client-id",
   "tenant_id": "uuid",
   "exp": 1704067200
 }
 ```
+
+---
 
 ## Scope Hierarchy
 
@@ -188,49 +201,17 @@ OryxID auto-expands scopes:
 | `trustsky:operator:write` | `operator:write` + `operator:read` |
 | `trustsky:flight:read` | `flight:read` only |
 
-### Scope Check Example
+---
 
-```go
-func hasScope(tokenScopes, required string) bool {
-    for _, s := range strings.Split(tokenScopes, " ") {
-        if s == required {
-            return true
-        }
-    }
-    return false
-}
-```
-
-## Multi-Tenancy
-
-### Create Tenant
-
-```bash
-curl -X POST $AUTH_ISSUER/api/tenants \
-  -H "Authorization: Bearer <admin_token>" \
-  -H "Content-Type: application/json" \
-  -d '{
-    "name": "Acme Drone Operations",
-    "type": "operator",
-    "email": "admin@acme.com"
-  }'
-```
-
-### Tenant Types
-
-| Type | Description |
-|------|-------------|
-| `operator` | Drone operators |
-| `authority` | Regulatory bodies |
-| `emergency_service` | Emergency services |
-
-### Tenant Status
+## Tenant Status
 
 | Status | Token Issuance |
 |--------|----------------|
 | `active` | Allowed |
 | `suspended` | Blocked |
 | `revoked` | Blocked |
+
+---
 
 ## DPoP (Optional)
 
@@ -273,13 +254,7 @@ Payload:
 }
 ```
 
-### DPoP Token Contains
-
-```json
-{
-  "cnf": { "jkt": "sha256-thumbprint" }
-}
-```
+---
 
 ## Errors
 
@@ -291,13 +266,18 @@ Payload:
 | `invalid_scope` | Scope not allowed |
 | `invalid_dpop_proof` | DPoP validation failed |
 
+---
+
 ## Checklist
 
-- [ ] OryxID deployed at `$AUTH_ISSUER`
-- [ ] Application created with client credentials
-- [ ] Scopes created and assigned
-- [ ] Tenants created for operators
+### OryxID Admin
+- [ ] Scopes created (all trustsky:* scopes)
+- [ ] Tenant created (if needed)
+- [ ] Application created with correct settings
+- [ ] Client ID and Secret provided to TrustSky
+
+### TrustSky
 - [ ] Environment variables configured
+- [ ] Token generation working
 - [ ] Token validation implemented
 - [ ] Scope checking implemented
-- [ ] Tenant isolation verified
