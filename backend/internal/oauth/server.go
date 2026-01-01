@@ -21,8 +21,9 @@ import (
 )
 
 type Server struct {
-	db           *gorm.DB
-	TokenManager *tokens.TokenManager
+	db            *gorm.DB
+	TokenManager  *tokens.TokenManager
+	DPoPValidator *DPoPValidator // DPoP (RFC 9449) validator
 }
 
 type AuthorizeRequest struct {
@@ -61,6 +62,8 @@ type TokenRequest struct {
 	Resource           string // Target resource/API
 	// CIBA parameters
 	AuthReqID string // For CIBA grant type
+	// DPoP (RFC 9449) parameters
+	DPoPThumbprint string // JWK SHA-256 thumbprint from validated DPoP proof
 }
 
 // DeviceAuthorizationRequest represents a device authorization request (RFC 8628)
@@ -130,8 +133,9 @@ func (e *CIBAError) Error() string {
 
 func NewServer(db *gorm.DB, tm *tokens.TokenManager) *Server {
 	return &Server{
-		db:           db,
-		TokenManager: tm,
+		db:            db,
+		TokenManager:  tm,
+		DPoPValidator: NewDPoPValidator(),
 	}
 }
 
@@ -265,8 +269,8 @@ func (s *Server) ExchangeAuthorizationCode(req *TokenRequest) (*tokens.TokenResp
 	authCode.Used = true
 	s.db.Save(&authCode)
 
-	// Generate tokens
-	accessToken, err := s.TokenManager.GenerateAccessToken(&app, authCode.User, authCode.Scope, authCode.Audience, nil)
+	// Generate tokens (with optional DPoP binding)
+	accessToken, err := s.TokenManager.GenerateAccessTokenWithDPoP(&app, authCode.User, authCode.Scope, authCode.Audience, nil, req.DPoPThumbprint)
 	if err != nil {
 		return nil, err
 	}
@@ -276,9 +280,15 @@ func (s *Server) ExchangeAuthorizationCode(req *TokenRequest) (*tokens.TokenResp
 		return nil, err
 	}
 
+	// Determine token type based on DPoP binding
+	tokenType := "Bearer"
+	if req.DPoPThumbprint != "" {
+		tokenType = "DPoP"
+	}
+
 	response := &tokens.TokenResponse{
 		AccessToken:          accessToken,
-		TokenType:            "Bearer",
+		TokenType:            tokenType,
 		ExpiresIn:            3600,
 		RefreshToken:         refreshToken,
 		Scope:                authCode.Scope,
@@ -352,15 +362,21 @@ func (s *Server) ClientCredentialsGrant(req *TokenRequest) (*tokens.TokenRespons
 		}
 	}
 
-	// Generate access token
-	accessToken, err := s.TokenManager.GenerateAccessToken(&app, nil, scope, req.Audience, nil)
+	// Generate access token (with optional DPoP binding)
+	accessToken, err := s.TokenManager.GenerateAccessTokenWithDPoP(&app, nil, scope, req.Audience, nil, req.DPoPThumbprint)
 	if err != nil {
 		return nil, err
 	}
 
+	// Determine token type based on DPoP binding
+	tokenType := "Bearer"
+	if req.DPoPThumbprint != "" {
+		tokenType = "DPoP"
+	}
+
 	response := &tokens.TokenResponse{
 		AccessToken: accessToken,
-		TokenType:   "Bearer",
+		TokenType:   tokenType,
 		ExpiresIn:   3600,
 		Scope:       scope,
 	}
@@ -448,8 +464,8 @@ func (s *Server) RefreshTokenGrant(req *TokenRequest) (*tokens.TokenResponse, er
 		audience = claims.Audience[0]
 	}
 
-	// Generate new access token with potentially downscaled scope
-	accessToken, err := s.TokenManager.GenerateAccessToken(&app, user, requestedScope, audience, nil)
+	// Generate new access token with potentially downscaled scope (with optional DPoP binding)
+	accessToken, err := s.TokenManager.GenerateAccessTokenWithDPoP(&app, user, requestedScope, audience, nil, req.DPoPThumbprint)
 	if err != nil {
 		return nil, err
 	}
@@ -465,9 +481,15 @@ func (s *Server) RefreshTokenGrant(req *TokenRequest) (*tokens.TokenResponse, er
 		Where("token_hash = ? AND token_type = ?", tokenHash, "refresh").
 		Update("revoked", true)
 
+	// Determine token type based on DPoP binding
+	tokenType := "Bearer"
+	if req.DPoPThumbprint != "" {
+		tokenType = "DPoP"
+	}
+
 	response := &tokens.TokenResponse{
 		AccessToken:  accessToken,
-		TokenType:    "Bearer",
+		TokenType:    tokenType,
 		ExpiresIn:    3600,
 		RefreshToken: newRefreshToken, // Return new refresh token (OAuth 2.1 best practice)
 		Scope:        requestedScope,  // Return actual scope (might be downscaled)

@@ -178,3 +178,35 @@ export interface ApiError {
 	error: string;
 	message?: string;
 }
+
+// TrustSky Multi-tenancy support
+export interface Tenant {
+	id: string;
+	name: string;
+	type: 'operator' | 'authority' | 'emergency_service';
+	status: 'active' | 'suspended' | 'revoked';
+	email: string;
+	certificate_subject?: string;
+	description?: string;
+	metadata?: Record<string, unknown>;
+	created_at: string;
+	updated_at: string;
+}
+
+export interface CreateTenantRequest {
+	name: string;
+	type: 'operator' | 'authority' | 'emergency_service';
+	email: string;
+	certificate_subject?: string;
+	description?: string;
+	metadata?: Record<string, unknown>;
+}
+
+export interface UpdateTenantRequest {
+	name?: string;
+	type?: 'operator' | 'authority' | 'emergency_service';
+	email?: string;
+	certificate_subject?: string;
+	description?: string;
+	metadata?: Record<string, unknown>;
+}

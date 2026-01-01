@@ -139,6 +139,27 @@ func (h *OAuthHandler) TokenHandler(c *gin.Context) {
 	req.Username = c.PostForm("username")
 	req.Password = c.PostForm("password")
 
+	// DPoP (RFC 9449) - Validate DPoP proof if present
+	dpopProof := c.GetHeader("DPoP")
+	if dpopProof != "" {
+		// Build the full request URI for DPoP validation
+		httpMethod := c.Request.Method
+		httpURI := getBaseURL(c) + c.Request.URL.Path
+
+		// Validate the DPoP proof
+		proof, err := h.server.DPoPValidator.ValidateProof(dpopProof, httpMethod, httpURI, "")
+		if err != nil {
+			c.JSON(http.StatusBadRequest, gin.H{
+				"error":             "invalid_dpop_proof",
+				"error_description": err.Error(),
+			})
+			return
+		}
+
+		// Store the thumbprint for token binding
+		req.DPoPThumbprint = proof.Thumbprint
+	}
+
 	// Get client credentials - support multiple authentication methods
 	var clientID, clientSecret string
 	var app *database.Application
@@ -457,6 +478,8 @@ func (h *OAuthHandler) DiscoveryHandler(c *gin.Context) {
 		// RAR (RFC 9396) support
 		"authorization_details_types_supported":          []string{"payment_initiation", "account_information", "openid_credential"}, // Example types - extensible
 		"authorization_response_iss_parameter_supported": true,                                                                       // RFC 9207
+		// DPoP (RFC 9449) support
+		"dpop_signing_alg_values_supported": []string{"RS256", "RS384", "RS512", "ES256", "ES384", "ES512"},
 	}
 
 	c.JSON(http.StatusOK, discovery)
