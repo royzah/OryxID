@@ -37,12 +37,12 @@ type DPoPProof struct {
 	JWK       json.RawMessage `json:"jwk"`
 
 	// Claims
-	JTI        string `json:"jti"`        // Unique identifier
-	HTTPMethod string `json:"htm"`        // HTTP method
-	HTTPUri    string `json:"htu"`        // HTTP URI
-	IssuedAt   int64  `json:"iat"`        // Issued at timestamp
-	ATH        string `json:"ath"`        // Access token hash (for resource requests)
-	Nonce      string `json:"nonce"`      // Server-provided nonce (optional)
+	JTI        string `json:"jti"`   // Unique identifier
+	HTTPMethod string `json:"htm"`   // HTTP method
+	HTTPUri    string `json:"htu"`   // HTTP URI
+	IssuedAt   int64  `json:"iat"`   // Issued at timestamp
+	ATH        string `json:"ath"`   // Access token hash (for resource requests)
+	Nonce      string `json:"nonce"` // Server-provided nonce (optional)
 
 	// Parsed public key
 	PublicKey crypto.PublicKey
