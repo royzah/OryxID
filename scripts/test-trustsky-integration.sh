@@ -137,8 +137,35 @@ else
 fi
 echo ""
 
-# 7. Admin Scope Expansion
-echo "=== 7. Admin Scope Expansion ==="
+# 7. Audience (API Resource) Test
+echo "=== 7. Audience Parameter ==="
+echo "POST $AUTH_ISSUER/oauth/token (with audience=trustsky)"
+AUD_TOKEN_RESPONSE=$(curl -s $CURL_OPTS -X POST $AUTH_ISSUER/oauth/token \
+  -u "$AUTH_CLIENT_ID:$AUTH_CLIENT_SECRET" \
+  -H "Content-Type: application/x-www-form-urlencoded" \
+  -d "grant_type=client_credentials" \
+  -d "scope=trustsky:flight:read" \
+  -d "audience=trustsky")
+
+if echo "$AUD_TOKEN_RESPONSE" | grep -q "access_token"; then
+    AUD_TOKEN=$(echo "$AUD_TOKEN_RESPONSE" | python3 -c "import sys,json; print(json.load(sys.stdin)['access_token'])")
+    AUD_PAYLOAD=$(echo "$AUD_TOKEN" | cut -d'.' -f2 | base64 -d 2>/dev/null)
+    AUD_CLAIM=$(echo "$AUD_PAYLOAD" | python3 -c "import sys,json; print(json.load(sys.stdin).get('aud',''))" 2>/dev/null)
+    if [ "$AUD_CLAIM" = "trustsky" ]; then
+        echo "[PASS] Audience claim present in token"
+        echo "aud: $AUD_CLAIM"
+    else
+        echo "[INFO] Audience claim: $AUD_CLAIM (expected: trustsky)"
+        echo "       Ensure API Resource 'trustsky' exists in admin UI"
+    fi
+else
+    echo "[INFO] Token request with audience parameter"
+    echo "       Create API Resource in admin UI to enable audience claim"
+fi
+echo ""
+
+# 8. Admin Scope Expansion
+echo "=== 8. Admin Scope Expansion ==="
 ADMIN_TOKEN=$(curl -s $CURL_OPTS -X POST $AUTH_ISSUER/oauth/token \
   -u "$AUTH_CLIENT_ID:$AUTH_CLIENT_SECRET" \
   -H "Content-Type: application/x-www-form-urlencoded" \
@@ -154,8 +181,8 @@ else
 fi
 echo ""
 
-# 8. Token Revocation
-echo "=== 8. Token Revocation ==="
+# 9. Token Revocation
+echo "=== 9. Token Revocation ==="
 echo "POST $AUTH_ISSUER/oauth/revoke"
 REVOKE=$(curl -s $CURL_OPTS -X POST $AUTH_ISSUER/oauth/revoke \
   -u "$AUTH_CLIENT_ID:$AUTH_CLIENT_SECRET" \

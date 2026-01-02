@@ -464,6 +464,53 @@ func (s *FlightService) ListFlights(ctx context.Context, claims *Claims) ([]Flig
 
 ---
 
+## API Resources (Audiences)
+
+API Resources allow registering protected APIs and defining which scopes each API accepts. The identifier appears in the `aud` (audience) claim of tokens.
+
+### Create API Resource
+
+In OryxID admin UI, navigate to **API Resources** and create:
+
+| Field | Value |
+|-------|-------|
+| Identifier | `trustsky` |
+| Name | TrustSky API |
+| Scopes | Select all trustsky:* scopes |
+
+### Request Token with Audience
+
+```bash
+curl -X POST ${AUTH_ISSUER}/oauth/token \
+  -u "${AUTH_CLIENT_ID}:${AUTH_CLIENT_SECRET}" \
+  -d "grant_type=client_credentials" \
+  -d "scope=trustsky:flight:write" \
+  -d "audience=trustsky"
+```
+
+### Token Contains Audience Claim
+
+```json
+{
+  "aud": "trustsky",
+  "scope": "trustsky:flight:write trustsky:flight:read",
+  "client_id": "...",
+  "tenant_id": "..."
+}
+```
+
+### Validate Audience
+
+APIs should verify the `aud` claim matches the expected identifier:
+
+```go
+if claims.Audience != "trustsky" {
+    return errors.New("token not intended for this API")
+}
+```
+
+---
+
 ## DPoP (Demonstrating Proof of Possession)
 
 DPoP binds tokens to a specific client key pair, preventing token theft.
