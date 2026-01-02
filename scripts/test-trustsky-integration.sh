@@ -145,12 +145,14 @@ AUD_TOKEN_RESPONSE=$(curl -s $CURL_OPTS -X POST $AUTH_ISSUER/oauth/token \
   -H "Content-Type: application/x-www-form-urlencoded" \
   -d "grant_type=client_credentials" \
   -d "scope=trustsky:flight:read" \
-  -d "audience=trustsky")
+  -d "audience=trustsky" 2>&1) || true
 
 if echo "$AUD_TOKEN_RESPONSE" | grep -q "access_token"; then
-    AUD_TOKEN=$(echo "$AUD_TOKEN_RESPONSE" | python3 -c "import sys,json; print(json.load(sys.stdin)['access_token'])")
-    AUD_PAYLOAD=$(echo "$AUD_TOKEN" | cut -d'.' -f2 | base64 -d 2>/dev/null)
-    AUD_CLAIM=$(echo "$AUD_PAYLOAD" | python3 -c "import sys,json; print(json.load(sys.stdin).get('aud',''))" 2>/dev/null)
+    AUD_TOKEN=$(echo "$AUD_TOKEN_RESPONSE" | python3 -c "import sys,json; print(json.load(sys.stdin)['access_token'])" 2>/dev/null)
+    # JWT uses base64url encoding - convert to standard base64 and decode
+    AUD_PAYLOAD=$(echo "$AUD_TOKEN" | cut -d'.' -f2 | tr '_-' '/+' | base64 -d 2>/dev/null)
+    # aud can be string or array - extract first value if array
+    AUD_CLAIM=$(echo "$AUD_PAYLOAD" | python3 -c "import sys,json; d=json.load(sys.stdin); a=d.get('aud',''); print(a[0] if isinstance(a,list) and a else a)" 2>/dev/null) || true
     if [ "$AUD_CLAIM" = "trustsky" ]; then
         echo "[PASS] Audience claim present in token"
         echo "aud: $AUD_CLAIM"
