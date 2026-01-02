@@ -21,8 +21,9 @@ import (
 )
 
 type Server struct {
-	db           *gorm.DB
-	TokenManager *tokens.TokenManager
+	db            *gorm.DB
+	TokenManager  *tokens.TokenManager
+	DPoPValidator *DPoPValidator // DPoP (RFC 9449) validator
 }
 
 type AuthorizeRequest struct {
@@ -61,6 +62,8 @@ type TokenRequest struct {
 	Resource           string // Target resource/API
 	// CIBA parameters
 	AuthReqID string // For CIBA grant type
+	// DPoP (RFC 9449) parameters
+	DPoPThumbprint string // JWK SHA-256 thumbprint from validated DPoP proof
 }
 
 // DeviceAuthorizationRequest represents a device authorization request (RFC 8628)
@@ -130,8 +133,9 @@ func (e *CIBAError) Error() string {
 
 func NewServer(db *gorm.DB, tm *tokens.TokenManager) *Server {
 	return &Server{
-		db:           db,
-		TokenManager: tm,
+		db:            db,
+		TokenManager:  tm,
+		DPoPValidator: NewDPoPValidator(),
 	}
 }
 
@@ -224,8 +228,18 @@ func (s *Server) GenerateAuthorizationCode(app *database.Application, user *data
 func (s *Server) ExchangeAuthorizationCode(req *TokenRequest) (*tokens.TokenResponse, error) {
 	// Validate client credentials
 	var app database.Application
-	if err := s.db.Preload("Scopes").Where("client_id = ?", req.ClientID).First(&app).Error; err != nil {
+	if err := s.db.Preload("Scopes").Preload("Tenant").Where("client_id = ?", req.ClientID).First(&app).Error; err != nil {
 		return nil, errors.New("invalid client")
+	}
+
+	// Check tenant status if application belongs to a tenant
+	if app.TenantID != nil && app.Tenant != nil {
+		if app.Tenant.Status == database.TenantStatusSuspended {
+			return nil, errors.New("tenant is suspended")
+		}
+		if app.Tenant.Status == database.TenantStatusRevoked {
+			return nil, errors.New("tenant is revoked")
+		}
 	}
 
 	// Verify client secret
@@ -265,28 +279,37 @@ func (s *Server) ExchangeAuthorizationCode(req *TokenRequest) (*tokens.TokenResp
 	authCode.Used = true
 	s.db.Save(&authCode)
 
-	// Generate tokens
-	accessToken, err := s.TokenManager.GenerateAccessToken(&app, authCode.User, authCode.Scope, authCode.Audience, nil)
+	// Expand scopes according to hierarchy
+	expandedScope := ExpandScopes(authCode.Scope)
+
+	// Generate tokens (with optional DPoP binding)
+	accessToken, err := s.TokenManager.GenerateAccessTokenWithDPoP(&app, authCode.User, expandedScope, authCode.Audience, nil, req.DPoPThumbprint)
 	if err != nil {
 		return nil, err
 	}
 
-	refreshToken, err := s.TokenManager.GenerateRefreshToken(&app, authCode.User, authCode.Scope)
+	refreshToken, err := s.TokenManager.GenerateRefreshToken(&app, authCode.User, expandedScope)
 	if err != nil {
 		return nil, err
+	}
+
+	// Determine token type based on DPoP binding
+	tokenType := "Bearer"
+	if req.DPoPThumbprint != "" {
+		tokenType = "DPoP"
 	}
 
 	response := &tokens.TokenResponse{
 		AccessToken:          accessToken,
-		TokenType:            "Bearer",
+		TokenType:            tokenType,
 		ExpiresIn:            3600,
 		RefreshToken:         refreshToken,
-		Scope:                authCode.Scope,
+		Scope:                expandedScope,
 		AuthorizationDetails: authCode.AuthorizationDetails, // RAR (RFC 9396)
 	}
 
 	// Generate ID token if openid scope is present
-	if strings.Contains(authCode.Scope, "openid") && authCode.User != nil {
+	if strings.Contains(expandedScope, "openid") && authCode.User != nil {
 		idToken, err := s.TokenManager.GenerateIDToken(&app, authCode.User, authCode.Nonce, authCode.CreatedAt)
 		if err != nil {
 			return nil, err
@@ -304,8 +327,18 @@ func (s *Server) ExchangeAuthorizationCode(req *TokenRequest) (*tokens.TokenResp
 func (s *Server) ClientCredentialsGrant(req *TokenRequest) (*tokens.TokenResponse, error) {
 	// Validate client credentials
 	var app database.Application
-	if err := s.db.Preload("Scopes").Preload("Audiences").Where("client_id = ?", req.ClientID).First(&app).Error; err != nil {
+	if err := s.db.Preload("Scopes").Preload("Audiences").Preload("Tenant").Where("client_id = ?", req.ClientID).First(&app).Error; err != nil {
 		return nil, errors.New("invalid client")
+	}
+
+	// Check tenant status if application belongs to a tenant
+	if app.TenantID != nil && app.Tenant != nil {
+		if app.Tenant.Status == database.TenantStatusSuspended {
+			return nil, errors.New("tenant is suspended")
+		}
+		if app.Tenant.Status == database.TenantStatusRevoked {
+			return nil, errors.New("tenant is revoked")
+		}
 	}
 
 	// Verify client secret
@@ -352,17 +385,51 @@ func (s *Server) ClientCredentialsGrant(req *TokenRequest) (*tokens.TokenRespons
 		}
 	}
 
-	// Generate access token
-	accessToken, err := s.TokenManager.GenerateAccessToken(&app, nil, scope, req.Audience, nil)
+	// Expand scopes according to hierarchy (e.g., trustsky:flight:write -> trustsky:flight:read)
+	expandedScope := ExpandScopes(scope)
+
+	// Validate and resolve audience if provided
+	audience := ""
+	if req.Audience != "" {
+		// Check if the requested audience is allowed for this application
+		audienceAllowed := false
+		for _, aud := range app.Audiences {
+			if aud.Identifier == req.Audience {
+				audienceAllowed = true
+				audience = aud.Identifier
+				break
+			}
+		}
+		if !audienceAllowed {
+			// List allowed audiences for debugging
+			allowedAudiences := make([]string, len(app.Audiences))
+			for i, aud := range app.Audiences {
+				allowedAudiences[i] = aud.Identifier
+			}
+			if len(allowedAudiences) == 0 {
+				return nil, fmt.Errorf("audience '%s' not allowed: no audiences configured for this client", req.Audience)
+			}
+			return nil, fmt.Errorf("audience '%s' not allowed: allowed audiences are %v", req.Audience, allowedAudiences)
+		}
+	}
+
+	// Generate access token (with optional DPoP binding)
+	accessToken, err := s.TokenManager.GenerateAccessTokenWithDPoP(&app, nil, expandedScope, audience, nil, req.DPoPThumbprint)
 	if err != nil {
 		return nil, err
 	}
 
+	// Determine token type based on DPoP binding
+	tokenType := "Bearer"
+	if req.DPoPThumbprint != "" {
+		tokenType = "DPoP"
+	}
+
 	response := &tokens.TokenResponse{
 		AccessToken: accessToken,
-		TokenType:   "Bearer",
+		TokenType:   tokenType,
 		ExpiresIn:   3600,
-		Scope:       scope,
+		Scope:       expandedScope,
 	}
 
 	// Store token
@@ -375,8 +442,18 @@ func (s *Server) ClientCredentialsGrant(req *TokenRequest) (*tokens.TokenRespons
 func (s *Server) RefreshTokenGrant(req *TokenRequest) (*tokens.TokenResponse, error) {
 	// Validate client credentials
 	var app database.Application
-	if err := s.db.Where("client_id = ?", req.ClientID).First(&app).Error; err != nil {
+	if err := s.db.Preload("Tenant").Where("client_id = ?", req.ClientID).First(&app).Error; err != nil {
 		return nil, errors.New("invalid client")
+	}
+
+	// Check tenant status if application belongs to a tenant
+	if app.TenantID != nil && app.Tenant != nil {
+		if app.Tenant.Status == database.TenantStatusSuspended {
+			return nil, errors.New("tenant is suspended")
+		}
+		if app.Tenant.Status == database.TenantStatusRevoked {
+			return nil, errors.New("tenant is revoked")
+		}
 	}
 
 	// Verify client secret
@@ -448,8 +525,8 @@ func (s *Server) RefreshTokenGrant(req *TokenRequest) (*tokens.TokenResponse, er
 		audience = claims.Audience[0]
 	}
 
-	// Generate new access token with potentially downscaled scope
-	accessToken, err := s.TokenManager.GenerateAccessToken(&app, user, requestedScope, audience, nil)
+	// Generate new access token with potentially downscaled scope (with optional DPoP binding)
+	accessToken, err := s.TokenManager.GenerateAccessTokenWithDPoP(&app, user, requestedScope, audience, nil, req.DPoPThumbprint)
 	if err != nil {
 		return nil, err
 	}
@@ -465,9 +542,15 @@ func (s *Server) RefreshTokenGrant(req *TokenRequest) (*tokens.TokenResponse, er
 		Where("token_hash = ? AND token_type = ?", tokenHash, "refresh").
 		Update("revoked", true)
 
+	// Determine token type based on DPoP binding
+	tokenType := "Bearer"
+	if req.DPoPThumbprint != "" {
+		tokenType = "DPoP"
+	}
+
 	response := &tokens.TokenResponse{
 		AccessToken:  accessToken,
-		TokenType:    "Bearer",
+		TokenType:    tokenType,
 		ExpiresIn:    3600,
 		RefreshToken: newRefreshToken, // Return new refresh token (OAuth 2.1 best practice)
 		Scope:        requestedScope,  // Return actual scope (might be downscaled)
@@ -483,8 +566,18 @@ func (s *Server) RefreshTokenGrant(req *TokenRequest) (*tokens.TokenResponse, er
 func (s *Server) PasswordGrant(req *TokenRequest) (*tokens.TokenResponse, error) {
 	// Validate client credentials
 	var app database.Application
-	if err := s.db.Where("client_id = ?", req.ClientID).First(&app).Error; err != nil {
+	if err := s.db.Preload("Tenant").Where("client_id = ?", req.ClientID).First(&app).Error; err != nil {
 		return nil, errors.New("invalid client")
+	}
+
+	// Check tenant status if application belongs to a tenant
+	if app.TenantID != nil && app.Tenant != nil {
+		if app.Tenant.Status == database.TenantStatusSuspended {
+			return nil, errors.New("tenant is suspended")
+		}
+		if app.Tenant.Status == database.TenantStatusRevoked {
+			return nil, errors.New("tenant is revoked")
+		}
 	}
 
 	// Verify client secret
@@ -551,12 +644,15 @@ func (s *Server) PasswordGrant(req *TokenRequest) (*tokens.TokenResponse, error)
 		}
 	}
 
-	accessToken, err := s.TokenManager.GenerateAccessToken(&app, &user, scope, req.Audience, nil)
+	// Expand scopes according to hierarchy
+	expandedScope := ExpandScopes(scope)
+
+	accessToken, err := s.TokenManager.GenerateAccessToken(&app, &user, expandedScope, req.Audience, nil)
 	if err != nil {
 		return nil, err
 	}
 
-	refreshToken, err := s.TokenManager.GenerateRefreshToken(&app, &user, scope)
+	refreshToken, err := s.TokenManager.GenerateRefreshToken(&app, &user, expandedScope)
 	if err != nil {
 		return nil, err
 	}
@@ -566,11 +662,11 @@ func (s *Server) PasswordGrant(req *TokenRequest) (*tokens.TokenResponse, error)
 		TokenType:    "Bearer",
 		ExpiresIn:    3600,
 		RefreshToken: refreshToken,
-		Scope:        scope,
+		Scope:        expandedScope,
 	}
 
 	// Generate ID token if openid scope is present
-	if strings.Contains(scope, "openid") {
+	if strings.Contains(expandedScope, "openid") {
 		idToken, err := s.TokenManager.GenerateIDToken(&app, &user, "", time.Now())
 		if err != nil {
 			return nil, err
@@ -963,8 +1059,18 @@ func (s *Server) CreateDeviceAuthorization(req *DeviceAuthorizationRequest, veri
 func (s *Server) DeviceCodeGrant(req *TokenRequest) (*tokens.TokenResponse, error) {
 	// Validate client credentials
 	var app database.Application
-	if err := s.db.Preload("Scopes").Where("client_id = ?", req.ClientID).First(&app).Error; err != nil {
+	if err := s.db.Preload("Scopes").Preload("Tenant").Where("client_id = ?", req.ClientID).First(&app).Error; err != nil {
 		return nil, errors.New("invalid client")
+	}
+
+	// Check tenant status if application belongs to a tenant
+	if app.TenantID != nil && app.Tenant != nil {
+		if app.Tenant.Status == database.TenantStatusSuspended {
+			return nil, errors.New("tenant is suspended")
+		}
+		if app.Tenant.Status == database.TenantStatusRevoked {
+			return nil, errors.New("tenant is revoked")
+		}
 	}
 
 	// Verify client secret (for confidential clients)
@@ -1018,13 +1124,16 @@ func (s *Server) DeviceCodeGrant(req *TokenRequest) (*tokens.TokenResponse, erro
 		}
 	}
 
+	// Expand scopes according to hierarchy
+	expandedScope := ExpandScopes(dc.Scope)
+
 	// Generate tokens
-	accessToken, err := s.TokenManager.GenerateAccessToken(&app, user, dc.Scope, dc.Audience, nil)
+	accessToken, err := s.TokenManager.GenerateAccessToken(&app, user, expandedScope, dc.Audience, nil)
 	if err != nil {
 		return nil, err
 	}
 
-	refreshToken, err := s.TokenManager.GenerateRefreshToken(&app, user, dc.Scope)
+	refreshToken, err := s.TokenManager.GenerateRefreshToken(&app, user, expandedScope)
 	if err != nil {
 		return nil, err
 	}
@@ -1034,11 +1143,11 @@ func (s *Server) DeviceCodeGrant(req *TokenRequest) (*tokens.TokenResponse, erro
 		TokenType:    "Bearer",
 		ExpiresIn:    3600,
 		RefreshToken: refreshToken,
-		Scope:        dc.Scope,
+		Scope:        expandedScope,
 	}
 
 	// Generate ID token if openid scope is present
-	if strings.Contains(dc.Scope, "openid") && user != nil {
+	if strings.Contains(expandedScope, "openid") && user != nil {
 		idToken, err := s.TokenManager.GenerateIDToken(&app, user, "", *dc.AuthorizedAt)
 		if err != nil {
 			return nil, err
@@ -1175,8 +1284,18 @@ func generateUserCode() (string, error) {
 func (s *Server) TokenExchangeGrant(req *TokenRequest) (*TokenExchangeResponse, error) {
 	// Validate client credentials
 	var app database.Application
-	if err := s.db.Preload("Scopes").Preload("Audiences").Where("client_id = ?", req.ClientID).First(&app).Error; err != nil {
+	if err := s.db.Preload("Scopes").Preload("Audiences").Preload("Tenant").Where("client_id = ?", req.ClientID).First(&app).Error; err != nil {
 		return nil, errors.New("invalid client")
+	}
+
+	// Check tenant status if application belongs to a tenant
+	if app.TenantID != nil && app.Tenant != nil {
+		if app.Tenant.Status == database.TenantStatusSuspended {
+			return nil, errors.New("tenant is suspended")
+		}
+		if app.Tenant.Status == database.TenantStatusRevoked {
+			return nil, errors.New("tenant is revoked")
+		}
 	}
 
 	// Verify client secret
@@ -1493,8 +1612,18 @@ func (s *Server) CreateCIBAAuthentication(req *CIBAAuthenticationRequest, client
 func (s *Server) CIBAGrant(req *TokenRequest) (*tokens.TokenResponse, error) {
 	// Validate client credentials
 	var app database.Application
-	if err := s.db.Preload("Scopes").Where("client_id = ?", req.ClientID).First(&app).Error; err != nil {
+	if err := s.db.Preload("Scopes").Preload("Tenant").Where("client_id = ?", req.ClientID).First(&app).Error; err != nil {
 		return nil, errors.New("invalid client")
+	}
+
+	// Check tenant status if application belongs to a tenant
+	if app.TenantID != nil && app.Tenant != nil {
+		if app.Tenant.Status == database.TenantStatusSuspended {
+			return nil, errors.New("tenant is suspended")
+		}
+		if app.Tenant.Status == database.TenantStatusRevoked {
+			return nil, errors.New("tenant is revoked")
+		}
 	}
 
 	// Verify client secret
@@ -1549,13 +1678,16 @@ func (s *Server) CIBAGrant(req *TokenRequest) (*tokens.TokenResponse, error) {
 		return nil, errors.New("no user associated with authentication request")
 	}
 
+	// Expand scopes according to hierarchy
+	expandedScope := ExpandScopes(cibaReq.Scope)
+
 	// Generate tokens
-	accessToken, err := s.TokenManager.GenerateAccessToken(&app, user, cibaReq.Scope, "", nil)
+	accessToken, err := s.TokenManager.GenerateAccessToken(&app, user, expandedScope, "", nil)
 	if err != nil {
 		return nil, err
 	}
 
-	refreshToken, err := s.TokenManager.GenerateRefreshToken(&app, user, cibaReq.Scope)
+	refreshToken, err := s.TokenManager.GenerateRefreshToken(&app, user, expandedScope)
 	if err != nil {
 		return nil, err
 	}
@@ -1565,11 +1697,11 @@ func (s *Server) CIBAGrant(req *TokenRequest) (*tokens.TokenResponse, error) {
 		TokenType:    "Bearer",
 		ExpiresIn:    3600,
 		RefreshToken: refreshToken,
-		Scope:        cibaReq.Scope,
+		Scope:        expandedScope,
 	}
 
 	// Generate ID token if openid scope is present
-	if strings.Contains(cibaReq.Scope, "openid") && user != nil {
+	if strings.Contains(expandedScope, "openid") && user != nil {
 		idToken, err := s.TokenManager.GenerateIDToken(&app, user, "", *cibaReq.AuthorizedAt)
 		if err != nil {
 			return nil, err

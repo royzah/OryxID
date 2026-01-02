@@ -49,20 +49,35 @@ func (h *AdminHandler) ListApplications(c *gin.Context) {
 
 func (h *AdminHandler) CreateApplication(c *gin.Context) {
 	var req struct {
-		Name              string   `json:"name" binding:"required"`
-		Description       string   `json:"description"`
-		ClientType        string   `json:"client_type" binding:"required,oneof=confidential public"`
-		GrantTypes        []string `json:"grant_types" binding:"required,min=1"`
-		ResponseTypes     []string `json:"response_types"`
-		RedirectURIs      []string `json:"redirect_uris" binding:"required,min=1"`
-		PostLogoutURIs    []string `json:"post_logout_uris"`
-		ScopeIDs          []string `json:"scope_ids"`
-		AudienceIDs       []string `json:"audience_ids"`
-		SkipAuthorization bool     `json:"skip_authorization"`
+		Name                    string   `json:"name" binding:"required"`
+		Description             string   `json:"description"`
+		ClientType              string   `json:"client_type" binding:"required,oneof=confidential public"`
+		GrantTypes              []string `json:"grant_types" binding:"required,min=1"`
+		ResponseTypes           []string `json:"response_types"`
+		RedirectURIs            []string `json:"redirect_uris"`
+		PostLogoutURIs          []string `json:"post_logout_uris"`
+		ScopeIDs                []string `json:"scope_ids"`
+		AudienceIDs             []string `json:"audience_ids"`
+		SkipAuthorization       bool     `json:"skip_authorization"`
+		TokenEndpointAuthMethod string   `json:"token_endpoint_auth_method"`
+		TenantID                string   `json:"tenant_id"`
 	}
 
 	if err := c.ShouldBindJSON(&req); err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+
+	// Validate redirect_uris required for authorization_code grant
+	hasAuthCodeGrant := false
+	for _, grant := range req.GrantTypes {
+		if grant == "authorization_code" {
+			hasAuthCodeGrant = true
+			break
+		}
+	}
+	if hasAuthCodeGrant && len(req.RedirectURIs) == 0 {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "redirect_uris required for authorization_code grant"})
 		return
 	}
 
@@ -93,17 +108,40 @@ func (h *AdminHandler) CreateApplication(c *gin.Context) {
 		hashedSecret = string(hashedSecretBytes)
 	}
 
+	// Set default token endpoint auth method if not provided
+	tokenEndpointAuthMethod := req.TokenEndpointAuthMethod
+	if tokenEndpointAuthMethod == "" {
+		tokenEndpointAuthMethod = "client_secret_basic"
+	}
+
 	app := database.Application{
-		Name:               req.Name,
-		Description:        req.Description,
-		ClientID:           clientID,
-		HashedClientSecret: hashedSecret,
-		ClientType:         req.ClientType,
-		GrantTypes:         database.StringArray(req.GrantTypes),
-		ResponseTypes:      database.StringArray(req.ResponseTypes),
-		RedirectURIs:       database.StringArray(req.RedirectURIs),
-		PostLogoutURIs:     database.StringArray(req.PostLogoutURIs),
-		SkipAuthorization:  req.SkipAuthorization,
+		Name:                    req.Name,
+		Description:             req.Description,
+		ClientID:                clientID,
+		HashedClientSecret:      hashedSecret,
+		ClientType:              req.ClientType,
+		TokenEndpointAuthMethod: tokenEndpointAuthMethod,
+		GrantTypes:              database.StringArray(req.GrantTypes),
+		ResponseTypes:           database.StringArray(req.ResponseTypes),
+		RedirectURIs:            database.StringArray(req.RedirectURIs),
+		PostLogoutURIs:          database.StringArray(req.PostLogoutURIs),
+		SkipAuthorization:       req.SkipAuthorization,
+	}
+
+	// Set tenant if provided
+	if req.TenantID != "" {
+		tenantUUID, err := uuid.Parse(req.TenantID)
+		if err != nil {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "invalid tenant_id format"})
+			return
+		}
+		// Verify tenant exists
+		var tenant database.Tenant
+		if err := h.db.Where("id = ?", tenantUUID).First(&tenant).Error; err != nil {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "tenant not found"})
+			return
+		}
+		app.TenantID = &tenantUUID
 	}
 
 	// Get current user ID
@@ -1048,4 +1086,322 @@ func (h *AdminHandler) logAudit(c *gin.Context, action, resource, resourceID str
 	}
 
 	h.db.Create(&audit)
+}
+
+// =============================================================================
+// Tenant Handlers (Multi-tenancy for TrustSky USSP Integration)
+// =============================================================================
+
+// ListTenants returns all tenants with optional filtering
+func (h *AdminHandler) ListTenants(c *gin.Context) {
+	var tenants []database.Tenant
+	query := h.db.Model(&database.Tenant{})
+
+	// Optional filtering
+	if search := c.Query("search"); search != "" {
+		searchLower := "%" + strings.ToLower(search) + "%"
+		query = query.Where("LOWER(name) LIKE ? OR LOWER(email) LIKE ?", searchLower, searchLower)
+	}
+	if tenantType := c.Query("type"); tenantType != "" {
+		query = query.Where("type = ?", tenantType)
+	}
+	if status := c.Query("status"); status != "" {
+		query = query.Where("status = ?", status)
+	}
+
+	if err := query.Find(&tenants).Error; err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to fetch tenants"})
+		return
+	}
+
+	c.JSON(http.StatusOK, tenants)
+}
+
+// CreateTenant creates a new tenant (operator/organization)
+func (h *AdminHandler) CreateTenant(c *gin.Context) {
+	var req struct {
+		Name               string                 `json:"name" binding:"required"`
+		Type               string                 `json:"type" binding:"required,oneof=operator authority emergency_service"`
+		Email              string                 `json:"email" binding:"required,email"`
+		Description        string                 `json:"description"`
+		CertificateSubject string                 `json:"certificate_subject"`
+		Metadata           map[string]interface{} `json:"metadata"`
+	}
+
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+
+	tenant := database.Tenant{
+		Name:               req.Name,
+		Type:               req.Type,
+		Status:             database.TenantStatusActive,
+		Email:              req.Email,
+		Description:        req.Description,
+		CertificateSubject: req.CertificateSubject,
+		Metadata:           database.JSONB(req.Metadata),
+	}
+
+	if err := h.db.Create(&tenant).Error; err != nil {
+		if strings.Contains(err.Error(), "duplicate") || strings.Contains(err.Error(), "unique") {
+			c.JSON(http.StatusConflict, gin.H{"error": "Tenant with this email already exists"})
+			return
+		}
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to create tenant"})
+		return
+	}
+
+	// Log audit event
+	h.logAudit(c, "tenant.create", "tenant", tenant.ID.String(), http.StatusCreated)
+
+	c.JSON(http.StatusCreated, tenant)
+}
+
+// GetTenant returns a specific tenant by ID
+func (h *AdminHandler) GetTenant(c *gin.Context) {
+	id := c.Param("id")
+
+	var tenant database.Tenant
+	if err := h.db.Where("id = ?", id).First(&tenant).Error; err != nil {
+		if err == gorm.ErrRecordNotFound {
+			c.JSON(http.StatusNotFound, gin.H{"error": "Tenant not found"})
+			return
+		}
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to fetch tenant"})
+		return
+	}
+
+	c.JSON(http.StatusOK, tenant)
+}
+
+// UpdateTenant updates an existing tenant
+func (h *AdminHandler) UpdateTenant(c *gin.Context) {
+	id := c.Param("id")
+
+	var tenant database.Tenant
+	if err := h.db.Where("id = ?", id).First(&tenant).Error; err != nil {
+		if err == gorm.ErrRecordNotFound {
+			c.JSON(http.StatusNotFound, gin.H{"error": "Tenant not found"})
+			return
+		}
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to fetch tenant"})
+		return
+	}
+
+	var req struct {
+		Name               string                 `json:"name"`
+		Type               string                 `json:"type" binding:"omitempty,oneof=operator authority emergency_service"`
+		Status             string                 `json:"status" binding:"omitempty,oneof=active suspended revoked"`
+		Email              string                 `json:"email" binding:"omitempty,email"`
+		Description        string                 `json:"description"`
+		CertificateSubject string                 `json:"certificate_subject"`
+		Metadata           map[string]interface{} `json:"metadata"`
+	}
+
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+
+	// Update fields if provided
+	if req.Name != "" {
+		tenant.Name = req.Name
+	}
+	if req.Type != "" {
+		tenant.Type = req.Type
+	}
+	if req.Status != "" {
+		tenant.Status = req.Status
+	}
+	if req.Email != "" {
+		tenant.Email = req.Email
+	}
+	tenant.Description = req.Description
+	tenant.CertificateSubject = req.CertificateSubject
+	if req.Metadata != nil {
+		tenant.Metadata = database.JSONB(req.Metadata)
+	}
+
+	if err := h.db.Save(&tenant).Error; err != nil {
+		if strings.Contains(err.Error(), "duplicate") || strings.Contains(err.Error(), "unique") {
+			c.JSON(http.StatusConflict, gin.H{"error": "Tenant with this email already exists"})
+			return
+		}
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to update tenant"})
+		return
+	}
+
+	// Log audit event
+	h.logAudit(c, "tenant.update", "tenant", tenant.ID.String(), http.StatusOK)
+
+	c.JSON(http.StatusOK, tenant)
+}
+
+// DeleteTenant deletes a tenant (soft delete)
+func (h *AdminHandler) DeleteTenant(c *gin.Context) {
+	id := c.Param("id")
+
+	// Check if tenant has associated applications
+	var appCount int64
+	h.db.Model(&database.Application{}).Where("tenant_id = ?", id).Count(&appCount)
+	if appCount > 0 {
+		c.JSON(http.StatusConflict, gin.H{
+			"error":             "Cannot delete tenant with associated applications",
+			"application_count": appCount,
+		})
+		return
+	}
+
+	result := h.db.Where("id = ?", id).Delete(&database.Tenant{})
+	if result.Error != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to delete tenant"})
+		return
+	}
+
+	if result.RowsAffected == 0 {
+		c.JSON(http.StatusNotFound, gin.H{"error": "Tenant not found"})
+		return
+	}
+
+	// Log audit event
+	h.logAudit(c, "tenant.delete", "tenant", id, http.StatusNoContent)
+
+	c.JSON(http.StatusNoContent, nil)
+}
+
+// SuspendTenant suspends a tenant (prevents token issuance)
+func (h *AdminHandler) SuspendTenant(c *gin.Context) {
+	id := c.Param("id")
+
+	var tenant database.Tenant
+	if err := h.db.Where("id = ?", id).First(&tenant).Error; err != nil {
+		if err == gorm.ErrRecordNotFound {
+			c.JSON(http.StatusNotFound, gin.H{"error": "Tenant not found"})
+			return
+		}
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to fetch tenant"})
+		return
+	}
+
+	if tenant.Status == database.TenantStatusSuspended {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "Tenant is already suspended"})
+		return
+	}
+
+	tenant.Status = database.TenantStatusSuspended
+	if err := h.db.Save(&tenant).Error; err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to suspend tenant"})
+		return
+	}
+
+	// Log audit event
+	h.logAudit(c, "tenant.suspend", "tenant", tenant.ID.String(), http.StatusOK)
+
+	c.JSON(http.StatusOK, tenant)
+}
+
+// ActivateTenant activates a suspended tenant
+func (h *AdminHandler) ActivateTenant(c *gin.Context) {
+	id := c.Param("id")
+
+	var tenant database.Tenant
+	if err := h.db.Where("id = ?", id).First(&tenant).Error; err != nil {
+		if err == gorm.ErrRecordNotFound {
+			c.JSON(http.StatusNotFound, gin.H{"error": "Tenant not found"})
+			return
+		}
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to fetch tenant"})
+		return
+	}
+
+	if tenant.Status == database.TenantStatusActive {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "Tenant is already active"})
+		return
+	}
+
+	if tenant.Status == database.TenantStatusRevoked {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "Cannot activate a revoked tenant"})
+		return
+	}
+
+	tenant.Status = database.TenantStatusActive
+	if err := h.db.Save(&tenant).Error; err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to activate tenant"})
+		return
+	}
+
+	// Log audit event
+	h.logAudit(c, "tenant.activate", "tenant", tenant.ID.String(), http.StatusOK)
+
+	c.JSON(http.StatusOK, tenant)
+}
+
+// GetTenantApplications returns all applications for a tenant
+func (h *AdminHandler) GetTenantApplications(c *gin.Context) {
+	id := c.Param("id")
+
+	// Verify tenant exists
+	var tenant database.Tenant
+	if err := h.db.Where("id = ?", id).First(&tenant).Error; err != nil {
+		if err == gorm.ErrRecordNotFound {
+			c.JSON(http.StatusNotFound, gin.H{"error": "Tenant not found"})
+			return
+		}
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to fetch tenant"})
+		return
+	}
+
+	var apps []database.Application
+	if err := h.db.Preload("Scopes").Preload("Audiences").Where("tenant_id = ?", id).Find(&apps).Error; err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to fetch applications"})
+		return
+	}
+
+	c.JSON(http.StatusOK, apps)
+}
+
+// AssignApplicationToTenant assigns an application to a tenant
+func (h *AdminHandler) AssignApplicationToTenant(c *gin.Context) {
+	tenantID := c.Param("id")
+	appID := c.Param("app_id")
+
+	// Verify tenant exists
+	var tenant database.Tenant
+	if err := h.db.Where("id = ?", tenantID).First(&tenant).Error; err != nil {
+		if err == gorm.ErrRecordNotFound {
+			c.JSON(http.StatusNotFound, gin.H{"error": "Tenant not found"})
+			return
+		}
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to fetch tenant"})
+		return
+	}
+
+	// Verify application exists
+	var app database.Application
+	if err := h.db.Where("id = ?", appID).First(&app).Error; err != nil {
+		if err == gorm.ErrRecordNotFound {
+			c.JSON(http.StatusNotFound, gin.H{"error": "Application not found"})
+			return
+		}
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to fetch application"})
+		return
+	}
+
+	// Assign tenant
+	tenantUUID, _ := uuid.Parse(tenantID)
+	app.TenantID = &tenantUUID
+	if err := h.db.Save(&app).Error; err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to assign application to tenant"})
+		return
+	}
+
+	// Log audit event
+	h.logAudit(c, "tenant.assign_application", "application", appID, http.StatusOK)
+
+	c.JSON(http.StatusOK, gin.H{
+		"message":        "Application assigned to tenant successfully",
+		"tenant_id":      tenantID,
+		"application_id": appID,
+	})
 }

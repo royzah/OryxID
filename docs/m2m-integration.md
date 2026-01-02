@@ -1,12 +1,12 @@
 # Machine-to-Machine (M2M) Integration Guide
 
-This guide explains how to secure your internal APIs using OryxID with the Client Credentials grant flow.
+This guide explains how to secure internal APIs using OryxID with the Client Credentials grant flow.
 
 ## Overview
 
 ```mermaid
 sequenceDiagram
-    participant Service as Your Service
+    participant Service as Client Service
     participant OryxID as OryxID
     participant API as Protected API
 
@@ -281,14 +281,14 @@ curl https://auth.example.com/health/detailed
 
 1. **Token Caching**: Cache access tokens until they expire minus a buffer (e.g., 5 minutes)
 
-2. **Scope Principle of Least Privilege**: Request only the scopes your service actually needs
+2. **Scope Principle of Least Privilege**: Request only the scopes the service actually needs
 
 3. **Secret Rotation**: Rotate client secrets periodically using the admin API:
    ```bash
    curl -X POST https://auth.example.com/api/v1/applications/{id}/rotate-secret
    ```
 
-4. **JWKS Caching**: The SDK caches JWKS automatically. Configure TTL based on your security requirements
+4. **JWKS Caching**: The SDK caches JWKS automatically. Configure TTL based on security requirements
 
 5. **Error Handling**: Always handle token validation errors gracefully and log for debugging
 

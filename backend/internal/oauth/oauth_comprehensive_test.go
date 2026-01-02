@@ -4,6 +4,7 @@ import (
 	"crypto/sha256"
 	"encoding/base64"
 	"encoding/json"
+	"strings"
 	"testing"
 	"time"
 
@@ -966,7 +967,8 @@ func TestAuthorizationCodeExchange(t *testing.T) {
 	assert.NotEmpty(t, resp.AccessToken)
 	assert.NotEmpty(t, resp.RefreshToken)
 	assert.NotEmpty(t, resp.IDToken) // Because openid scope
-	assert.Equal(t, "openid profile", resp.Scope)
+	// Scopes are a set - order doesn't matter
+	assert.ElementsMatch(t, []string{"openid", "profile"}, strings.Split(resp.Scope, " "))
 }
 
 func TestCodeReuse(t *testing.T) {

@@ -129,8 +129,8 @@ flowchart TD
 
 ### Token Binding
 
-- [ ] DPoP (Demonstrating Proof of Possession)
-- [ ] Client certificate binding
+- [x] DPoP (Demonstrating Proof of Possession) - RFC 9449
+- [ ] Client certificate binding (mTLS)
 
 ### Custom Claims
 
@@ -177,7 +177,6 @@ Not needed for M2M API security:
 - Password reset flow
 - Email integration
 - WebAuthn/Passkeys
-- Multi-tenancy
 
 ---
 
@@ -267,3 +266,22 @@ Not needed for M2M API security:
 - [x] M2M integration guide (docs/m2m-integration.md)
 - [x] OpenAPI specification (docs/openapi.yaml)
 - [x] Alerting integration (internal/alerting package)
+
+### Multi-tenancy
+
+- [x] Tenant model and database schema
+- [x] Tenant CRUD API endpoints
+- [x] tenant_id claim in JWT tokens
+- [x] Tenant management admin UI
+- [x] Application-tenant association
+- [x] Tenant status management (active/suspended/revoked)
+
+### DPoP (RFC 9449)
+
+- [x] DPoP proof validation
+- [x] JWK thumbprint calculation (RFC 7638)
+- [x] Token binding via cnf/jkt claim
+- [x] Replay attack prevention (JTI tracking)
+- [x] Access token hash (ath) validation
+- [x] RSA and EC key support
+- [x] Discovery endpoint dpop_signing_alg_values_supported

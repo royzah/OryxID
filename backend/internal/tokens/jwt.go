@@ -2,6 +2,7 @@ package tokens
 
 import (
 	"crypto/rsa"
+	"encoding/base64"
 	"fmt"
 	"time"
 
@@ -23,6 +24,7 @@ type CustomClaims struct {
 	jwt.RegisteredClaims
 	Scope         string                 `json:"scope,omitempty"`
 	ClientID      string                 `json:"client_id,omitempty"`
+	TenantID      string                 `json:"tenant_id,omitempty"` // Multi-tenancy: operator/organization UUID (TrustSky USSP)
 	Username      string                 `json:"username,omitempty"`
 	Email         string                 `json:"email,omitempty"`
 	EmailVerified bool                   `json:"email_verified,omitempty"`
@@ -31,6 +33,13 @@ type CustomClaims struct {
 	Nonce         string                 `json:"nonce,omitempty"`
 	AuthTime      int64                  `json:"auth_time,omitempty"`
 	Extra         map[string]interface{} `json:"ext,omitempty"`
+	// DPoP (RFC 9449) confirmation claim for proof-of-possession
+	Cnf *ConfirmationClaim `json:"cnf,omitempty"`
+}
+
+// ConfirmationClaim represents the cnf claim for DPoP token binding (RFC 9449)
+type ConfirmationClaim struct {
+	JKT string `json:"jkt"` // JWK SHA-256 Thumbprint
 }
 
 type TokenResponse struct {
@@ -47,6 +56,7 @@ type IntrospectionResponse struct {
 	Active    bool   `json:"active"`
 	Scope     string `json:"scope,omitempty"`
 	ClientID  string `json:"client_id,omitempty"`
+	TenantID  string `json:"tenant_id,omitempty"` // Multi-tenancy: operator/organization UUID (TrustSky USSP)
 	Username  string `json:"username,omitempty"`
 	TokenType string `json:"token_type,omitempty"`
 	Exp       int64  `json:"exp,omitempty"`
@@ -56,6 +66,8 @@ type IntrospectionResponse struct {
 	Aud       string `json:"aud,omitempty"`
 	Iss       string `json:"iss,omitempty"`
 	Jti       string `json:"jti,omitempty"`
+	// DPoP (RFC 9449) confirmation claim
+	Cnf *ConfirmationClaim `json:"cnf,omitempty"`
 }
 
 func NewTokenManager(cfg *config.JWTConfig, issuer string) (*TokenManager, error) {
@@ -69,9 +81,21 @@ func NewTokenManager(cfg *config.JWTConfig, issuer string) (*TokenManager, error
 }
 
 // GenerateAccessToken generates a JWT access token
+// tenantID is optional - if the application has a tenant, it will be included in the token
 func (tm *TokenManager) GenerateAccessToken(app *database.Application, user *database.User, scope, audience string, extra map[string]interface{}) (string, error) {
+	return tm.GenerateAccessTokenWithDPoP(app, user, scope, audience, extra, "")
+}
+
+// GenerateAccessTokenWithDPoP generates a JWT access token with optional DPoP binding
+// If dpopThumbprint is provided, the token will be DPoP-bound (RFC 9449)
+func (tm *TokenManager) GenerateAccessTokenWithDPoP(app *database.Application, user *database.User, scope, audience string, extra map[string]interface{}, dpopThumbprint string) (string, error) {
 	now := time.Now()
 	expiresAt := now.Add(time.Hour) // Default 1 hour, can be customized
+
+	tokenType := "Bearer"
+	if dpopThumbprint != "" {
+		tokenType = "DPoP"
+	}
 
 	claims := CustomClaims{
 		RegisteredClaims: jwt.RegisteredClaims{
@@ -85,8 +109,18 @@ func (tm *TokenManager) GenerateAccessToken(app *database.Application, user *dat
 		},
 		Scope:    scope,
 		ClientID: app.ClientID,
-		Type:     "Bearer",
+		Type:     tokenType,
 		Extra:    extra,
+	}
+
+	// Add DPoP confirmation claim if thumbprint provided (RFC 9449)
+	if dpopThumbprint != "" {
+		claims.Cnf = &ConfirmationClaim{JKT: dpopThumbprint}
+	}
+
+	// Add tenant_id if application has a tenant (TrustSky USSP integration)
+	if app.TenantID != nil {
+		claims.TenantID = app.TenantID.String()
 	}
 
 	// Add user info if present
@@ -221,6 +255,7 @@ func (tm *TokenManager) IntrospectToken(tokenString string) (*IntrospectionRespo
 		Active:    true,
 		Scope:     claims.Scope,
 		ClientID:  claims.ClientID,
+		TenantID:  claims.TenantID, // Include tenant_id for TrustSky USSP integration
 		Username:  claims.Username,
 		TokenType: claims.Type,
 		Exp:       claims.ExpiresAt.Unix(),
@@ -230,18 +265,33 @@ func (tm *TokenManager) IntrospectToken(tokenString string) (*IntrospectionRespo
 		Aud:       aud,
 		Iss:       claims.Issuer,
 		Jti:       claims.ID,
+		Cnf:       claims.Cnf, // DPoP (RFC 9449) confirmation claim
 	}, nil
 }
 
-// GetJWKS returns the JSON Web Key Set
+// GetJWKS returns the JSON Web Key Set with proper base64url encoding per RFC 7517
 func (tm *TokenManager) GetJWKS() (map[string]interface{}, error) {
+	// Encode modulus (n) as base64url without padding
+	nBytes := tm.publicKey.N.Bytes()
+	nBase64 := base64.RawURLEncoding.EncodeToString(nBytes)
+
+	// Encode exponent (e) as base64url without padding
+	// The exponent is typically 65537 (0x010001)
+	e := tm.publicKey.E
+	eBytes := make([]byte, 0)
+	for e > 0 {
+		eBytes = append([]byte{byte(e & 0xff)}, eBytes...)
+		e >>= 8
+	}
+	eBase64 := base64.RawURLEncoding.EncodeToString(eBytes)
+
 	jwk := map[string]interface{}{
 		"kty": "RSA",
 		"use": "sig",
 		"kid": tm.kid,
 		"alg": "RS256",
-		"n":   tm.publicKey.N.String(),
-		"e":   fmt.Sprintf("%d", tm.publicKey.E),
+		"n":   nBase64,
+		"e":   eBase64,
 	}
 
 	jwks := map[string]interface{}{

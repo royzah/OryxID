@@ -14,12 +14,49 @@ help: ## Show available commands
 
 # Setup
 .PHONY: setup
-setup: env keys ssl ## Initial setup (create .env and generate keys)
-	@echo "Setup complete. Run 'make up' to start services."
+setup: env keys ssl ## Initial setup (create .env, generate keys and secure passwords)
+	@echo ""
+	@echo "============================================"
+	@echo "Setup complete!"
+	@echo "============================================"
+	@echo ""
+	@echo "Admin credentials (save these!):"
+	@grep "^ADMIN_USERNAME=" .env | cut -d'=' -f2 | xargs -I{} echo "  Username: {}"
+	@grep "^ADMIN_PASSWORD=" .env | cut -d'=' -f2 | xargs -I{} echo "  Password: {}"
+	@echo ""
+	@echo "Next steps:"
+	@echo "  1. make ssl-mkcert   # For trusted local SSL (recommended)"
+	@echo "  2. make up           # Start all services"
+	@echo "  3. Open https://localhost:8443"
+	@echo ""
 
 .PHONY: env
-env: ## Create .env from example if not exists
-	@[ -f .env ] || cp .env.example .env && echo "Created .env file"
+env: ## Create .env with secure random passwords
+	@if [ ! -f .env ]; then \
+		cp .env.example .env; \
+		echo "Created .env from template"; \
+	fi
+	@UPDATED=0; \
+	if grep -q "ADMIN_PASSWORD=admin123" .env 2>/dev/null; then \
+		ADMIN_PASS=$$(openssl rand -base64 48 | tr -dc 'a-zA-Z0-9!@#%^&*' | head -c 32); \
+		sed -i "s/ADMIN_PASSWORD=admin123/ADMIN_PASSWORD=$$ADMIN_PASS/" .env; \
+		UPDATED=1; \
+	fi; \
+	if grep -q "DB_PASSWORD=oryxid_secret" .env 2>/dev/null; then \
+		DB_PASS=$$(openssl rand -base64 48 | tr -dc 'a-zA-Z0-9' | head -c 32); \
+		sed -i "s/DB_PASSWORD=oryxid_secret/DB_PASSWORD=$$DB_PASS/" .env; \
+		UPDATED=1; \
+	fi; \
+	if grep -q "REDIS_PASSWORD=redis_secret" .env 2>/dev/null; then \
+		REDIS_PASS=$$(openssl rand -base64 48 | tr -dc 'a-zA-Z0-9' | head -c 32); \
+		sed -i "s/REDIS_PASSWORD=redis_secret/REDIS_PASSWORD=$$REDIS_PASS/" .env; \
+		UPDATED=1; \
+	fi; \
+	if [ "$$UPDATED" = "1" ]; then \
+		echo "Generated secure random passwords in .env"; \
+	else \
+		echo ".env ready (passwords already configured)"; \
+	fi
 
 .PHONY: keys
 keys: ## Generate RSA keys for JWT signing
@@ -36,6 +73,25 @@ ssl: ## Generate self-signed SSL certificates (development)
 		-subj "/CN=localhost/O=OryxID/C=US" 2>/dev/null
 	@chmod 644 certs/ssl_key.pem 2>/dev/null || true
 	@echo "SSL certificates generated in certs/"
+
+.PHONY: ssl-mkcert
+ssl-mkcert: ## Generate trusted SSL certificates using mkcert (recommended for development)
+	@if ! command -v mkcert &> /dev/null; then \
+		echo "mkcert not found. Install it first:"; \
+		echo "  macOS: brew install mkcert"; \
+		echo "  Linux: apt install mkcert (or see https://github.com/FiloSottile/mkcert)"; \
+		exit 1; \
+	fi
+	@mkdir -p certs
+	@echo "Installing local CA (may require sudo)..."
+	@mkcert -install
+	@echo "Generating trusted certificates for localhost..."
+	@mkcert -key-file certs/ssl_key.pem -cert-file certs/ssl_cert.pem localhost 127.0.0.1 ::1
+	@chmod 644 certs/ssl_key.pem 2>/dev/null || true
+	@echo ""
+	@echo "Trusted SSL certificates generated in certs/"
+	@echo "Restart services with: make down && make up"
+	@echo "curl will now work without -k flag"
 
 .PHONY: cert-init
 cert-init: ## Get Let's Encrypt certificate (requires SSL_DOMAIN and SSL_EMAIL in .env)
