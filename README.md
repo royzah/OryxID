@@ -15,6 +15,8 @@ Modern OAuth 2.1 / OpenID Connect Authorization Server.
 - Multi-tenancy with tenant isolation
 - Hierarchical scope expansion (admin includes write, write includes read)
 
+See [Feature Documentation](docs/features.md) for detailed explanations and usage examples.
+
 ## Architecture
 
 ```mermaid
@@ -66,11 +68,12 @@ grep "ADMIN_" .env
 
 | Document | Description |
 |----------|-------------|
+| [Features](docs/features.md) | Detailed feature documentation with examples |
+| [M2M Integration](docs/m2m-integration.md) | Machine-to-machine authentication guide |
 | [Backend API](backend/README.md) | API endpoints, configuration, database schema |
 | [Backend Testing](backend/TESTING.md) | Unit, integration, and security tests |
 | [Frontend](frontend/README.md) | Admin UI development |
 | [Helm Chart](helm/oryxid/README.md) | Kubernetes deployment |
-| [Integration Guide](docs/) | Third-party integration guides |
 
 ## Project Structure
 
