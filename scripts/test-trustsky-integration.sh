@@ -157,10 +157,15 @@ if echo "$AUD_TOKEN_RESPONSE" | grep -q "access_token"; then
     else
         echo "[INFO] Audience claim: $AUD_CLAIM (expected: trustsky)"
         echo "       Ensure API Resource 'trustsky' exists in admin UI"
+        echo "       AND application is linked to that API Resource"
     fi
 else
-    echo "[INFO] Token request with audience parameter"
-    echo "       Create API Resource in admin UI to enable audience claim"
+    echo "[INFO] Token request with audience returned:"
+    echo "$AUD_TOKEN_RESPONSE" | python3 -m json.tool 2>/dev/null || echo "$AUD_TOKEN_RESPONSE"
+    echo ""
+    echo "To enable audience claim:"
+    echo "  1. Create API Resource 'TrustSky API' with identifier 'trustsky'"
+    echo "  2. Edit application and select 'TrustSky API' under API Resources"
 fi
 echo ""
 

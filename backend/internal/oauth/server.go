@@ -401,7 +401,15 @@ func (s *Server) ClientCredentialsGrant(req *TokenRequest) (*tokens.TokenRespons
 			}
 		}
 		if !audienceAllowed {
-			return nil, fmt.Errorf("audience '%s' is not allowed for this client", req.Audience)
+			// List allowed audiences for debugging
+			allowedAudiences := make([]string, len(app.Audiences))
+			for i, aud := range app.Audiences {
+				allowedAudiences[i] = aud.Identifier
+			}
+			if len(allowedAudiences) == 0 {
+				return nil, fmt.Errorf("audience '%s' not allowed: no audiences configured for this client", req.Audience)
+			}
+			return nil, fmt.Errorf("audience '%s' not allowed: allowed audiences are %v", req.Audience, allowedAudiences)
 		}
 	}
 
