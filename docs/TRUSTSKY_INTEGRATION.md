@@ -21,12 +21,12 @@ OryxID is an OAuth 2.1 / OpenID Connect authorization server that provides authe
 
 ### 1. Get Credentials from OryxID Admin
 
-You need these from your OryxID administrator:
+Required credentials from OryxID administrator:
 
 ```bash
 AUTH_ISSUER=https://auth.example.com      # OryxID server URL
-AUTH_CLIENT_ID=<your-client-id>           # UUID format
-AUTH_CLIENT_SECRET=<your-client-secret>   # 64-character secret
+AUTH_CLIENT_ID=<client-id>                # UUID format
+AUTH_CLIENT_SECRET=<client-secret>        # 64-character secret
 ```
 
 ### 2. Test Token Generation
@@ -380,7 +380,7 @@ def require_scope(scope: str):
 
 ### Option 2: Token Introspection
 
-Validate tokens by calling OryxID's introspection endpoint. Use this when you need real-time revocation checking.
+Validate tokens by calling OryxID's introspection endpoint. Use this for real-time revocation checking.
 
 ```bash
 curl -X POST ${AUTH_ISSUER}/oauth/introspect \
@@ -629,8 +629,8 @@ OryxID includes a test script to verify all integration points:
 ```bash
 # Set credentials
 export AUTH_ISSUER=https://localhost:8443
-export AUTH_CLIENT_ID=your-client-id
-export AUTH_CLIENT_SECRET=your-client-secret
+export AUTH_CLIENT_ID=<client-id>
+export AUTH_CLIENT_SECRET=<client-secret>
 
 # Run tests
 ./scripts/test-trustsky-integration.sh
@@ -766,7 +766,7 @@ curl -d "client_id=${AUTH_CLIENT_ID}&client_secret=${AUTH_CLIENT_SECRET}" ...
 
 ### Token Request Returns "tenant is suspended"
 
-The tenant associated with your client has been suspended.
+The tenant associated with the client has been suspended.
 
 **Fix:** Contact OryxID administrator to reactivate the tenant.
 
