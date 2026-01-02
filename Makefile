@@ -285,6 +285,20 @@ prod-build: ## Build for production
 prod-up: ## Start in production mode
 	@SERVER_MODE=release $(COMPOSE) up -d
 
+.PHONY: prod-pull
+prod-pull: ## Pull production images from ghcr.io
+	@$(COMPOSE) -f docker-compose.prod.yml pull
+
+.PHONY: prod-deploy
+prod-deploy: ## Deploy using production images (ghcr.io)
+	@$(COMPOSE) -f docker-compose.prod.yml up -d
+	@echo "Production services started using IMAGE_TAG=$$(grep IMAGE_TAG .env | cut -d '=' -f2 || echo 'latest')"
+	@echo "Access at https://localhost:8443"
+
+.PHONY: prod-down
+prod-down: ## Stop production deployment
+	@$(COMPOSE) -f docker-compose.prod.yml down
+
 # Utilities
 .PHONY: shell-backend
 shell-backend: ## Open shell in backend container

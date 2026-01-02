@@ -149,7 +149,7 @@ func main() {
 OryxID supports wildcard scopes for flexible access control:
 
 | Scope Granted | Access |
-|--------------|--------|
+| -------------- | -------- |
 | `billing:*` | Grants all billing permissions |
 | `billing:read` | Read-only billing access |
 | `billing:write` | Write billing access |
@@ -157,7 +157,7 @@ OryxID supports wildcard scopes for flexible access control:
 
 ### Recommended Patterns
 
-```
+```text
 {resource}:{action}
 
 Examples:
@@ -227,10 +227,10 @@ if !response.Active {
 
 The middleware returns standard OAuth 2.0 error responses:
 
-| Status | Error | Description |
-|--------|-------|-------------|
-| 401 | `invalid_token` | Token missing, expired, or invalid |
-| 403 | `insufficient_scope` | Token doesn't have required scopes |
+| Status | Error                  | Description                            |
+|--------|------------------------|----------------------------------------|
+| 401    | `invalid_token`        | Token missing, expired, or invalid     |
+| 403    | `insufficient_scope`   | Token doesn't have required scopes     |
 
 Example error response:
 
@@ -247,7 +247,7 @@ Example error response:
 
 OryxID exposes Prometheus metrics at `/metrics`:
 
-```
+```text
 # Token issuance
 oryxid_tokens_issued_total{client_id="billing-service",grant_type="client_credentials"} 1234
 
@@ -284,6 +284,7 @@ curl https://auth.example.com/health/detailed
 2. **Scope Principle of Least Privilege**: Request only the scopes the service actually needs
 
 3. **Secret Rotation**: Rotate client secrets periodically using the admin API:
+
    ```bash
    curl -X POST https://auth.example.com/api/v1/applications/{id}/rotate-secret
    ```

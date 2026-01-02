@@ -57,9 +57,10 @@ make up
 make status
 ```
 
-Access: https://localhost:8443
+Access: <https://localhost:8443>
 
 Admin credentials are displayed after `make setup`. To view them again:
+
 ```bash
 grep "ADMIN_" .env
 ```
@@ -67,7 +68,7 @@ grep "ADMIN_" .env
 ## Documentation
 
 | Document | Description |
-|----------|-------------|
+| ---------- | ------------- |
 | [Features](docs/features.md) | Detailed feature documentation with examples |
 | [M2M Integration](docs/m2m-integration.md) | Machine-to-machine authentication guide |
 | [Backend API](backend/README.md) | API endpoints, configuration, database schema |
@@ -92,7 +93,7 @@ grep "ADMIN_" .env
 ## Make Commands
 
 | Command | Description |
-|---------|-------------|
+| --------- | ------------- |
 | `make setup` | Initial setup (env, keys, SSL, secure passwords) |
 | `make ssl-mkcert` | Generate trusted SSL certificates (recommended) |
 | `make ssl` | Generate self-signed SSL (requires -k with curl) |
@@ -110,7 +111,7 @@ Full list: `make help`
 ## OAuth Endpoints
 
 | Endpoint | Description |
-|----------|-------------|
+| ---------- | ------------- |
 | `/oauth/authorize` | Authorization endpoint |
 | `/oauth/token` | Token endpoint |
 | `/oauth/introspect` | Token introspection (RFC 7662) |
@@ -127,12 +128,12 @@ Full list: `make help`
 Environment variables (prefix: `ORYXID_`):
 
 | Variable | Description | Default |
-|----------|-------------|---------|
+| ---------- | ------------- | --------- |
 | `SERVER_PORT` | API server port | 9000 |
 | `SERVER_MODE` | debug / release | debug |
 | `DATABASE_HOST` | PostgreSQL host | localhost |
 | `REDIS_HOST` | Redis host | localhost |
-| `OAUTH_ISSUER` | Token issuer URL | http://localhost:9000 |
+| `OAUTH_ISSUER` | Token issuer URL | <http://localhost:9000> |
 | `JWT_PRIVATEKEYPATH` | RSA private key | certs/private_key.pem |
 
 Full configuration: see `.env.example`
@@ -153,10 +154,10 @@ Full configuration: see `.env.example`
 
 GitHub Actions workflow (`.github/workflows/ci.yaml`):
 
-| Trigger | Actions |
-|---------|---------|
-| Push/PR to main | Run tests, security audit (govulncheck, npm audit) |
-| Push tag `v*` | Build and push images to ghcr.io |
+| Trigger         | Actions                                             |
+|-----------------|-----------------------------------------------------|
+| Push/PR to main | Run tests, security audit (govulncheck, npm audit)  |
+| Push tag `v*`   | Build and push images to ghcr.io                    |
 
 ## Deployment
 
@@ -174,14 +175,15 @@ Use pre-built images from GitHub Container Registry:
 
 ```bash
 cp .env.example .env
-# Edit .env with production values
-docker compose -f docker-compose.prod.yaml up -d
+# Edit .env - set IMAGE_TAG=0.1.1 (or desired version)
+make prod-deploy
 ```
 
 Images:
-- `ghcr.io/<owner>/oryxid-backend:latest`
-- `ghcr.io/<owner>/oryxid-frontend:latest`
-- `ghcr.io/<owner>/oryxid-nginx:latest`
+
+- `ghcr.io/royzah/oryxid-backend:${IMAGE_TAG}`
+- `ghcr.io/royzah/oryxid-frontend:${IMAGE_TAG}`
+- `ghcr.io/royzah/oryxid-nginx:${IMAGE_TAG}`
 
 ### Kubernetes
 
