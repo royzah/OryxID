@@ -7,7 +7,7 @@ OryxID implements OAuth 2.1 (draft-ietf-oauth-v2-1), which consolidates security
 ### Key Differences from OAuth 2.0
 
 | Feature | OAuth 2.0 | OAuth 2.1 |
-|---------|-----------|-----------|
+| --------- | ----------- | ----------- |
 | Implicit Grant | Allowed | Removed |
 | Password Grant | Allowed | Removed |
 | PKCE | Optional | Required |
@@ -303,7 +303,7 @@ Push authorization parameters server-side before redirecting user.
 - Prevents parameter tampering
 - Supports large authorization_details payloads
 
-### Flow
+### PAR Flow
 
 ```bash
 # Step 1: Push authorization request
@@ -340,6 +340,7 @@ curl -X POST ${AUTH_ISSUER}/oauth/introspect \
 ```
 
 Response:
+
 ```json
 {
   "active": true,
@@ -370,7 +371,7 @@ Isolate data and configurations per organization.
 ### Tenant Model
 
 | Field | Description |
-|-------|-------------|
+| ------- | ------------- |
 | id | UUID |
 | name | Organization name |
 | type | operator, authority, emergency_service |
@@ -391,7 +392,7 @@ Tokens include `tenant_id` claim for data isolation:
 ### Tenant Status Effects
 
 | Status | Token Issuance | API Access |
-|--------|----------------|------------|
+| -------- | ---------------- | ------------ |
 | active | Allowed | Allowed |
 | suspended | Blocked | Existing tokens still valid |
 | revoked | Blocked | Blocked |
@@ -404,21 +405,22 @@ Scopes are automatically expanded based on hierarchy.
 
 ### Expansion Rules
 
-```
+```text
 :admin
   └── :write
         └── :read
 ```
 
-| Requested | Token Contains |
-|-----------|----------------|
-| api:admin | api:admin, api:write, api:read |
-| api:write | api:write, api:read |
-| api:read | api:read |
+| Requested | Token Contains                  |
+|-----------|---------------------------------|
+| api:admin | api:admin, api:write, api:read  |
+| api:write | api:write, api:read             |
+| api:read  | api:read                        |
 
 ### Configuration
 
 Scope hierarchy is automatic for scopes following the naming pattern:
+
 - `resource:admin` - includes write and read
 - `resource:write` - includes read
 - `resource:read` - read only
@@ -434,7 +436,7 @@ Register APIs and define accepted scopes.
 In admin UI, navigate to API Resources:
 
 | Field | Description |
-|-------|-------------|
+| ------- | ------------- |
 | Identifier | Unique API identifier (appears in `aud` claim) |
 | Name | Human-readable name |
 | Scopes | Which scopes this API accepts |
@@ -484,6 +486,7 @@ sequenceDiagram
 ### Reuse Detection
 
 If a previously used refresh token is presented:
+
 1. All tokens in the chain are revoked
 2. User must re-authenticate
 

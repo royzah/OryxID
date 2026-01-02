@@ -5,7 +5,7 @@ OryxID is an OAuth 2.1 / OpenID Connect authorization server that provides authe
 ## What OryxID Provides
 
 | Feature | Description | Specification |
-|---------|-------------|---------------|
+| --------- | ------------- | --------------- |
 | JWT Access Tokens | RS256 signed tokens with claims | RFC 9068 |
 | JWKS Endpoint | Public keys for token verification | RFC 7517 |
 | Token Introspection | Validate tokens server-side | RFC 7662 |
@@ -41,6 +41,7 @@ curl -X POST ${AUTH_ISSUER}/oauth/token \
 ```
 
 Response:
+
 ```json
 {
   "access_token": "eyJhbGciOiJSUzI1NiIsInR5cCI6IkpXVCIsImtpZCI6ImRlZmF1bHQta2V5LWlkIn0...",
@@ -64,7 +65,7 @@ curl -X GET https://api.trustsky.example.com/v1/flights \
 All endpoints are relative to `AUTH_ISSUER`:
 
 | Endpoint | Method | Description |
-|----------|--------|-------------|
+| ---------- | -------- | ------------- |
 | `/.well-known/openid-configuration` | GET | OpenID Connect discovery document |
 | `/.well-known/jwks.json` | GET | JSON Web Key Set (public keys) |
 | `/oauth/token` | POST | Token endpoint (get access tokens) |
@@ -78,6 +79,7 @@ curl ${AUTH_ISSUER}/.well-known/openid-configuration
 ```
 
 Response:
+
 ```json
 {
   "issuer": "https://auth.example.com",
@@ -129,7 +131,7 @@ Response:
 ### Claims Reference
 
 | Claim | Type | Description |
-|-------|------|-------------|
+| ------- | ------ | ------------- |
 | `iss` | string | Issuer URL (AUTH_ISSUER) |
 | `sub` | string | Subject (client_id for client_credentials) |
 | `aud` | string | Audience (e.g., "trustsky") |
@@ -347,6 +349,7 @@ func (v *TokenValidator) Introspect(token string) (*IntrospectionResponse, error
 ```
 
 Response (active token):
+
 ```json
 {
   "active": true,
@@ -360,6 +363,7 @@ Response (active token):
 ```
 
 Response (revoked/expired token):
+
 ```json
 {
   "active": false
@@ -372,7 +376,7 @@ Response (revoked/expired token):
 
 OryxID automatically expands scopes following this hierarchy:
 
-```
+```text
 trustsky:admin
   └── trustsky:flight:write
   │     └── trustsky:flight:read
@@ -387,7 +391,7 @@ trustsky:admin
 ### Expansion Rules
 
 | Request This | Token Contains |
-|--------------|----------------|
+| -------------- | ---------------- |
 | `trustsky:admin` | All trustsky:* scopes |
 | `trustsky:flight:write` | `trustsky:flight:write` + `trustsky:flight:read` |
 | `trustsky:nfz:write` | `trustsky:nfz:write` + `trustsky:nfz:read` |
@@ -414,7 +418,7 @@ func (s *FlightService) ListFlights(ctx context.Context, claims *Claims) ([]Flig
 ### Tenant Status
 
 | Status | Token Issuance | Description |
-|--------|----------------|-------------|
+| -------- | ---------------- | ------------- |
 | `active` | Allowed | Normal operation |
 | `suspended` | Blocked | Temporary suspension |
 | `revoked` | Blocked | Permanent revocation |
@@ -430,7 +434,7 @@ API Resources allow registering protected APIs and defining which scopes each AP
 In OryxID admin UI, navigate to **API Resources** and create:
 
 | Field | Value |
-|-------|-------|
+| ------- | ------- |
 | Identifier | `trustsky` |
 | Name | TrustSky API |
 | Scopes | Select all trustsky:* scopes |
@@ -534,6 +538,7 @@ curl -X POST ${AUTH_ISSUER}/oauth/token \
 ```
 
 Response:
+
 ```json
 {
   "access_token": "eyJ...",
@@ -575,7 +580,7 @@ Response: `200 OK` (empty body)
 ### Token Endpoint Errors
 
 | Error | Description |
-|-------|-------------|
+| ------- | ------------- |
 | `invalid_client` | Invalid client_id or client_secret |
 | `invalid_grant` | Invalid or expired authorization code |
 | `invalid_scope` | Requested scope not allowed for this client |
@@ -584,6 +589,7 @@ Response: `200 OK` (empty body)
 | `tenant is revoked` | Client's tenant is revoked |
 
 Example error response:
+
 ```json
 {
   "error": "invalid_client",
@@ -593,10 +599,10 @@ Example error response:
 
 ### DPoP Errors
 
-| Error | Description |
-|-------|-------------|
-| `invalid_dpop_proof` | DPoP proof validation failed |
-| `use_dpop_nonce` | Server requires nonce (check DPoP-Nonce header) |
+| Error                | Description                                     |
+|----------------------|-------------------------------------------------|
+| `invalid_dpop_proof` | DPoP proof validation failed                    |
+| `use_dpop_nonce`     | Server requires nonce (check DPoP-Nonce header) |
 
 ---
 
@@ -617,7 +623,8 @@ export AUTH_CLIENT_SECRET=<client-secret>
 ```
 
 Expected output:
-```
+
+```text
 ========================================
  TrustSky Integration Verification
 ========================================
@@ -666,7 +673,7 @@ echo $TOKEN | cut -d. -f2 | base64 -d 2>/dev/null | jq .
 Navigate to **Scopes** in OryxID admin UI and create:
 
 | Scope | Description |
-|-------|-------------|
+| ------- | ------------- |
 | `trustsky:admin` | Full admin access |
 | `trustsky:flight:read` | Read flight data |
 | `trustsky:flight:write` | Write flight data |
@@ -682,7 +689,7 @@ Navigate to **Scopes** in OryxID admin UI and create:
 Navigate to **API Resources** and create:
 
 | Field | Value |
-|-------|-------|
+| ------- | ------- |
 | Identifier | `trustsky` |
 | Name | TrustSky API |
 | Description | TrustSky USSP API |
@@ -695,10 +702,10 @@ This registers the API and enables the `aud` claim in tokens.
 Navigate to **Tenants** and create:
 
 | Field | Example Value |
-|-------|---------------|
+| ------- | --------------- |
 | Name | Acme Drone Operations |
 | Type | `operator` |
-| Email | admin@acme-drones.com |
+| Email | <admin@acme-drones.com> |
 | Status | `active` |
 
 ### 4. Create Application
@@ -706,7 +713,7 @@ Navigate to **Tenants** and create:
 Navigate to **Applications** and create:
 
 | Field | Value |
-|-------|-------|
+| ------- | ------- |
 | Name | TrustSky Backend |
 | Client Type | `confidential` |
 | Grant Types | `client_credentials` |
@@ -717,6 +724,7 @@ Navigate to **Applications** and create:
 ### 5. Provide Credentials
 
 After creation, copy and securely provide to TrustSky:
+
 - **Client ID**: UUID format
 - **Client Secret**: 64-character secret
 - **Issuer URL**: OryxID server URL
@@ -732,10 +740,12 @@ After creation, copy and securely provide to TrustSky:
 ```
 
 **Causes:**
+
 - Wrong `AUTH_CLIENT_ID` or `AUTH_CLIENT_SECRET`
 - Using wrong authentication method (try `-u` instead of form body)
 
 **Fix:**
+
 ```bash
 # Correct: Basic auth
 curl -u "${AUTH_CLIENT_ID}:${AUTH_CLIENT_SECRET}" ...
@@ -755,6 +765,7 @@ The tenant associated with the client has been suspended.
 JWKS might be cached with old keys.
 
 **Fix:**
+
 - Clear JWKS cache
 - Fetch fresh JWKS: `curl ${AUTH_ISSUER}/.well-known/jwks.json`
 - Verify `kid` in token matches a key in JWKS
