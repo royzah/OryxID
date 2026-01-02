@@ -1,6 +1,6 @@
 # OryxID
 
-OAuth 2.1 / OpenID Connect Authorization Server with TrustSky USSP Integration.
+Modern OAuth 2.1 / OpenID Connect Authorization Server.
 
 ## Features
 
@@ -13,7 +13,7 @@ OAuth 2.1 / OpenID Connect Authorization Server with TrustSky USSP Integration.
 - Pushed Authorization Requests (RFC 9126)
 - Token Introspection and Revocation
 - Multi-tenancy with tenant isolation
-- TrustSky USSP integration with scope hierarchy
+- Hierarchical scope expansion (admin includes write, write includes read)
 
 ## Architecture
 
@@ -62,39 +62,15 @@ Admin credentials are displayed after `make setup`. To view them again:
 grep "ADMIN_" .env
 ```
 
-## TrustSky USSP Integration
-
-OryxID supports TrustSky USSP requirements out of the box:
-
-| Requirement | Feature | Status |
-|-------------|---------|--------|
-| JWT Authentication | RS256 signed JWTs | Ready |
-| JWKS Endpoint | `/.well-known/jwks.json` | Ready |
-| Multi-tenancy | `tenant_id` claim in tokens | Ready |
-| Scope Hierarchy | Auto-expansion (write includes read) | Ready |
-| Token Introspection | RFC 7662 `/oauth/introspect` | Ready |
-| DPoP | RFC 9449 sender-constrained tokens | Ready |
-| Client Credentials | Machine-to-machine auth | Ready |
-
-See [TrustSky Integration Guide](docs/TRUSTSKY_INTEGRATION.md) for setup instructions.
-
-### Verify Integration
-
-```bash
-export AUTH_CLIENT_ID=<your_client_id>
-export AUTH_CLIENT_SECRET=<your_client_secret>
-./scripts/test-trustsky-integration.sh
-```
-
 ## Documentation
 
 | Document | Description |
 |----------|-------------|
-| [TrustSky Integration](docs/TRUSTSKY_INTEGRATION.md) | TrustSky USSP setup guide |
 | [Backend API](backend/README.md) | API endpoints, configuration, database schema |
 | [Backend Testing](backend/TESTING.md) | Unit, integration, and security tests |
 | [Frontend](frontend/README.md) | Admin UI development |
 | [Helm Chart](helm/oryxid/README.md) | Kubernetes deployment |
+| [Integration Guide](docs/) | Third-party integration guides |
 
 ## Project Structure
 
