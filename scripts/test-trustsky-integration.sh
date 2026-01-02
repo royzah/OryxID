@@ -138,6 +138,8 @@ fi
 echo ""
 
 # 7. Audience (API Resource) Test
+# Disable exit-on-error for this section (audience is optional feature)
+set +e
 echo "=== 7. Audience Parameter ==="
 echo "POST $AUTH_ISSUER/oauth/token (with audience=trustsky)"
 AUD_TOKEN_RESPONSE=$(curl -s $CURL_OPTS -X POST $AUTH_ISSUER/oauth/token \
@@ -145,14 +147,14 @@ AUD_TOKEN_RESPONSE=$(curl -s $CURL_OPTS -X POST $AUTH_ISSUER/oauth/token \
   -H "Content-Type: application/x-www-form-urlencoded" \
   -d "grant_type=client_credentials" \
   -d "scope=trustsky:flight:read" \
-  -d "audience=trustsky" 2>&1) || true
+  -d "audience=trustsky" 2>&1)
 
 if echo "$AUD_TOKEN_RESPONSE" | grep -q "access_token"; then
     AUD_TOKEN=$(echo "$AUD_TOKEN_RESPONSE" | python3 -c "import sys,json; print(json.load(sys.stdin)['access_token'])" 2>/dev/null)
     # JWT uses base64url encoding - convert to standard base64 and decode
     AUD_PAYLOAD=$(echo "$AUD_TOKEN" | cut -d'.' -f2 | tr '_-' '/+' | base64 -d 2>/dev/null)
     # aud can be string or array - extract first value if array
-    AUD_CLAIM=$(echo "$AUD_PAYLOAD" | python3 -c "import sys,json; d=json.load(sys.stdin); a=d.get('aud',''); print(a[0] if isinstance(a,list) and a else a)" 2>/dev/null) || true
+    AUD_CLAIM=$(echo "$AUD_PAYLOAD" | python3 -c "import sys,json; d=json.load(sys.stdin); a=d.get('aud',''); print(a[0] if isinstance(a,list) and a else a)" 2>/dev/null || echo "")
     if [ "$AUD_CLAIM" = "trustsky" ]; then
         echo "[PASS] Audience claim present in token"
         echo "aud: $AUD_CLAIM"
@@ -169,6 +171,7 @@ else
     echo "  1. Create API Resource 'TrustSky API' with identifier 'trustsky'"
     echo "  2. Edit application and select 'TrustSky API' under API Resources"
 fi
+set -e
 echo ""
 
 # 8. Admin Scope Expansion
