@@ -14,12 +14,36 @@ help: ## Show available commands
 
 # Setup
 .PHONY: setup
-setup: env keys ssl ## Initial setup (create .env and generate keys)
-	@echo "Setup complete. Run 'make up' to start services."
+setup: env keys ssl ## Initial setup (create .env, generate keys and secure passwords)
+	@echo ""
+	@echo "============================================"
+	@echo "Setup complete!"
+	@echo "============================================"
+	@echo ""
+	@echo "Admin credentials (save these!):"
+	@grep "^ADMIN_USERNAME=" .env | cut -d'=' -f2 | xargs -I{} echo "  Username: {}"
+	@grep "^ADMIN_PASSWORD=" .env | cut -d'=' -f2 | xargs -I{} echo "  Password: {}"
+	@echo ""
+	@echo "Next steps:"
+	@echo "  1. make ssl-mkcert   # For trusted local SSL (recommended)"
+	@echo "  2. make up           # Start all services"
+	@echo "  3. Open https://localhost:8443"
+	@echo ""
 
 .PHONY: env
-env: ## Create .env from example if not exists
-	@[ -f .env ] || cp .env.example .env && echo "Created .env file"
+env: ## Create .env with secure random passwords
+	@if [ ! -f .env ]; then \
+		cp .env.example .env; \
+		ADMIN_PASS=$$(openssl rand -base64 24 | tr -dc 'a-zA-Z0-9' | head -c 24); \
+		DB_PASS=$$(openssl rand -base64 24 | tr -dc 'a-zA-Z0-9' | head -c 24); \
+		REDIS_PASS=$$(openssl rand -base64 24 | tr -dc 'a-zA-Z0-9' | head -c 24); \
+		sed -i "s/ADMIN_PASSWORD=admin123/ADMIN_PASSWORD=$$ADMIN_PASS/" .env; \
+		sed -i "s/DB_PASSWORD=oryxid_secret/DB_PASSWORD=$$DB_PASS/" .env; \
+		sed -i "s/REDIS_PASSWORD=redis_secret/REDIS_PASSWORD=$$REDIS_PASS/" .env; \
+		echo "Created .env with secure random passwords"; \
+	else \
+		echo ".env already exists (skipping)"; \
+	fi
 
 .PHONY: keys
 keys: ## Generate RSA keys for JWT signing
