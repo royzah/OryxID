@@ -697,7 +697,20 @@ Navigate to **Scopes** in OryxID admin UI and create:
 | `trustsky:telemetry:write` | Write telemetry data |
 | `trustsky:sky:read` | Read sky data |
 
-### 2. Create Tenant (if needed)
+### 2. Create API Resource
+
+Navigate to **API Resources** and create:
+
+| Field | Value |
+|-------|-------|
+| Identifier | `trustsky` |
+| Name | TrustSky API |
+| Description | TrustSky USSP API |
+| Scopes | Select all trustsky:* scopes |
+
+This registers the API and enables the `aud` claim in tokens.
+
+### 3. Create Tenant (if needed)
 
 Navigate to **Tenants** and create:
 
@@ -708,7 +721,7 @@ Navigate to **Tenants** and create:
 | Email | admin@acme-drones.com |
 | Status | `active` |
 
-### 3. Create Application
+### 4. Create Application
 
 Navigate to **Applications** and create:
 
@@ -721,12 +734,12 @@ Navigate to **Applications** and create:
 | Scopes | Select required trustsky:* scopes |
 | Tenant | Select tenant (optional) |
 
-### 4. Provide Credentials
+### 5. Provide Credentials
 
 After creation, copy and securely provide to TrustSky:
 - **Client ID**: UUID format
 - **Client Secret**: 64-character secret
-- **Issuer URL**: Your OryxID URL
+- **Issuer URL**: OryxID server URL
 
 ---
 
@@ -780,6 +793,7 @@ Scope hierarchy only works for scopes created in OryxID with proper naming:
 ### OryxID Administrator
 
 - [ ] All TrustSky scopes created
+- [ ] API Resource created with identifier `trustsky`
 - [ ] Tenant created (if multi-tenancy needed)
 - [ ] Application created with correct settings
 - [ ] Client ID and Secret securely delivered to TrustSky team
@@ -788,6 +802,7 @@ Scope hierarchy only works for scopes created in OryxID with proper naming:
 
 - [ ] Environment variables configured (`AUTH_ISSUER`, `AUTH_CLIENT_ID`, `AUTH_CLIENT_SECRET`)
 - [ ] Token generation tested and working
+- [ ] Audience claim (`aud`) validated in tokens
 - [ ] Token validation implemented (JWKS or introspection)
 - [ ] Scope checking implemented in API endpoints
 - [ ] Tenant isolation implemented (if multi-tenancy)
