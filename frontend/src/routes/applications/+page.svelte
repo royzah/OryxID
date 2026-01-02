@@ -1,11 +1,12 @@
 <script lang="ts">
 	import { onMount } from 'svelte';
 	import { Card, Button, Input, Label, Badge } from '$lib/components/ui';
-	import { applicationsApi, scopesApi } from '$lib/api';
-	import type { Application, Scope, CreateApplicationRequest } from '$lib/types';
+	import { applicationsApi, scopesApi, tenantsApi } from '$lib/api';
+	import type { Application, Scope, Tenant, CreateApplicationRequest } from '$lib/types';
 
 	let applications: Application[] = [];
 	let scopes: Scope[] = [];
+	let tenants: Tenant[] = [];
 	let loading = true;
 	let error: string | null = null;
 	let searchQuery = '';
@@ -30,8 +31,22 @@
 		redirect_uris: [''],
 		post_logout_uris: [],
 		scope_ids: [],
-		skip_authorization: false
+		skip_authorization: false,
+		token_endpoint_auth_method: 'client_secret_basic',
+		tenant_id: ''
 	};
+
+	// Check if redirect URIs are required based on grant types
+	$: requiresRedirectUri = formData.grant_types.includes('authorization_code') ||
+		formData.grant_types.includes('implicit');
+
+	// Token endpoint auth methods
+	const authMethods = [
+		{ value: 'client_secret_basic', label: 'Client Secret Basic (HTTP Basic Auth)' },
+		{ value: 'client_secret_post', label: 'Client Secret Post (Form Body)' },
+		{ value: 'private_key_jwt', label: 'Private Key JWT' },
+		{ value: 'none', label: 'None (Public Clients)' }
+	];
 
 	onMount(async () => {
 		await loadData();
@@ -40,9 +55,10 @@
 	async function loadData() {
 		try {
 			loading = true;
-			[applications, scopes] = await Promise.all([
+			[applications, scopes, tenants] = await Promise.all([
 				applicationsApi.list(searchQuery || undefined),
-				scopesApi.list()
+				scopesApi.list(),
+				tenantsApi.list()
 			]);
 		} catch (e) {
 			error = e instanceof Error ? e.message : 'Failed to load data';
@@ -64,7 +80,9 @@
 			redirect_uris: [''],
 			post_logout_uris: [],
 			scope_ids: [],
-			skip_authorization: false
+			skip_authorization: false,
+			token_endpoint_auth_method: 'client_secret_basic',
+			tenant_id: ''
 		};
 		showModal = true;
 	}
@@ -87,7 +105,9 @@
 			redirect_uris: app.redirect_uris.length > 0 ? [...app.redirect_uris] : [''],
 			post_logout_uris: [...app.post_logout_uris],
 			scope_ids: app.scopes?.map((s) => s.id) || [],
-			skip_authorization: app.skip_authorization
+			skip_authorization: app.skip_authorization,
+			token_endpoint_auth_method: app.token_endpoint_auth_method || 'client_secret_basic',
+			tenant_id: app.tenant_id || ''
 		};
 		showModal = true;
 	}
@@ -104,7 +124,8 @@
 		try {
 			const cleanData = {
 				...formData,
-				redirect_uris: formData.redirect_uris.filter((uri) => uri.trim())
+				redirect_uris: formData.redirect_uris?.filter((uri) => uri.trim()) || [],
+				tenant_id: formData.tenant_id || undefined
 			};
 
 			if (modalMode === 'create') {
@@ -139,11 +160,11 @@
 	}
 
 	function addRedirectUri() {
-		formData.redirect_uris = [...formData.redirect_uris, ''];
+		formData.redirect_uris = [...(formData.redirect_uris || []), ''];
 	}
 
 	function removeRedirectUri(index: number) {
-		formData.redirect_uris = formData.redirect_uris.filter((_, i) => i !== index);
+		formData.redirect_uris = (formData.redirect_uris || []).filter((_, i) => i !== index);
 	}
 
 	function toggleGrantType(type: string) {
@@ -585,6 +606,38 @@
 							</div>
 
 							<div>
+								<Label for="auth_method">Token Endpoint Auth Method</Label>
+								<select
+									id="auth_method"
+									bind:value={formData.token_endpoint_auth_method}
+									class="mt-1 block w-full rounded-lg border border-gray-300 px-3 py-2 text-sm focus:border-primary focus:outline-none focus:ring-1 focus:ring-primary"
+								>
+									{#each authMethods as method}
+										<option value={method.value}>{method.label}</option>
+									{/each}
+								</select>
+							</div>
+
+							{#if tenants.length > 0}
+								<div>
+									<Label for="tenant">Tenant (Optional)</Label>
+									<select
+										id="tenant"
+										bind:value={formData.tenant_id}
+										class="mt-1 block w-full rounded-lg border border-gray-300 px-3 py-2 text-sm focus:border-primary focus:outline-none focus:ring-1 focus:ring-primary"
+									>
+										<option value="">No tenant (standalone application)</option>
+										{#each tenants.filter(t => t.status === 'active') as tenant}
+											<option value={tenant.id}>{tenant.name} ({tenant.type})</option>
+										{/each}
+									</select>
+									<p class="mt-1 text-xs text-gray-500">
+										Assign this application to a tenant for multi-tenancy support
+									</p>
+								</div>
+							{/if}
+
+							<div>
 								<Label>Grant Types</Label>
 								<div class="mt-2 space-y-2">
 									{#each grantTypes as grant}
@@ -602,16 +655,21 @@
 							</div>
 
 							<div>
-								<Label>Redirect URIs</Label>
+								<Label>Redirect URIs {requiresRedirectUri ? '*' : '(Optional)'}</Label>
+								{#if !requiresRedirectUri}
+									<p class="text-xs text-gray-500 mt-1">
+										Not required for client_credentials grant type
+									</p>
+								{/if}
 								<div class="mt-2 space-y-2">
-									{#each formData.redirect_uris as _uri, i}
+									{#each formData.redirect_uris || [''] as _uri, i}
 										<div class="flex gap-2">
 											<Input
 												bind:value={formData.redirect_uris[i]}
 												placeholder="https://example.com/callback"
 												class="flex-1"
 											/>
-											{#if formData.redirect_uris.length > 1}
+											{#if (formData.redirect_uris?.length || 0) > 1}
 												<Button
 													type="button"
 													variant="outline"

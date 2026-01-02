@@ -49,20 +49,35 @@ func (h *AdminHandler) ListApplications(c *gin.Context) {
 
 func (h *AdminHandler) CreateApplication(c *gin.Context) {
 	var req struct {
-		Name              string   `json:"name" binding:"required"`
-		Description       string   `json:"description"`
-		ClientType        string   `json:"client_type" binding:"required,oneof=confidential public"`
-		GrantTypes        []string `json:"grant_types" binding:"required,min=1"`
-		ResponseTypes     []string `json:"response_types"`
-		RedirectURIs      []string `json:"redirect_uris" binding:"required,min=1"`
-		PostLogoutURIs    []string `json:"post_logout_uris"`
-		ScopeIDs          []string `json:"scope_ids"`
-		AudienceIDs       []string `json:"audience_ids"`
-		SkipAuthorization bool     `json:"skip_authorization"`
+		Name                    string   `json:"name" binding:"required"`
+		Description             string   `json:"description"`
+		ClientType              string   `json:"client_type" binding:"required,oneof=confidential public"`
+		GrantTypes              []string `json:"grant_types" binding:"required,min=1"`
+		ResponseTypes           []string `json:"response_types"`
+		RedirectURIs            []string `json:"redirect_uris"`
+		PostLogoutURIs          []string `json:"post_logout_uris"`
+		ScopeIDs                []string `json:"scope_ids"`
+		AudienceIDs             []string `json:"audience_ids"`
+		SkipAuthorization       bool     `json:"skip_authorization"`
+		TokenEndpointAuthMethod string   `json:"token_endpoint_auth_method"`
+		TenantID                string   `json:"tenant_id"`
 	}
 
 	if err := c.ShouldBindJSON(&req); err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+
+	// Validate redirect_uris required for authorization_code grant
+	hasAuthCodeGrant := false
+	for _, grant := range req.GrantTypes {
+		if grant == "authorization_code" {
+			hasAuthCodeGrant = true
+			break
+		}
+	}
+	if hasAuthCodeGrant && len(req.RedirectURIs) == 0 {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "redirect_uris required for authorization_code grant"})
 		return
 	}
 
@@ -93,17 +108,40 @@ func (h *AdminHandler) CreateApplication(c *gin.Context) {
 		hashedSecret = string(hashedSecretBytes)
 	}
 
+	// Set default token endpoint auth method if not provided
+	tokenEndpointAuthMethod := req.TokenEndpointAuthMethod
+	if tokenEndpointAuthMethod == "" {
+		tokenEndpointAuthMethod = "client_secret_basic"
+	}
+
 	app := database.Application{
-		Name:               req.Name,
-		Description:        req.Description,
-		ClientID:           clientID,
-		HashedClientSecret: hashedSecret,
-		ClientType:         req.ClientType,
-		GrantTypes:         database.StringArray(req.GrantTypes),
-		ResponseTypes:      database.StringArray(req.ResponseTypes),
-		RedirectURIs:       database.StringArray(req.RedirectURIs),
-		PostLogoutURIs:     database.StringArray(req.PostLogoutURIs),
-		SkipAuthorization:  req.SkipAuthorization,
+		Name:                    req.Name,
+		Description:             req.Description,
+		ClientID:                clientID,
+		HashedClientSecret:      hashedSecret,
+		ClientType:              req.ClientType,
+		TokenEndpointAuthMethod: tokenEndpointAuthMethod,
+		GrantTypes:              database.StringArray(req.GrantTypes),
+		ResponseTypes:           database.StringArray(req.ResponseTypes),
+		RedirectURIs:            database.StringArray(req.RedirectURIs),
+		PostLogoutURIs:          database.StringArray(req.PostLogoutURIs),
+		SkipAuthorization:       req.SkipAuthorization,
+	}
+
+	// Set tenant if provided
+	if req.TenantID != "" {
+		tenantUUID, err := uuid.Parse(req.TenantID)
+		if err != nil {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "invalid tenant_id format"})
+			return
+		}
+		// Verify tenant exists
+		var tenant database.Tenant
+		if err := h.db.Where("id = ?", tenantUUID).First(&tenant).Error; err != nil {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "tenant not found"})
+			return
+		}
+		app.TenantID = &tenantUUID
 	}
 
 	// Get current user ID

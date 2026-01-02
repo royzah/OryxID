@@ -41,6 +41,8 @@ export interface Application {
 	access_token_lifespan: number;
 	refresh_token_lifespan: number;
 	owner_id?: string;
+	tenant_id?: string;
+	tenant?: Tenant;
 	created_at: string;
 	updated_at: string;
 }
@@ -106,11 +108,13 @@ export interface CreateApplicationRequest {
 	client_type: 'confidential' | 'public';
 	grant_types: string[];
 	response_types?: string[];
-	redirect_uris: string[];
+	redirect_uris?: string[];
 	post_logout_uris?: string[];
 	scope_ids?: string[];
 	audience_ids?: string[];
 	skip_authorization?: boolean;
+	token_endpoint_auth_method?: string;
+	tenant_id?: string;
 }
 
 export interface UpdateApplicationRequest {
