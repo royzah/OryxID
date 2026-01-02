@@ -175,15 +175,15 @@ Use pre-built images from GitHub Container Registry:
 
 ```bash
 cp .env.example .env
-# Edit .env with production values
-docker compose -f docker-compose.prod.yaml up -d
+# Edit .env - set IMAGE_TAG=0.1.1 (or desired version)
+make prod-deploy
 ```
 
 Images:
 
-- `ghcr.io/<owner>/oryxid-backend:latest`
-- `ghcr.io/<owner>/oryxid-frontend:latest`
-- `ghcr.io/<owner>/oryxid-nginx:latest`
+- `ghcr.io/royzah/oryxid-backend:${IMAGE_TAG}`
+- `ghcr.io/royzah/oryxid-frontend:${IMAGE_TAG}`
+- `ghcr.io/royzah/oryxid-nginx:${IMAGE_TAG}`
 
 ### Kubernetes
 
