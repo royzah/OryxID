@@ -1,12 +1,13 @@
 <script lang="ts">
 	import { onMount } from 'svelte';
 	import { Card, Button, Input, Label, Badge } from '$lib/components/ui';
-	import { applicationsApi, scopesApi, tenantsApi } from '$lib/api';
-	import type { Application, Scope, Tenant, CreateApplicationRequest } from '$lib/types';
+	import { applicationsApi, scopesApi, tenantsApi, audiencesApi } from '$lib/api';
+	import type { Application, Scope, Tenant, Audience, CreateApplicationRequest } from '$lib/types';
 
 	let applications: Application[] = [];
 	let scopes: Scope[] = [];
 	let tenants: Tenant[] = [];
+	let audiences: Audience[] = [];
 	let loading = true;
 	let error: string | null = null;
 	let searchQuery = '';
@@ -31,6 +32,7 @@
 		redirect_uris: [''],
 		post_logout_uris: [],
 		scope_ids: [],
+		audience_ids: [],
 		skip_authorization: false,
 		token_endpoint_auth_method: 'client_secret_basic',
 		tenant_id: ''
@@ -55,10 +57,11 @@
 	async function loadData() {
 		try {
 			loading = true;
-			[applications, scopes, tenants] = await Promise.all([
+			[applications, scopes, tenants, audiences] = await Promise.all([
 				applicationsApi.list(searchQuery || undefined),
 				scopesApi.list(),
-				tenantsApi.list()
+				tenantsApi.list(),
+				audiencesApi.list()
 			]);
 		} catch (e) {
 			error = e instanceof Error ? e.message : 'Failed to load data';
@@ -80,6 +83,7 @@
 			redirect_uris: [''],
 			post_logout_uris: [],
 			scope_ids: [],
+			audience_ids: [],
 			skip_authorization: false,
 			token_endpoint_auth_method: 'client_secret_basic',
 			tenant_id: ''
@@ -105,6 +109,7 @@
 			redirect_uris: app.redirect_uris.length > 0 ? [...app.redirect_uris] : [''],
 			post_logout_uris: [...app.post_logout_uris],
 			scope_ids: app.scopes?.map((s) => s.id) || [],
+			audience_ids: app.audiences?.map((a) => a.id) || [],
 			skip_authorization: app.skip_authorization,
 			token_endpoint_auth_method: app.token_endpoint_auth_method || 'client_secret_basic',
 			tenant_id: app.tenant_id || ''
@@ -180,6 +185,14 @@
 			formData.scope_ids = formData.scope_ids.filter((id) => id !== scopeId);
 		} else {
 			formData.scope_ids = [...(formData.scope_ids || []), scopeId];
+		}
+	}
+
+	function toggleAudience(audienceId: string) {
+		if (formData.audience_ids?.includes(audienceId)) {
+			formData.audience_ids = formData.audience_ids.filter((id) => id !== audienceId);
+		} else {
+			formData.audience_ids = [...(formData.audience_ids || []), audienceId];
 		}
 	}
 
@@ -714,6 +727,29 @@
 												{#if scope.description}
 													<span class="text-xs text-gray-500">- {scope.description}</span>
 												{/if}
+											</label>
+										{/each}
+									</div>
+								</div>
+							{/if}
+
+							{#if audiences.length > 0}
+								<div>
+									<Label>API Resources (Audiences)</Label>
+									<p class="text-xs text-gray-500 mt-1">
+										Select API resources this application can request tokens for
+									</p>
+									<div class="mt-2 space-y-2">
+										{#each audiences as audience}
+											<label class="flex items-center gap-2">
+												<input
+													type="checkbox"
+													checked={formData.audience_ids?.includes(audience.id)}
+													on:change={() => toggleAudience(audience.id)}
+													class="rounded text-primary"
+												/>
+												<span class="text-sm font-medium">{audience.name}</span>
+												<code class="text-xs text-gray-500 bg-gray-100 px-1 rounded">{audience.identifier}</code>
 											</label>
 										{/each}
 									</div>

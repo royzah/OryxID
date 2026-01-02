@@ -388,8 +388,25 @@ func (s *Server) ClientCredentialsGrant(req *TokenRequest) (*tokens.TokenRespons
 	// Expand scopes according to hierarchy (e.g., trustsky:flight:write -> trustsky:flight:read)
 	expandedScope := ExpandScopes(scope)
 
+	// Validate and resolve audience if provided
+	audience := ""
+	if req.Audience != "" {
+		// Check if the requested audience is allowed for this application
+		audienceAllowed := false
+		for _, aud := range app.Audiences {
+			if aud.Identifier == req.Audience {
+				audienceAllowed = true
+				audience = aud.Identifier
+				break
+			}
+		}
+		if !audienceAllowed {
+			return nil, fmt.Errorf("audience '%s' is not allowed for this client", req.Audience)
+		}
+	}
+
 	// Generate access token (with optional DPoP binding)
-	accessToken, err := s.TokenManager.GenerateAccessTokenWithDPoP(&app, nil, expandedScope, req.Audience, nil, req.DPoPThumbprint)
+	accessToken, err := s.TokenManager.GenerateAccessTokenWithDPoP(&app, nil, expandedScope, audience, nil, req.DPoPThumbprint)
 	if err != nil {
 		return nil, err
 	}
