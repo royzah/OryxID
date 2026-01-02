@@ -244,138 +244,44 @@ func (c *Claims) HasScope(scope string) bool {
 }
 ```
 
-**Node.js/TypeScript Example:**
+**HTTP Middleware Example (Go):**
 
-```typescript
-import { createRemoteJWKSet, jwtVerify, JWTPayload } from 'jose';
+```go
+package middleware
 
-interface TrustSkyTokenPayload extends JWTPayload {
-  client_id: string;
-  scope: string;
-  tenant_id?: string;
-}
-
-class TokenValidator {
-  private jwks: ReturnType<typeof createRemoteJWKSet>;
-  private issuer: string;
-  private audience: string;
-
-  constructor(issuer: string, audience: string) {
-    this.issuer = issuer;
-    this.audience = audience;
-    this.jwks = createRemoteJWKSet(new URL(`${issuer}/.well-known/jwks.json`));
-  }
-
-  async validate(token: string): Promise<TrustSkyTokenPayload> {
-    const { payload } = await jwtVerify(token, this.jwks, {
-      issuer: this.issuer,
-      audience: this.audience,
-    });
-    return payload as TrustSkyTokenPayload;
-  }
-
-  hasScope(payload: TrustSkyTokenPayload, scope: string): boolean {
-    const scopes = payload.scope?.split(' ') || [];
-    return scopes.includes(scope);
-  }
-}
-
-// Usage
-const validator = new TokenValidator(
-  process.env.AUTH_ISSUER!,
-  process.env.AUTH_AUDIENCE!
-);
-
-async function middleware(req: Request, res: Response, next: NextFunction) {
-  const authHeader = req.headers.authorization;
-  if (!authHeader?.startsWith('Bearer ')) {
-    return res.status(401).json({ error: 'Missing bearer token' });
-  }
-
-  const token = authHeader.substring(7);
-  try {
-    const payload = await validator.validate(token);
-
-    // Check required scope
-    if (!validator.hasScope(payload, 'trustsky:flight:read')) {
-      return res.status(403).json({ error: 'Insufficient scope' });
-    }
-
-    req.user = payload;
-    next();
-  } catch (error) {
-    return res.status(401).json({ error: 'Invalid token' });
-  }
-}
-```
-
-**Python Example:**
-
-```python
-import os
-from functools import lru_cache
-import httpx
-from jose import jwt, jwk
-from jose.exceptions import JWTError
-
-class TokenValidator:
-    def __init__(self, issuer: str, audience: str):
-        self.issuer = issuer
-        self.audience = audience
-        self._jwks = None
-
-    @property
-    def jwks(self) -> dict:
-        if self._jwks is None:
-            response = httpx.get(f"{self.issuer}/.well-known/jwks.json")
-            response.raise_for_status()
-            self._jwks = response.json()
-        return self._jwks
-
-    def get_public_key(self, kid: str):
-        for key in self.jwks["keys"]:
-            if key["kid"] == kid:
-                return jwk.construct(key)
-        raise ValueError(f"Key {kid} not found in JWKS")
-
-    def validate(self, token: str) -> dict:
-        headers = jwt.get_unverified_header(token)
-        kid = headers.get("kid")
-        if not kid:
-            raise JWTError("Missing kid in token header")
-
-        public_key = self.get_public_key(kid)
-
-        payload = jwt.decode(
-            token,
-            public_key,
-            algorithms=["RS256"],
-            audience=self.audience,
-            issuer=self.issuer,
-        )
-        return payload
-
-    def has_scope(self, payload: dict, scope: str) -> bool:
-        scopes = payload.get("scope", "").split()
-        return scope in scopes
-
-
-# Usage
-validator = TokenValidator(
-    issuer=os.environ["AUTH_ISSUER"],
-    audience=os.environ["AUTH_AUDIENCE"]
+import (
+    "net/http"
+    "strings"
 )
 
-def require_scope(scope: str):
-    def decorator(func):
-        def wrapper(*args, **kwargs):
-            token = get_bearer_token_from_request()
-            payload = validator.validate(token)
-            if not validator.has_scope(payload, scope):
-                raise PermissionError(f"Missing scope: {scope}")
-            return func(*args, **kwargs)
-        return wrapper
-    return decorator
+// AuthMiddleware validates JWT tokens and checks scopes
+func AuthMiddleware(validator *TokenValidator, requiredScope string) func(http.Handler) http.Handler {
+    return func(next http.Handler) http.Handler {
+        return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+            authHeader := r.Header.Get("Authorization")
+            if !strings.HasPrefix(authHeader, "Bearer ") {
+                http.Error(w, `{"error":"missing bearer token"}`, http.StatusUnauthorized)
+                return
+            }
+
+            token := strings.TrimPrefix(authHeader, "Bearer ")
+            claims, err := validator.Validate(token)
+            if err != nil {
+                http.Error(w, `{"error":"invalid token"}`, http.StatusUnauthorized)
+                return
+            }
+
+            if !claims.HasScope(requiredScope) {
+                http.Error(w, `{"error":"insufficient scope"}`, http.StatusForbidden)
+                return
+            }
+
+            // Add claims to request context
+            ctx := context.WithValue(r.Context(), "claims", claims)
+            next.ServeHTTP(w, r.WithContext(ctx))
+        })
+    }
+}
 ```
 
 ### Option 2: Token Introspection
@@ -387,6 +293,57 @@ curl -X POST ${AUTH_ISSUER}/oauth/introspect \
   -u "${AUTH_CLIENT_ID}:${AUTH_CLIENT_SECRET}" \
   -H "Content-Type: application/x-www-form-urlencoded" \
   -d "token=${ACCESS_TOKEN}"
+```
+
+**Go Example:**
+
+```go
+package auth
+
+import (
+    "encoding/json"
+    "fmt"
+    "net/http"
+    "net/url"
+    "strings"
+)
+
+type IntrospectionResponse struct {
+    Active   bool   `json:"active"`
+    ClientID string `json:"client_id"`
+    Scope    string `json:"scope"`
+    TenantID string `json:"tenant_id"`
+    Exp      int64  `json:"exp"`
+    Iat      int64  `json:"iat"`
+}
+
+func (v *TokenValidator) Introspect(token string) (*IntrospectionResponse, error) {
+    data := url.Values{}
+    data.Set("token", token)
+
+    req, err := http.NewRequest("POST", v.issuer+"/oauth/introspect", strings.NewReader(data.Encode()))
+    if err != nil {
+        return nil, err
+    }
+    req.SetBasicAuth(v.clientID, v.clientSecret)
+    req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+
+    resp, err := http.DefaultClient.Do(req)
+    if err != nil {
+        return nil, err
+    }
+    defer resp.Body.Close()
+
+    var result IntrospectionResponse
+    if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
+        return nil, err
+    }
+
+    if !result.Active {
+        return nil, fmt.Errorf("token is not active")
+    }
+    return &result, nil
+}
 ```
 
 Response (active token):
@@ -515,29 +472,52 @@ if claims.Audience != "trustsky" {
 
 DPoP binds tokens to a specific client key pair, preventing token theft.
 
-### Generate DPoP Proof
+### Generate DPoP Proof (Go)
 
-```javascript
-import { SignJWT, generateKeyPair, exportJWK } from 'jose';
+```go
+package dpop
 
-async function generateDPoPProof(method: string, url: string) {
-  const { privateKey, publicKey } = await generateKeyPair('ES256');
-  const jwk = await exportJWK(publicKey);
+import (
+    "crypto/ecdsa"
+    "crypto/elliptic"
+    "crypto/rand"
+    "encoding/base64"
+    "time"
 
-  const proof = await new SignJWT({
-    htm: method,
-    htu: url,
-    jti: crypto.randomUUID(),
-  })
-    .setProtectedHeader({
-      typ: 'dpop+jwt',
-      alg: 'ES256',
-      jwk,
-    })
-    .setIssuedAt()
-    .sign(privateKey);
+    "github.com/golang-jwt/jwt/v5"
+    "github.com/google/uuid"
+)
 
-  return { proof, privateKey };
+type DPoPClient struct {
+    privateKey *ecdsa.PrivateKey
+}
+
+func NewDPoPClient() (*DPoPClient, error) {
+    privateKey, err := ecdsa.GenerateKey(elliptic.P256(), rand.Reader)
+    if err != nil {
+        return nil, err
+    }
+    return &DPoPClient{privateKey: privateKey}, nil
+}
+
+func (c *DPoPClient) GenerateProof(method, url string) (string, error) {
+    claims := jwt.MapClaims{
+        "htm": method,
+        "htu": url,
+        "jti": uuid.New().String(),
+        "iat": time.Now().Unix(),
+    }
+
+    token := jwt.NewWithClaims(jwt.SigningMethodES256, claims)
+    token.Header["typ"] = "dpop+jwt"
+    token.Header["jwk"] = map[string]interface{}{
+        "kty": "EC",
+        "crv": "P-256",
+        "x":   base64.RawURLEncoding.EncodeToString(c.privateKey.PublicKey.X.Bytes()),
+        "y":   base64.RawURLEncoding.EncodeToString(c.privateKey.PublicKey.Y.Bytes()),
+    }
+
+    return token.SignedString(c.privateKey)
 }
 ```
 
