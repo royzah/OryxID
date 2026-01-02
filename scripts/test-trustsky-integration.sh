@@ -106,7 +106,8 @@ echo ""
 
 # 5. Token Claims Verification
 echo "=== 5. Token Claims ==="
-PAYLOAD=$(echo "$ACCESS_TOKEN" | cut -d'.' -f2 | base64 -d 2>/dev/null)
+# JWT uses base64url encoding - convert to standard base64 and decode
+PAYLOAD=$(echo "$ACCESS_TOKEN" | cut -d'.' -f2 | tr '_-' '/+' | base64 -d 2>/dev/null)
 echo "$PAYLOAD" | python3 -m json.tool 2>/dev/null
 
 # Check required claims
