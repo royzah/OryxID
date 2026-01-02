@@ -1,12 +1,32 @@
 #!/bin/bash
 # TrustSky Integration Verification Script
 # Run this after setting up AUTH_CLIENT_ID and AUTH_CLIENT_SECRET
+#
+# For trusted SSL (no -k flag needed):
+#   make ssl-mkcert && make down && make up
+#
+# For self-signed SSL (requires -k flag):
+#   Set CURL_INSECURE=1 before running this script
 
 set -e
 
 AUTH_ISSUER=${AUTH_ISSUER:-https://localhost:8443}
 AUTH_CLIENT_ID=${AUTH_CLIENT_ID:-""}
 AUTH_CLIENT_SECRET=${AUTH_CLIENT_SECRET:-""}
+
+# Use -k flag if CURL_INSECURE is set or if using self-signed certs
+CURL_OPTS=""
+if [ "${CURL_INSECURE:-0}" = "1" ]; then
+    CURL_OPTS="-k"
+elif [ -f "certs/ssl_cert.pem" ]; then
+    # Check if cert is from mkcert (trusted) or self-signed
+    if ! curl -s --connect-timeout 2 "$AUTH_ISSUER/.well-known/openid-configuration" > /dev/null 2>&1; then
+        echo "Note: Using -k flag for self-signed certificate"
+        echo "      Run 'make ssl-mkcert' for trusted local SSL"
+        echo ""
+        CURL_OPTS="-k"
+    fi
+fi
 
 if [ -z "$AUTH_CLIENT_ID" ] || [ -z "$AUTH_CLIENT_SECRET" ]; then
     echo "Error: Set AUTH_CLIENT_ID and AUTH_CLIENT_SECRET environment variables"
@@ -24,7 +44,7 @@ echo ""
 # 1. Discovery Endpoint
 echo "=== 1. OIDC Discovery Endpoint ==="
 echo "GET $AUTH_ISSUER/.well-known/openid-configuration"
-DISCOVERY=$(curl -sk $AUTH_ISSUER/.well-known/openid-configuration)
+DISCOVERY=$(curl -s $CURL_OPTS $AUTH_ISSUER/.well-known/openid-configuration)
 if echo "$DISCOVERY" | grep -q "issuer"; then
     echo "[PASS] Discovery endpoint working"
     echo "$DISCOVERY" | python3 -m json.tool 2>/dev/null | head -15
@@ -37,7 +57,7 @@ echo ""
 # 2. JWKS Endpoint
 echo "=== 2. JWKS Endpoint ==="
 echo "GET $AUTH_ISSUER/.well-known/jwks.json"
-JWKS=$(curl -sk $AUTH_ISSUER/.well-known/jwks.json)
+JWKS=$(curl -s $CURL_OPTS $AUTH_ISSUER/.well-known/jwks.json)
 if echo "$JWKS" | grep -q "keys"; then
     echo "[PASS] JWKS endpoint working"
     echo "$JWKS" | python3 -m json.tool 2>/dev/null | head -20
@@ -50,7 +70,7 @@ echo ""
 # 3. Token Endpoint - Basic scope
 echo "=== 3. Token Endpoint (Client Credentials) ==="
 echo "POST $AUTH_ISSUER/oauth/token"
-TOKEN_RESPONSE=$(curl -sk -X POST $AUTH_ISSUER/oauth/token \
+TOKEN_RESPONSE=$(curl -s $CURL_OPTS -X POST $AUTH_ISSUER/oauth/token \
   -u "$AUTH_CLIENT_ID:$AUTH_CLIENT_SECRET" \
   -H "Content-Type: application/x-www-form-urlencoded" \
   -d "grant_type=client_credentials" \
@@ -103,7 +123,7 @@ echo ""
 # 6. Token Introspection
 echo "=== 6. Token Introspection ==="
 echo "POST $AUTH_ISSUER/oauth/introspect"
-INTROSPECT=$(curl -sk -X POST $AUTH_ISSUER/oauth/introspect \
+INTROSPECT=$(curl -s $CURL_OPTS -X POST $AUTH_ISSUER/oauth/introspect \
   -u "$AUTH_CLIENT_ID:$AUTH_CLIENT_SECRET" \
   -H "Content-Type: application/x-www-form-urlencoded" \
   -d "token=$ACCESS_TOKEN")
@@ -119,7 +139,7 @@ echo ""
 
 # 7. Admin Scope Expansion
 echo "=== 7. Admin Scope Expansion ==="
-ADMIN_TOKEN=$(curl -sk -X POST $AUTH_ISSUER/oauth/token \
+ADMIN_TOKEN=$(curl -s $CURL_OPTS -X POST $AUTH_ISSUER/oauth/token \
   -u "$AUTH_CLIENT_ID:$AUTH_CLIENT_SECRET" \
   -H "Content-Type: application/x-www-form-urlencoded" \
   -d "grant_type=client_credentials" \
@@ -137,13 +157,13 @@ echo ""
 # 8. Token Revocation
 echo "=== 8. Token Revocation ==="
 echo "POST $AUTH_ISSUER/oauth/revoke"
-REVOKE=$(curl -sk -X POST $AUTH_ISSUER/oauth/revoke \
+REVOKE=$(curl -s $CURL_OPTS -X POST $AUTH_ISSUER/oauth/revoke \
   -u "$AUTH_CLIENT_ID:$AUTH_CLIENT_SECRET" \
   -H "Content-Type: application/x-www-form-urlencoded" \
   -d "token=$ACCESS_TOKEN")
 
 # Check if token is now inactive
-INTROSPECT_AFTER=$(curl -sk -X POST $AUTH_ISSUER/oauth/introspect \
+INTROSPECT_AFTER=$(curl -s $CURL_OPTS -X POST $AUTH_ISSUER/oauth/introspect \
   -u "$AUTH_CLIENT_ID:$AUTH_CLIENT_SECRET" \
   -H "Content-Type: application/x-www-form-urlencoded" \
   -d "token=$ACCESS_TOKEN")

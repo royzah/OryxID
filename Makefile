@@ -37,6 +37,25 @@ ssl: ## Generate self-signed SSL certificates (development)
 	@chmod 644 certs/ssl_key.pem 2>/dev/null || true
 	@echo "SSL certificates generated in certs/"
 
+.PHONY: ssl-mkcert
+ssl-mkcert: ## Generate trusted SSL certificates using mkcert (recommended for development)
+	@if ! command -v mkcert &> /dev/null; then \
+		echo "mkcert not found. Install it first:"; \
+		echo "  macOS: brew install mkcert"; \
+		echo "  Linux: apt install mkcert (or see https://github.com/FiloSottile/mkcert)"; \
+		exit 1; \
+	fi
+	@mkdir -p certs
+	@echo "Installing local CA (may require sudo)..."
+	@mkcert -install
+	@echo "Generating trusted certificates for localhost..."
+	@mkcert -key-file certs/ssl_key.pem -cert-file certs/ssl_cert.pem localhost 127.0.0.1 ::1
+	@chmod 644 certs/ssl_key.pem 2>/dev/null || true
+	@echo ""
+	@echo "Trusted SSL certificates generated in certs/"
+	@echo "Restart services with: make down && make up"
+	@echo "curl will now work without -k flag"
+
 .PHONY: cert-init
 cert-init: ## Get Let's Encrypt certificate (requires SSL_DOMAIN and SSL_EMAIL in .env)
 	@DOMAIN=$$(grep SSL_DOMAIN .env | cut -d '=' -f2); \
