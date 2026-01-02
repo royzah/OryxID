@@ -259,7 +259,8 @@ func setDefaults() {
 	viper.SetDefault("redis.minidleconns", 5)
 
 	// OAuth defaults
-	viper.SetDefault("oauth.issuer", "http://localhost:9000")
+	// Issuer should be the public-facing URL clients use to access OryxID
+	viper.SetDefault("oauth.issuer", "https://localhost:8443")
 	viper.SetDefault("oauth.authorizationcodelifespan", "10m")
 	viper.SetDefault("oauth.accesstokenlifespan", "1h")
 	viper.SetDefault("oauth.refreshtokenlifespan", "720h") // 30 days
