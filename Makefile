@@ -38,17 +38,17 @@ env: ## Create .env with secure random passwords
 	fi
 	@UPDATED=0; \
 	if grep -q "ADMIN_PASSWORD=admin123" .env 2>/dev/null; then \
-		ADMIN_PASS=$$(openssl rand -base64 32 | tr -dc 'a-zA-Z0-9' | head -c 24); \
+		ADMIN_PASS=$$(openssl rand -base64 48 | tr -dc 'a-zA-Z0-9!@#%^&*' | head -c 32); \
 		sed -i "s/ADMIN_PASSWORD=admin123/ADMIN_PASSWORD=$$ADMIN_PASS/" .env; \
 		UPDATED=1; \
 	fi; \
 	if grep -q "DB_PASSWORD=oryxid_secret" .env 2>/dev/null; then \
-		DB_PASS=$$(openssl rand -base64 32 | tr -dc 'a-zA-Z0-9' | head -c 24); \
+		DB_PASS=$$(openssl rand -base64 48 | tr -dc 'a-zA-Z0-9' | head -c 32); \
 		sed -i "s/DB_PASSWORD=oryxid_secret/DB_PASSWORD=$$DB_PASS/" .env; \
 		UPDATED=1; \
 	fi; \
 	if grep -q "REDIS_PASSWORD=redis_secret" .env 2>/dev/null; then \
-		REDIS_PASS=$$(openssl rand -base64 32 | tr -dc 'a-zA-Z0-9' | head -c 24); \
+		REDIS_PASS=$$(openssl rand -base64 48 | tr -dc 'a-zA-Z0-9' | head -c 32); \
 		sed -i "s/REDIS_PASSWORD=redis_secret/REDIS_PASSWORD=$$REDIS_PASS/" .env; \
 		UPDATED=1; \
 	fi; \
