@@ -74,7 +74,8 @@ TOKEN_RESPONSE=$(curl -s $CURL_OPTS -X POST $AUTH_ISSUER/oauth/token \
   -u "$AUTH_CLIENT_ID:$AUTH_CLIENT_SECRET" \
   -H "Content-Type: application/x-www-form-urlencoded" \
   -d "grant_type=client_credentials" \
-  -d "scope=trustsky:flight:write")
+  -d "scope=trustsky:flight:write" \
+  -d "audience=trustsky")
 
 if echo "$TOKEN_RESPONSE" | grep -q "access_token"; then
     echo "[PASS] Token endpoint working"
