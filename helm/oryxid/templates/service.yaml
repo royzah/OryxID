@@ -1,0 +1,31 @@
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ include "oryxid.fullname" . }}-backend
+  labels:
+    {{- include "oryxid.backend.labels" . | nindent 4 }}
+spec:
+  type: {{ .Values.service.type }}
+  ports:
+    - port: {{ .Values.service.backend.port }}
+      targetPort: http
+      protocol: TCP
+      name: http
+  selector:
+    {{- include "oryxid.backend.selectorLabels" . | nindent 4 }}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ include "oryxid.fullname" . }}-frontend
+  labels:
+    {{- include "oryxid.frontend.labels" . | nindent 4 }}
+spec:
+  type: {{ .Values.service.type }}
+  ports:
+    - port: {{ .Values.service.frontend.port }}
+      targetPort: http
+      protocol: TCP
+      name: http
+  selector:
+    {{- include "oryxid.frontend.selectorLabels" . | nindent 4 }}

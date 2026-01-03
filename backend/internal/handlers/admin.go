@@ -1,0 +1,1407 @@
+package handlers
+
+import (
+	"net/http"
+	"strconv"
+	"strings"
+	"time"
+
+	"github.com/gin-gonic/gin"
+	"github.com/google/uuid"
+	"github.com/tiiuae/oryxid/internal/database"
+	"github.com/tiiuae/oryxid/internal/tokens"
+	"github.com/tiiuae/oryxid/pkg/crypto"
+	"golang.org/x/crypto/bcrypt"
+	"gorm.io/gorm"
+)
+
+type AdminHandler struct {
+	db           *gorm.DB
+	tokenManager *tokens.TokenManager
+}
+
+func NewAdminHandler(db *gorm.DB, tm *tokens.TokenManager) *AdminHandler {
+	return &AdminHandler{
+		db:           db,
+		tokenManager: tm,
+	}
+}
+
+// Application Handlers
+
+func (h *AdminHandler) ListApplications(c *gin.Context) {
+	var apps []database.Application
+	query := h.db.Preload("Scopes").Preload("Audiences")
+
+	// Optional filtering (using LOWER for cross-database compatibility)
+	if search := c.Query("search"); search != "" {
+		searchLower := "%" + strings.ToLower(search) + "%"
+		query = query.Where("LOWER(name) LIKE ? OR LOWER(client_id) LIKE ?", searchLower, searchLower)
+	}
+
+	if err := query.Find(&apps).Error; err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to fetch applications"})
+		return
+	}
+
+	c.JSON(http.StatusOK, apps)
+}
+
+func (h *AdminHandler) CreateApplication(c *gin.Context) {
+	var req struct {
+		Name                    string   `json:"name" binding:"required"`
+		Description             string   `json:"description"`
+		ClientType              string   `json:"client_type" binding:"required,oneof=confidential public"`
+		GrantTypes              []string `json:"grant_types" binding:"required,min=1"`
+		ResponseTypes           []string `json:"response_types"`
+		RedirectURIs            []string `json:"redirect_uris"`
+		PostLogoutURIs          []string `json:"post_logout_uris"`
+		ScopeIDs                []string `json:"scope_ids"`
+		AudienceIDs             []string `json:"audience_ids"`
+		SkipAuthorization       bool     `json:"skip_authorization"`
+		TokenEndpointAuthMethod string   `json:"token_endpoint_auth_method"`
+		TenantID                string   `json:"tenant_id"`
+	}
+
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+
+	// Validate redirect_uris required for authorization_code grant
+	hasAuthCodeGrant := false
+	for _, grant := range req.GrantTypes {
+		if grant == "authorization_code" {
+			hasAuthCodeGrant = true
+			break
+		}
+	}
+	if hasAuthCodeGrant && len(req.RedirectURIs) == 0 {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "redirect_uris required for authorization_code grant"})
+		return
+	}
+
+	// Generate client credentials
+	clientID, err := crypto.GenerateSecureToken(32)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to generate client ID"})
+		return
+	}
+
+	var clientSecret string
+	var hashedSecret string
+
+	// Only generate secret for confidential clients
+	if req.ClientType == "confidential" {
+		clientSecret, err = crypto.GenerateSecureToken(64)
+		if err != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to generate client secret"})
+			return
+		}
+
+		// Hash client secret for storage
+		hashedSecretBytes, err := bcrypt.GenerateFromPassword([]byte(clientSecret), bcrypt.DefaultCost)
+		if err != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to hash client secret"})
+			return
+		}
+		hashedSecret = string(hashedSecretBytes)
+	}
+
+	// Set default token endpoint auth method if not provided
+	tokenEndpointAuthMethod := req.TokenEndpointAuthMethod
+	if tokenEndpointAuthMethod == "" {
+		tokenEndpointAuthMethod = "client_secret_basic"
+	}
+
+	app := database.Application{
+		Name:                    req.Name,
+		Description:             req.Description,
+		ClientID:                clientID,
+		HashedClientSecret:      hashedSecret,
+		ClientType:              req.ClientType,
+		TokenEndpointAuthMethod: tokenEndpointAuthMethod,
+		GrantTypes:              database.StringArray(req.GrantTypes),
+		ResponseTypes:           database.StringArray(req.ResponseTypes),
+		RedirectURIs:            database.StringArray(req.RedirectURIs),
+		PostLogoutURIs:          database.StringArray(req.PostLogoutURIs),
+		SkipAuthorization:       req.SkipAuthorization,
+	}
+
+	// Set tenant if provided
+	if req.TenantID != "" {
+		tenantUUID, err := uuid.Parse(req.TenantID)
+		if err != nil {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "invalid tenant_id format"})
+			return
+		}
+		// Verify tenant exists
+		var tenant database.Tenant
+		if err := h.db.Where("id = ?", tenantUUID).First(&tenant).Error; err != nil {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "tenant not found"})
+			return
+		}
+		app.TenantID = &tenantUUID
+	}
+
+	// Get current user ID
+	if userID := c.GetString("user_id"); userID != "" {
+		if uid, err := uuid.Parse(userID); err == nil {
+			app.OwnerID = &uid
+		}
+	}
+
+	// Start transaction
+	tx := h.db.Begin()
+
+	if err := tx.Create(&app).Error; err != nil {
+		tx.Rollback()
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to create application"})
+		return
+	}
+
+	// Assign scopes if provided
+	if len(req.ScopeIDs) > 0 {
+		var scopes []database.Scope
+		if err := tx.Where("id IN ?", req.ScopeIDs).Find(&scopes).Error; err == nil && len(scopes) > 0 {
+			if err := tx.Model(&app).Association("Scopes").Replace(scopes); err != nil {
+				tx.Rollback()
+				c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to assign scopes"})
+				return
+			}
+		}
+	}
+
+	// Assign audiences if provided
+	if len(req.AudienceIDs) > 0 {
+		var audiences []database.Audience
+		if err := tx.Where("id IN ?", req.AudienceIDs).Find(&audiences).Error; err == nil && len(audiences) > 0 {
+			if err := tx.Model(&app).Association("Audiences").Replace(audiences); err != nil {
+				tx.Rollback()
+				c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to assign audiences"})
+				return
+			}
+		}
+	}
+
+	if err := tx.Commit().Error; err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to commit transaction"})
+		return
+	}
+
+	// Log audit event
+	h.logAudit(c, "application.create", "application", app.ID.String(), http.StatusCreated)
+
+	// Reload with associations
+	h.db.Preload("Scopes").Preload("Audiences").First(&app, app.ID)
+
+	// Build response
+	response := gin.H{
+		"id":                 app.ID,
+		"name":               app.Name,
+		"description":        app.Description,
+		"client_id":          app.ClientID,
+		"client_type":        app.ClientType,
+		"grant_types":        app.GrantTypes,
+		"response_types":     app.ResponseTypes,
+		"redirect_uris":      app.RedirectURIs,
+		"post_logout_uris":   app.PostLogoutURIs,
+		"scopes":             app.Scopes,
+		"audiences":          app.Audiences,
+		"skip_authorization": app.SkipAuthorization,
+		"created_at":         app.CreatedAt,
+	}
+
+	// Include client secret only for confidential clients on creation
+	if req.ClientType == "confidential" && clientSecret != "" {
+		response["client_secret"] = clientSecret
+	}
+
+	c.JSON(http.StatusCreated, response)
+}
+
+func (h *AdminHandler) GetApplication(c *gin.Context) {
+	id := c.Param("id")
+
+	var app database.Application
+	if err := h.db.Preload("Scopes").Preload("Audiences").Where("id = ?", id).First(&app).Error; err != nil {
+		if err == gorm.ErrRecordNotFound {
+			c.JSON(http.StatusNotFound, gin.H{"error": "Application not found"})
+			return
+		}
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to fetch application"})
+		return
+	}
+
+	c.JSON(http.StatusOK, app)
+}
+
+func (h *AdminHandler) UpdateApplication(c *gin.Context) {
+	id := c.Param("id")
+
+	var app database.Application
+	if err := h.db.Where("id = ?", id).First(&app).Error; err != nil {
+		if err == gorm.ErrRecordNotFound {
+			c.JSON(http.StatusNotFound, gin.H{"error": "Application not found"})
+			return
+		}
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to fetch application"})
+		return
+	}
+
+	var req struct {
+		Name              string   `json:"name"`
+		Description       string   `json:"description"`
+		RedirectURIs      []string `json:"redirect_uris"`
+		PostLogoutURIs    []string `json:"post_logout_uris"`
+		ScopeIDs          []string `json:"scope_ids"`
+		AudienceIDs       []string `json:"audience_ids"`
+		SkipAuthorization *bool    `json:"skip_authorization"`
+	}
+
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+
+	// Update fields
+	if req.Name != "" {
+		app.Name = req.Name
+	}
+	app.Description = req.Description
+	if len(req.RedirectURIs) > 0 {
+		app.RedirectURIs = req.RedirectURIs
+	}
+	if req.PostLogoutURIs != nil {
+		app.PostLogoutURIs = req.PostLogoutURIs
+	}
+	if req.SkipAuthorization != nil {
+		app.SkipAuthorization = *req.SkipAuthorization
+	}
+
+	tx := h.db.Begin()
+
+	if err := tx.Save(&app).Error; err != nil {
+		tx.Rollback()
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to update application"})
+		return
+	}
+
+	// Update scopes
+	if req.ScopeIDs != nil {
+		var scopes []database.Scope
+		if len(req.ScopeIDs) > 0 {
+			tx.Where("id IN ?", req.ScopeIDs).Find(&scopes)
+		}
+		if err := tx.Model(&app).Association("Scopes").Replace(scopes); err != nil {
+			tx.Rollback()
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to update scopes"})
+			return
+		}
+	}
+
+	// Update audiences
+	if req.AudienceIDs != nil {
+		var audiences []database.Audience
+		if len(req.AudienceIDs) > 0 {
+			tx.Where("id IN ?", req.AudienceIDs).Find(&audiences)
+		}
+		if err := tx.Model(&app).Association("Audiences").Replace(audiences); err != nil {
+			tx.Rollback()
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to update audiences"})
+			return
+		}
+	}
+
+	if err := tx.Commit().Error; err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to commit transaction"})
+		return
+	}
+
+	// Log audit event
+	h.logAudit(c, "application.update", "application", app.ID.String(), http.StatusOK)
+
+	// Reload with associations
+	h.db.Preload("Scopes").Preload("Audiences").First(&app, app.ID)
+
+	c.JSON(http.StatusOK, app)
+}
+
+func (h *AdminHandler) DeleteApplication(c *gin.Context) {
+	id := c.Param("id")
+
+	result := h.db.Where("id = ?", id).Delete(&database.Application{})
+	if result.Error != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to delete application"})
+		return
+	}
+
+	if result.RowsAffected == 0 {
+		c.JSON(http.StatusNotFound, gin.H{"error": "Application not found"})
+		return
+	}
+
+	// Log audit event
+	h.logAudit(c, "application.delete", "application", id, http.StatusNoContent)
+
+	c.JSON(http.StatusNoContent, nil)
+}
+
+// RotateClientSecret generates a new client secret for an application
+func (h *AdminHandler) RotateClientSecret(c *gin.Context) {
+	id := c.Param("id")
+
+	var app database.Application
+	if err := h.db.Where("id = ?", id).First(&app).Error; err != nil {
+		if err == gorm.ErrRecordNotFound {
+			c.JSON(http.StatusNotFound, gin.H{"error": "Application not found"})
+			return
+		}
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to fetch application"})
+		return
+	}
+
+	// Only confidential clients have secrets
+	if app.ClientType != "confidential" {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "Public clients do not have secrets"})
+		return
+	}
+
+	// Generate new secret
+	newSecret, err := crypto.GenerateSecureToken(64)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to generate new secret"})
+		return
+	}
+
+	// Hash the new secret
+	hashedSecret, err := bcrypt.GenerateFromPassword([]byte(newSecret), bcrypt.DefaultCost)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to hash secret"})
+		return
+	}
+
+	// Update the application
+	app.HashedClientSecret = string(hashedSecret)
+	if err := h.db.Save(&app).Error; err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to update application"})
+		return
+	}
+
+	// Log audit event
+	h.logAudit(c, "application.rotate_secret", "application", app.ID.String(), http.StatusOK)
+
+	// Return the new secret (only shown once)
+	c.JSON(http.StatusOK, gin.H{
+		"client_id":     app.ClientID,
+		"client_secret": newSecret,
+		"message":       "Client secret rotated successfully. Save this secret - it will not be shown again.",
+	})
+}
+
+// Scope Handlers
+
+func (h *AdminHandler) ListScopes(c *gin.Context) {
+	var scopes []database.Scope
+	if err := h.db.Find(&scopes).Error; err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to fetch scopes"})
+		return
+	}
+	c.JSON(http.StatusOK, scopes)
+}
+
+func (h *AdminHandler) CreateScope(c *gin.Context) {
+	var req struct {
+		Name        string `json:"name" binding:"required"`
+		Description string `json:"description"`
+		IsDefault   bool   `json:"is_default"`
+	}
+
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+
+	scope := database.Scope{
+		Name:        req.Name,
+		Description: req.Description,
+		IsDefault:   req.IsDefault,
+	}
+
+	if err := h.db.Create(&scope).Error; err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to create scope"})
+		return
+	}
+
+	// Log audit event
+	h.logAudit(c, "scope.create", "scope", scope.ID.String(), http.StatusCreated)
+
+	c.JSON(http.StatusCreated, scope)
+}
+
+func (h *AdminHandler) GetScope(c *gin.Context) {
+	id := c.Param("id")
+
+	var scope database.Scope
+	if err := h.db.Where("id = ?", id).First(&scope).Error; err != nil {
+		if err == gorm.ErrRecordNotFound {
+			c.JSON(http.StatusNotFound, gin.H{"error": "Scope not found"})
+			return
+		}
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to fetch scope"})
+		return
+	}
+
+	c.JSON(http.StatusOK, scope)
+}
+
+func (h *AdminHandler) UpdateScope(c *gin.Context) {
+	id := c.Param("id")
+
+	var scope database.Scope
+	if err := h.db.Where("id = ?", id).First(&scope).Error; err != nil {
+		if err == gorm.ErrRecordNotFound {
+			c.JSON(http.StatusNotFound, gin.H{"error": "Scope not found"})
+			return
+		}
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to fetch scope"})
+		return
+	}
+
+	var req struct {
+		Name        string `json:"name"`
+		Description string `json:"description"`
+		IsDefault   *bool  `json:"is_default"`
+	}
+
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+
+	if req.Name != "" {
+		scope.Name = req.Name
+	}
+	scope.Description = req.Description
+	if req.IsDefault != nil {
+		scope.IsDefault = *req.IsDefault
+	}
+
+	if err := h.db.Save(&scope).Error; err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to update scope"})
+		return
+	}
+
+	// Log audit event
+	h.logAudit(c, "scope.update", "scope", scope.ID.String(), http.StatusOK)
+
+	c.JSON(http.StatusOK, scope)
+}
+
+func (h *AdminHandler) DeleteScope(c *gin.Context) {
+	id := c.Param("id")
+
+	result := h.db.Where("id = ?", id).Delete(&database.Scope{})
+	if result.Error != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to delete scope"})
+		return
+	}
+
+	if result.RowsAffected == 0 {
+		c.JSON(http.StatusNotFound, gin.H{"error": "Scope not found"})
+		return
+	}
+
+	// Log audit event
+	h.logAudit(c, "scope.delete", "scope", id, http.StatusNoContent)
+
+	c.JSON(http.StatusNoContent, nil)
+}
+
+// Audience Handlers
+
+func (h *AdminHandler) ListAudiences(c *gin.Context) {
+	var audiences []database.Audience
+	if err := h.db.Preload("Scopes").Find(&audiences).Error; err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to fetch audiences"})
+		return
+	}
+	c.JSON(http.StatusOK, audiences)
+}
+
+func (h *AdminHandler) CreateAudience(c *gin.Context) {
+	var req struct {
+		Identifier  string   `json:"identifier" binding:"required"`
+		Name        string   `json:"name" binding:"required"`
+		Description string   `json:"description"`
+		ScopeIDs    []string `json:"scope_ids"`
+	}
+
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+
+	audience := database.Audience{
+		Identifier:  req.Identifier,
+		Name:        req.Name,
+		Description: req.Description,
+	}
+
+	tx := h.db.Begin()
+
+	if err := tx.Create(&audience).Error; err != nil {
+		tx.Rollback()
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to create audience"})
+		return
+	}
+
+	// Assign scopes
+	if len(req.ScopeIDs) > 0 {
+		var scopes []database.Scope
+		if err := tx.Where("id IN ?", req.ScopeIDs).Find(&scopes).Error; err == nil && len(scopes) > 0 {
+			if err := tx.Model(&audience).Association("Scopes").Replace(scopes); err != nil {
+				tx.Rollback()
+				c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to assign scopes"})
+				return
+			}
+		}
+	}
+
+	if err := tx.Commit().Error; err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to commit transaction"})
+		return
+	}
+
+	// Log audit event
+	h.logAudit(c, "audience.create", "audience", audience.ID.String(), http.StatusCreated)
+
+	// Reload with associations
+	h.db.Preload("Scopes").First(&audience, audience.ID)
+
+	c.JSON(http.StatusCreated, audience)
+}
+
+func (h *AdminHandler) GetAudience(c *gin.Context) {
+	id := c.Param("id")
+
+	var audience database.Audience
+	if err := h.db.Preload("Scopes").Where("id = ?", id).First(&audience).Error; err != nil {
+		if err == gorm.ErrRecordNotFound {
+			c.JSON(http.StatusNotFound, gin.H{"error": "Audience not found"})
+			return
+		}
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to fetch audience"})
+		return
+	}
+
+	c.JSON(http.StatusOK, audience)
+}
+
+func (h *AdminHandler) UpdateAudience(c *gin.Context) {
+	id := c.Param("id")
+
+	var audience database.Audience
+	if err := h.db.Where("id = ?", id).First(&audience).Error; err != nil {
+		if err == gorm.ErrRecordNotFound {
+			c.JSON(http.StatusNotFound, gin.H{"error": "Audience not found"})
+			return
+		}
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to fetch audience"})
+		return
+	}
+
+	var req struct {
+		Identifier  string   `json:"identifier"`
+		Name        string   `json:"name"`
+		Description string   `json:"description"`
+		ScopeIDs    []string `json:"scope_ids"`
+	}
+
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+
+	if req.Identifier != "" {
+		audience.Identifier = req.Identifier
+	}
+	if req.Name != "" {
+		audience.Name = req.Name
+	}
+	audience.Description = req.Description
+
+	tx := h.db.Begin()
+
+	if err := tx.Save(&audience).Error; err != nil {
+		tx.Rollback()
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to update audience"})
+		return
+	}
+
+	// Update scopes
+	if req.ScopeIDs != nil {
+		var scopes []database.Scope
+		if len(req.ScopeIDs) > 0 {
+			tx.Where("id IN ?", req.ScopeIDs).Find(&scopes)
+		}
+		if err := tx.Model(&audience).Association("Scopes").Replace(scopes); err != nil {
+			tx.Rollback()
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to update scopes"})
+			return
+		}
+	}
+
+	if err := tx.Commit().Error; err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to commit transaction"})
+		return
+	}
+
+	// Log audit event
+	h.logAudit(c, "audience.update", "audience", audience.ID.String(), http.StatusOK)
+
+	// Reload with associations
+	h.db.Preload("Scopes").First(&audience, audience.ID)
+
+	c.JSON(http.StatusOK, audience)
+}
+
+func (h *AdminHandler) DeleteAudience(c *gin.Context) {
+	id := c.Param("id")
+
+	result := h.db.Where("id = ?", id).Delete(&database.Audience{})
+	if result.Error != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to delete audience"})
+		return
+	}
+
+	if result.RowsAffected == 0 {
+		c.JSON(http.StatusNotFound, gin.H{"error": "Audience not found"})
+		return
+	}
+
+	// Log audit event
+	h.logAudit(c, "audience.delete", "audience", id, http.StatusNoContent)
+
+	c.JSON(http.StatusNoContent, nil)
+}
+
+// User Handlers
+
+func (h *AdminHandler) ListUsers(c *gin.Context) {
+	var users []database.User
+	query := h.db.Preload("Roles")
+
+	// Optional filtering (using LOWER for cross-database compatibility)
+	if search := c.Query("search"); search != "" {
+		searchLower := "%" + strings.ToLower(search) + "%"
+		query = query.Where("LOWER(username) LIKE ? OR LOWER(email) LIKE ?", searchLower, searchLower)
+	}
+
+	if err := query.Find(&users).Error; err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to fetch users"})
+		return
+	}
+
+	c.JSON(http.StatusOK, users)
+}
+
+func (h *AdminHandler) CreateUser(c *gin.Context) {
+	var req struct {
+		Username string   `json:"username" binding:"required"`
+		Email    string   `json:"email" binding:"required,email"`
+		Password string   `json:"password" binding:"required,min=8"`
+		IsActive bool     `json:"is_active"`
+		IsAdmin  bool     `json:"is_admin"`
+		RoleIDs  []string `json:"role_ids"`
+	}
+
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+
+	// Hash password
+	hashedPassword, err := bcrypt.GenerateFromPassword([]byte(req.Password), bcrypt.DefaultCost)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to hash password"})
+		return
+	}
+
+	user := database.User{
+		Username: req.Username,
+		Email:    req.Email,
+		Password: string(hashedPassword),
+		IsActive: req.IsActive,
+		IsAdmin:  req.IsAdmin,
+	}
+
+	tx := h.db.Begin()
+
+	if err := tx.Create(&user).Error; err != nil {
+		tx.Rollback()
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to create user"})
+		return
+	}
+
+	// Assign roles
+	if len(req.RoleIDs) > 0 {
+		var roles []database.Role
+		if err := tx.Where("id IN ?", req.RoleIDs).Find(&roles).Error; err == nil && len(roles) > 0 {
+			if err := tx.Model(&user).Association("Roles").Replace(roles); err != nil {
+				tx.Rollback()
+				c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to assign roles"})
+				return
+			}
+		}
+	}
+
+	if err := tx.Commit().Error; err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to commit transaction"})
+		return
+	}
+
+	// Log audit event
+	h.logAudit(c, "user.create", "user", user.ID.String(), http.StatusCreated)
+
+	// Reload with associations
+	h.db.Preload("Roles").First(&user, user.ID)
+
+	c.JSON(http.StatusCreated, user)
+}
+
+func (h *AdminHandler) GetUser(c *gin.Context) {
+	id := c.Param("id")
+
+	var user database.User
+	if err := h.db.Preload("Roles").Where("id = ?", id).First(&user).Error; err != nil {
+		if err == gorm.ErrRecordNotFound {
+			c.JSON(http.StatusNotFound, gin.H{"error": "User not found"})
+			return
+		}
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to fetch user"})
+		return
+	}
+
+	c.JSON(http.StatusOK, user)
+}
+
+func (h *AdminHandler) UpdateUser(c *gin.Context) {
+	id := c.Param("id")
+
+	var user database.User
+	if err := h.db.Where("id = ?", id).First(&user).Error; err != nil {
+		if err == gorm.ErrRecordNotFound {
+			c.JSON(http.StatusNotFound, gin.H{"error": "User not found"})
+			return
+		}
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to fetch user"})
+		return
+	}
+
+	var req struct {
+		Username string   `json:"username"`
+		Email    string   `json:"email" binding:"omitempty,email"`
+		Password string   `json:"password" binding:"omitempty,min=8"`
+		IsActive *bool    `json:"is_active"`
+		IsAdmin  *bool    `json:"is_admin"`
+		RoleIDs  []string `json:"role_ids"`
+	}
+
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+
+	// Update fields
+	if req.Username != "" {
+		user.Username = req.Username
+	}
+	if req.Email != "" {
+		user.Email = req.Email
+	}
+	if req.Password != "" {
+		hashedPassword, err := bcrypt.GenerateFromPassword([]byte(req.Password), bcrypt.DefaultCost)
+		if err != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to hash password"})
+			return
+		}
+		user.Password = string(hashedPassword)
+	}
+	if req.IsActive != nil {
+		user.IsActive = *req.IsActive
+	}
+	if req.IsAdmin != nil {
+		user.IsAdmin = *req.IsAdmin
+	}
+
+	tx := h.db.Begin()
+
+	if err := tx.Save(&user).Error; err != nil {
+		tx.Rollback()
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to update user"})
+		return
+	}
+
+	// Update roles
+	if req.RoleIDs != nil {
+		var roles []database.Role
+		if len(req.RoleIDs) > 0 {
+			tx.Where("id IN ?", req.RoleIDs).Find(&roles)
+		}
+		if err := tx.Model(&user).Association("Roles").Replace(roles); err != nil {
+			tx.Rollback()
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to update roles"})
+			return
+		}
+	}
+
+	if err := tx.Commit().Error; err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to commit transaction"})
+		return
+	}
+
+	// Log audit event
+	h.logAudit(c, "user.update", "user", user.ID.String(), http.StatusOK)
+
+	// Reload with associations
+	h.db.Preload("Roles").First(&user, user.ID)
+
+	c.JSON(http.StatusOK, user)
+}
+
+func (h *AdminHandler) DeleteUser(c *gin.Context) {
+	id := c.Param("id")
+
+	// Prevent deleting yourself
+	currentUserID := c.GetString("user_id")
+	if id == currentUserID {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "Cannot delete your own account"})
+		return
+	}
+
+	result := h.db.Where("id = ?", id).Delete(&database.User{})
+	if result.Error != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to delete user"})
+		return
+	}
+
+	if result.RowsAffected == 0 {
+		c.JSON(http.StatusNotFound, gin.H{"error": "User not found"})
+		return
+	}
+
+	// Log audit event
+	h.logAudit(c, "user.delete", "user", id, http.StatusNoContent)
+
+	c.JSON(http.StatusNoContent, nil)
+}
+
+// Audit Log Handlers
+
+func (h *AdminHandler) ListAuditLogs(c *gin.Context) {
+	var logs []database.AuditLog
+	// Note: Preload("Application") removed due to GORM parsing issues with database.StringArray
+	// Application details can be fetched separately if needed
+	query := h.db.Preload("User").Order("created_at DESC")
+
+	// Optional filtering
+	if userID := c.Query("user_id"); userID != "" {
+		query = query.Where("user_id = ?", userID)
+	}
+	if appID := c.Query("application_id"); appID != "" {
+		query = query.Where("application_id = ?", appID)
+	}
+	if action := c.Query("action"); action != "" {
+		query = query.Where("action = ?", action)
+	}
+
+	// Pagination
+	page := 1
+	limit := 50
+	if p := c.Query("page"); p != "" {
+		if parsedPage, err := strconv.Atoi(p); err == nil {
+			page = parsedPage
+		}
+	}
+	if l := c.Query("limit"); l != "" {
+		if parsedLimit, err := strconv.Atoi(l); err == nil {
+			limit = parsedLimit
+		}
+	}
+	offset := (page - 1) * limit
+
+	var total int64
+	query.Model(&database.AuditLog{}).Count(&total)
+
+	if err := query.Limit(limit).Offset(offset).Find(&logs).Error; err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to fetch audit logs"})
+		return
+	}
+
+	c.JSON(http.StatusOK, gin.H{
+		"logs":  logs,
+		"total": total,
+		"page":  page,
+		"limit": limit,
+	})
+}
+
+// Statistics Handler
+
+func (h *AdminHandler) GetStatistics(c *gin.Context) {
+	var stats struct {
+		Applications int64 `json:"applications"`
+		Users        int64 `json:"users"`
+		Scopes       int64 `json:"scopes"`
+		Audiences    int64 `json:"audiences"`
+		ActiveTokens int64 `json:"active_tokens"`
+	}
+
+	h.db.Model(&database.Application{}).Count(&stats.Applications)
+	h.db.Model(&database.User{}).Count(&stats.Users)
+	h.db.Model(&database.Scope{}).Count(&stats.Scopes)
+	h.db.Model(&database.Audience{}).Count(&stats.Audiences)
+	h.db.Model(&database.Token{}).Where("expires_at > ? AND revoked = false", time.Now()).Count(&stats.ActiveTokens)
+
+	c.JSON(http.StatusOK, stats)
+}
+
+// Settings Handlers
+
+func (h *AdminHandler) GetSettings(c *gin.Context) {
+	var settings database.ServerSettings
+	if err := h.db.Where("key = ?", "default").First(&settings).Error; err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to fetch settings"})
+		return
+	}
+	c.JSON(http.StatusOK, settings.Value)
+}
+
+func (h *AdminHandler) UpdateSettings(c *gin.Context) {
+	var req database.ServerSettingsData
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+
+	var settings database.ServerSettings
+	if err := h.db.Where("key = ?", "default").First(&settings).Error; err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to fetch settings"})
+		return
+	}
+
+	// Update settings
+	settings.Value = database.JSONB{
+		"issuer":                    req.Issuer,
+		"access_token_lifespan":     req.AccessTokenLifespan,
+		"refresh_token_lifespan":    req.RefreshTokenLifespan,
+		"id_token_lifespan":         req.IDTokenLifespan,
+		"auth_code_lifespan":        req.AuthCodeLifespan,
+		"require_pkce":              req.RequirePKCE,
+		"rotate_refresh_tokens":     req.RotateRefreshTokens,
+		"revoke_old_refresh_tokens": req.RevokeOldRefreshTokens,
+	}
+
+	if err := h.db.Save(&settings).Error; err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to save settings"})
+		return
+	}
+
+	// Log audit event
+	h.logAudit(c, "settings.update", "settings", "default", http.StatusOK)
+
+	c.JSON(http.StatusOK, settings.Value)
+}
+
+// Danger Zone Handlers
+
+func (h *AdminHandler) RevokeAllTokens(c *gin.Context) {
+	now := time.Now()
+	result := h.db.Model(&database.Token{}).
+		Where("revoked = ?", false).
+		Updates(map[string]interface{}{
+			"revoked":    true,
+			"revoked_at": now,
+		})
+
+	if result.Error != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to revoke tokens"})
+		return
+	}
+
+	// Log audit event
+	h.logAudit(c, "tokens.revoke_all", "tokens", "", http.StatusOK)
+
+	c.JSON(http.StatusOK, gin.H{
+		"message":        "All tokens revoked",
+		"tokens_revoked": result.RowsAffected,
+	})
+}
+
+func (h *AdminHandler) ClearAllSessions(c *gin.Context) {
+	result := h.db.Where("1 = 1").Delete(&database.Session{})
+	if result.Error != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to clear sessions"})
+		return
+	}
+
+	// Log audit event
+	h.logAudit(c, "sessions.clear_all", "sessions", "", http.StatusOK)
+
+	c.JSON(http.StatusOK, gin.H{
+		"message":          "All sessions cleared",
+		"sessions_cleared": result.RowsAffected,
+	})
+}
+
+// Helper function to log audit events
+func (h *AdminHandler) logAudit(c *gin.Context, action, resource, resourceID string, statusCode int) {
+	audit := database.AuditLog{
+		Action:     action,
+		Resource:   resource,
+		ResourceID: resourceID,
+		IPAddress:  c.ClientIP(),
+		UserAgent:  c.GetHeader("User-Agent"),
+		StatusCode: statusCode,
+		Metadata: map[string]interface{}{
+			"method": c.Request.Method,
+			"path":   c.Request.URL.Path,
+		},
+	}
+
+	// Get user ID from context
+	if userID := c.GetString("user_id"); userID != "" {
+		if uid, err := uuid.Parse(userID); err == nil {
+			audit.UserID = &uid
+		}
+	}
+
+	// Get application ID from context
+	if appID := c.GetString("client_id"); appID != "" {
+		var app database.Application
+		if err := h.db.Where("client_id = ?", appID).First(&app).Error; err == nil {
+			audit.ApplicationID = &app.ID
+		}
+	}
+
+	h.db.Create(&audit)
+}
+
+// =============================================================================
+// Tenant Handlers (Multi-tenancy for TrustSky USSP Integration)
+// =============================================================================
+
+// ListTenants returns all tenants with optional filtering
+func (h *AdminHandler) ListTenants(c *gin.Context) {
+	var tenants []database.Tenant
+	query := h.db.Model(&database.Tenant{})
+
+	// Optional filtering
+	if search := c.Query("search"); search != "" {
+		searchLower := "%" + strings.ToLower(search) + "%"
+		query = query.Where("LOWER(name) LIKE ? OR LOWER(email) LIKE ?", searchLower, searchLower)
+	}
+	if tenantType := c.Query("type"); tenantType != "" {
+		query = query.Where("type = ?", tenantType)
+	}
+	if status := c.Query("status"); status != "" {
+		query = query.Where("status = ?", status)
+	}
+
+	if err := query.Find(&tenants).Error; err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to fetch tenants"})
+		return
+	}
+
+	c.JSON(http.StatusOK, tenants)
+}
+
+// CreateTenant creates a new tenant (operator/organization)
+func (h *AdminHandler) CreateTenant(c *gin.Context) {
+	var req struct {
+		Name               string                 `json:"name" binding:"required"`
+		Type               string                 `json:"type" binding:"required,oneof=operator authority emergency_service"`
+		Email              string                 `json:"email" binding:"required,email"`
+		Description        string                 `json:"description"`
+		CertificateSubject string                 `json:"certificate_subject"`
+		Metadata           map[string]interface{} `json:"metadata"`
+	}
+
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+
+	tenant := database.Tenant{
+		Name:               req.Name,
+		Type:               req.Type,
+		Status:             database.TenantStatusActive,
+		Email:              req.Email,
+		Description:        req.Description,
+		CertificateSubject: req.CertificateSubject,
+		Metadata:           database.JSONB(req.Metadata),
+	}
+
+	if err := h.db.Create(&tenant).Error; err != nil {
+		if strings.Contains(err.Error(), "duplicate") || strings.Contains(err.Error(), "unique") {
+			c.JSON(http.StatusConflict, gin.H{"error": "Tenant with this email already exists"})
+			return
+		}
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to create tenant"})
+		return
+	}
+
+	// Log audit event
+	h.logAudit(c, "tenant.create", "tenant", tenant.ID.String(), http.StatusCreated)
+
+	c.JSON(http.StatusCreated, tenant)
+}
+
+// GetTenant returns a specific tenant by ID
+func (h *AdminHandler) GetTenant(c *gin.Context) {
+	id := c.Param("id")
+
+	var tenant database.Tenant
+	if err := h.db.Where("id = ?", id).First(&tenant).Error; err != nil {
+		if err == gorm.ErrRecordNotFound {
+			c.JSON(http.StatusNotFound, gin.H{"error": "Tenant not found"})
+			return
+		}
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to fetch tenant"})
+		return
+	}
+
+	c.JSON(http.StatusOK, tenant)
+}
+
+// UpdateTenant updates an existing tenant
+func (h *AdminHandler) UpdateTenant(c *gin.Context) {
+	id := c.Param("id")
+
+	var tenant database.Tenant
+	if err := h.db.Where("id = ?", id).First(&tenant).Error; err != nil {
+		if err == gorm.ErrRecordNotFound {
+			c.JSON(http.StatusNotFound, gin.H{"error": "Tenant not found"})
+			return
+		}
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to fetch tenant"})
+		return
+	}
+
+	var req struct {
+		Name               string                 `json:"name"`
+		Type               string                 `json:"type" binding:"omitempty,oneof=operator authority emergency_service"`
+		Status             string                 `json:"status" binding:"omitempty,oneof=active suspended revoked"`
+		Email              string                 `json:"email" binding:"omitempty,email"`
+		Description        string                 `json:"description"`
+		CertificateSubject string                 `json:"certificate_subject"`
+		Metadata           map[string]interface{} `json:"metadata"`
+	}
+
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+
+	// Update fields if provided
+	if req.Name != "" {
+		tenant.Name = req.Name
+	}
+	if req.Type != "" {
+		tenant.Type = req.Type
+	}
+	if req.Status != "" {
+		tenant.Status = req.Status
+	}
+	if req.Email != "" {
+		tenant.Email = req.Email
+	}
+	tenant.Description = req.Description
+	tenant.CertificateSubject = req.CertificateSubject
+	if req.Metadata != nil {
+		tenant.Metadata = database.JSONB(req.Metadata)
+	}
+
+	if err := h.db.Save(&tenant).Error; err != nil {
+		if strings.Contains(err.Error(), "duplicate") || strings.Contains(err.Error(), "unique") {
+			c.JSON(http.StatusConflict, gin.H{"error": "Tenant with this email already exists"})
+			return
+		}
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to update tenant"})
+		return
+	}
+
+	// Log audit event
+	h.logAudit(c, "tenant.update", "tenant", tenant.ID.String(), http.StatusOK)
+
+	c.JSON(http.StatusOK, tenant)
+}
+
+// DeleteTenant deletes a tenant (soft delete)
+func (h *AdminHandler) DeleteTenant(c *gin.Context) {
+	id := c.Param("id")
+
+	// Check if tenant has associated applications
+	var appCount int64
+	h.db.Model(&database.Application{}).Where("tenant_id = ?", id).Count(&appCount)
+	if appCount > 0 {
+		c.JSON(http.StatusConflict, gin.H{
+			"error":             "Cannot delete tenant with associated applications",
+			"application_count": appCount,
+		})
+		return
+	}
+
+	result := h.db.Where("id = ?", id).Delete(&database.Tenant{})
+	if result.Error != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to delete tenant"})
+		return
+	}
+
+	if result.RowsAffected == 0 {
+		c.JSON(http.StatusNotFound, gin.H{"error": "Tenant not found"})
+		return
+	}
+
+	// Log audit event
+	h.logAudit(c, "tenant.delete", "tenant", id, http.StatusNoContent)
+
+	c.JSON(http.StatusNoContent, nil)
+}
+
+// SuspendTenant suspends a tenant (prevents token issuance)
+func (h *AdminHandler) SuspendTenant(c *gin.Context) {
+	id := c.Param("id")
+
+	var tenant database.Tenant
+	if err := h.db.Where("id = ?", id).First(&tenant).Error; err != nil {
+		if err == gorm.ErrRecordNotFound {
+			c.JSON(http.StatusNotFound, gin.H{"error": "Tenant not found"})
+			return
+		}
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to fetch tenant"})
+		return
+	}
+
+	if tenant.Status == database.TenantStatusSuspended {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "Tenant is already suspended"})
+		return
+	}
+
+	tenant.Status = database.TenantStatusSuspended
+	if err := h.db.Save(&tenant).Error; err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to suspend tenant"})
+		return
+	}
+
+	// Log audit event
+	h.logAudit(c, "tenant.suspend", "tenant", tenant.ID.String(), http.StatusOK)
+
+	c.JSON(http.StatusOK, tenant)
+}
+
+// ActivateTenant activates a suspended tenant
+func (h *AdminHandler) ActivateTenant(c *gin.Context) {
+	id := c.Param("id")
+
+	var tenant database.Tenant
+	if err := h.db.Where("id = ?", id).First(&tenant).Error; err != nil {
+		if err == gorm.ErrRecordNotFound {
+			c.JSON(http.StatusNotFound, gin.H{"error": "Tenant not found"})
+			return
+		}
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to fetch tenant"})
+		return
+	}
+
+	if tenant.Status == database.TenantStatusActive {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "Tenant is already active"})
+		return
+	}
+
+	if tenant.Status == database.TenantStatusRevoked {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "Cannot activate a revoked tenant"})
+		return
+	}
+
+	tenant.Status = database.TenantStatusActive
+	if err := h.db.Save(&tenant).Error; err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to activate tenant"})
+		return
+	}
+
+	// Log audit event
+	h.logAudit(c, "tenant.activate", "tenant", tenant.ID.String(), http.StatusOK)
+
+	c.JSON(http.StatusOK, tenant)
+}
+
+// GetTenantApplications returns all applications for a tenant
+func (h *AdminHandler) GetTenantApplications(c *gin.Context) {
+	id := c.Param("id")
+
+	// Verify tenant exists
+	var tenant database.Tenant
+	if err := h.db.Where("id = ?", id).First(&tenant).Error; err != nil {
+		if err == gorm.ErrRecordNotFound {
+			c.JSON(http.StatusNotFound, gin.H{"error": "Tenant not found"})
+			return
+		}
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to fetch tenant"})
+		return
+	}
+
+	var apps []database.Application
+	if err := h.db.Preload("Scopes").Preload("Audiences").Where("tenant_id = ?", id).Find(&apps).Error; err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to fetch applications"})
+		return
+	}
+
+	c.JSON(http.StatusOK, apps)
+}
+
+// AssignApplicationToTenant assigns an application to a tenant
+func (h *AdminHandler) AssignApplicationToTenant(c *gin.Context) {
+	tenantID := c.Param("id")
+	appID := c.Param("app_id")
+
+	// Verify tenant exists
+	var tenant database.Tenant
+	if err := h.db.Where("id = ?", tenantID).First(&tenant).Error; err != nil {
+		if err == gorm.ErrRecordNotFound {
+			c.JSON(http.StatusNotFound, gin.H{"error": "Tenant not found"})
+			return
+		}
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to fetch tenant"})
+		return
+	}
+
+	// Verify application exists
+	var app database.Application
+	if err := h.db.Where("id = ?", appID).First(&app).Error; err != nil {
+		if err == gorm.ErrRecordNotFound {
+			c.JSON(http.StatusNotFound, gin.H{"error": "Application not found"})
+			return
+		}
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to fetch application"})
+		return
+	}
+
+	// Assign tenant
+	tenantUUID, _ := uuid.Parse(tenantID)
+	app.TenantID = &tenantUUID
+	if err := h.db.Save(&app).Error; err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to assign application to tenant"})
+		return
+	}
+
+	// Log audit event
+	h.logAudit(c, "tenant.assign_application", "application", appID, http.StatusOK)
+
+	c.JSON(http.StatusOK, gin.H{
+		"message":        "Application assigned to tenant successfully",
+		"tenant_id":      tenantID,
+		"application_id": appID,
+	})
+}

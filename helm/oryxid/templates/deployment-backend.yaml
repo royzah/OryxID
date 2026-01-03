@@ -1,0 +1,231 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ include "oryxid.fullname" . }}-backend
+  labels:
+    {{- include "oryxid.backend.labels" . | nindent 4 }}
+spec:
+  {{- if not .Values.backend.autoscaling.enabled }}
+  replicas: {{ .Values.backend.replicaCount }}
+  {{- end }}
+  selector:
+    matchLabels:
+      {{- include "oryxid.backend.selectorLabels" . | nindent 6 }}
+  template:
+    metadata:
+      annotations:
+        checksum/config: {{ include (print $.Template.BasePath "/configmap.yaml") . | sha256sum }}
+      labels:
+        {{- include "oryxid.backend.selectorLabels" . | nindent 8 }}
+    spec:
+      {{- with .Values.global.imagePullSecrets }}
+      imagePullSecrets:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      serviceAccountName: {{ include "oryxid.serviceAccountName" . }}
+      securityContext:
+        {{- toYaml .Values.podSecurityContext | nindent 8 }}
+      initContainers:
+        - name: generate-keys
+          image: alpine:3.19
+          command:
+            - /bin/sh
+            - -c
+            - |
+              if [ ! -f /certs/private_key.pem ]; then
+                apk add --no-cache openssl
+                openssl genrsa -out /certs/private_key.pem 4096
+                openssl rsa -in /certs/private_key.pem -pubout -out /certs/public_key.pem
+                chmod 644 /certs/*.pem
+              fi
+          volumeMounts:
+            - name: jwt-keys
+              mountPath: /certs
+      containers:
+        - name: backend
+          securityContext:
+            {{- toYaml .Values.securityContext | nindent 12 }}
+          image: "{{ .Values.global.imageRegistry }}{{ .Values.backend.image.repository }}:{{ .Values.backend.image.tag }}"
+          imagePullPolicy: {{ .Values.backend.image.pullPolicy }}
+          ports:
+            - name: http
+              containerPort: {{ .Values.backend.config.port }}
+              protocol: TCP
+          envFrom:
+            - configMapRef:
+                name: {{ include "oryxid.fullname" . }}-config
+          env:
+            - name: ORYXID_SERVER_HOST
+              value: "0.0.0.0"
+            - name: ORYXID_SERVER_PORT
+              valueFrom:
+                configMapKeyRef:
+                  name: {{ include "oryxid.fullname" . }}-config
+                  key: SERVER_PORT
+            - name: ORYXID_SERVER_MODE
+              valueFrom:
+                configMapKeyRef:
+                  name: {{ include "oryxid.fullname" . }}-config
+                  key: SERVER_MODE
+            - name: ORYXID_DATABASE_HOST
+              valueFrom:
+                configMapKeyRef:
+                  name: {{ include "oryxid.fullname" . }}-config
+                  key: DATABASE_HOST
+            - name: ORYXID_DATABASE_PORT
+              valueFrom:
+                configMapKeyRef:
+                  name: {{ include "oryxid.fullname" . }}-config
+                  key: DATABASE_PORT
+            - name: ORYXID_DATABASE_USER
+              valueFrom:
+                configMapKeyRef:
+                  name: {{ include "oryxid.fullname" . }}-config
+                  key: DATABASE_USER
+            - name: ORYXID_DATABASE_NAME
+              valueFrom:
+                configMapKeyRef:
+                  name: {{ include "oryxid.fullname" . }}-config
+                  key: DATABASE_NAME
+            - name: ORYXID_DATABASE_SSLMODE
+              valueFrom:
+                configMapKeyRef:
+                  name: {{ include "oryxid.fullname" . }}-config
+                  key: DATABASE_SSLMODE
+            - name: ORYXID_DATABASE_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: {{ include "oryxid.postgresql.secretName" . }}
+                  key: {{ if .Values.postgresql.enabled }}password{{ else }}{{ .Values.externalDatabase.existingSecretKey | default "password" }}{{ end }}
+            - name: ORYXID_REDIS_HOST
+              valueFrom:
+                configMapKeyRef:
+                  name: {{ include "oryxid.fullname" . }}-config
+                  key: REDIS_HOST
+            - name: ORYXID_REDIS_PORT
+              valueFrom:
+                configMapKeyRef:
+                  name: {{ include "oryxid.fullname" . }}-config
+                  key: REDIS_PORT
+            - name: ORYXID_REDIS_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: {{ include "oryxid.redis.secretName" . }}
+                  key: {{ if .Values.redis.enabled }}redis-password{{ else }}{{ .Values.externalRedis.existingSecretKey | default "password" }}{{ end }}
+            - name: ORYXID_OAUTH_ISSUER
+              valueFrom:
+                configMapKeyRef:
+                  name: {{ include "oryxid.fullname" . }}-config
+                  key: OAUTH_ISSUER
+            - name: ORYXID_OAUTH_ACCESSTOKENLIFESPAN
+              valueFrom:
+                configMapKeyRef:
+                  name: {{ include "oryxid.fullname" . }}-config
+                  key: OAUTH_ACCESS_TOKEN_LIFESPAN
+            - name: ORYXID_OAUTH_REFRESHTOKENLIFESPAN
+              valueFrom:
+                configMapKeyRef:
+                  name: {{ include "oryxid.fullname" . }}-config
+                  key: OAUTH_REFRESH_TOKEN_LIFESPAN
+            - name: ORYXID_OAUTH_AUTHORIZATIONCODELIFESPAN
+              valueFrom:
+                configMapKeyRef:
+                  name: {{ include "oryxid.fullname" . }}-config
+                  key: OAUTH_AUTHORIZATION_CODE_LIFESPAN
+            - name: ORYXID_ADMIN_USERNAME
+              valueFrom:
+                configMapKeyRef:
+                  name: {{ include "oryxid.fullname" . }}-config
+                  key: ADMIN_USERNAME
+            - name: ORYXID_ADMIN_EMAIL
+              valueFrom:
+                configMapKeyRef:
+                  name: {{ include "oryxid.fullname" . }}-config
+                  key: ADMIN_EMAIL
+            - name: ORYXID_ADMIN_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: {{ include "oryxid.admin.secretName" . }}
+                  key: {{ .Values.admin.existingSecretKey | default "admin-password" }}
+            - name: ORYXID_JWT_PRIVATEKEYPATH
+              value: /app/certs/private_key.pem
+            - name: ORYXID_JWT_PUBLICKEYPATH
+              value: /app/certs/public_key.pem
+            - name: ORYXID_JWT_KID
+              valueFrom:
+                configMapKeyRef:
+                  name: {{ include "oryxid.fullname" . }}-config
+                  key: JWT_KID
+            - name: ORYXID_SECURITY_BCRYPTCOST
+              valueFrom:
+                configMapKeyRef:
+                  name: {{ include "oryxid.fullname" . }}-config
+                  key: SECURITY_BCRYPT_COST
+            - name: ORYXID_SECURITY_RATELIMITENABLED
+              valueFrom:
+                configMapKeyRef:
+                  name: {{ include "oryxid.fullname" . }}-config
+                  key: SECURITY_RATE_LIMIT_ENABLED
+            - name: ORYXID_SECURITY_RATELIMITRPS
+              valueFrom:
+                configMapKeyRef:
+                  name: {{ include "oryxid.fullname" . }}-config
+                  key: SECURITY_RATE_LIMIT_RPS
+            - name: ORYXID_SECURITY_RATELIMITBURST
+              valueFrom:
+                configMapKeyRef:
+                  name: {{ include "oryxid.fullname" . }}-config
+                  key: SECURITY_RATE_LIMIT_BURST
+            - name: ORYXID_SECURITY_PKCEREQUIRED
+              valueFrom:
+                configMapKeyRef:
+                  name: {{ include "oryxid.fullname" . }}-config
+                  key: SECURITY_PKCE_REQUIRED
+            - name: ORYXID_SECURITY_CSRFENABLED
+              valueFrom:
+                configMapKeyRef:
+                  name: {{ include "oryxid.fullname" . }}-config
+                  key: SECURITY_CSRF_ENABLED
+          volumeMounts:
+            - name: jwt-keys
+              mountPath: /app/certs
+              readOnly: true
+            - name: tmp
+              mountPath: /tmp
+          {{- if .Values.healthCheck.enabled }}
+          livenessProbe:
+            httpGet:
+              path: /health
+              port: http
+            initialDelaySeconds: {{ .Values.healthCheck.initialDelaySeconds }}
+            periodSeconds: {{ .Values.healthCheck.periodSeconds }}
+            timeoutSeconds: {{ .Values.healthCheck.timeoutSeconds }}
+            failureThreshold: {{ .Values.healthCheck.failureThreshold }}
+          readinessProbe:
+            httpGet:
+              path: /health
+              port: http
+            initialDelaySeconds: 5
+            periodSeconds: 5
+            timeoutSeconds: 3
+            failureThreshold: 3
+          {{- end }}
+          resources:
+            {{- toYaml .Values.backend.resources | nindent 12 }}
+      volumes:
+        - name: jwt-keys
+          emptyDir: {}
+        - name: tmp
+          emptyDir: {}
+      {{- with .Values.backend.nodeSelector }}
+      nodeSelector:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.backend.affinity }}
+      affinity:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.backend.tolerations }}
+      tolerations:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
