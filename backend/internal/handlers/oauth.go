@@ -355,7 +355,7 @@ func (h *OAuthHandler) IntrospectHandler(c *gin.Context) {
 	// Verify the token belongs to this client or was issued by this client
 	if response.ClientID != app.ClientID {
 		// Check if the token was issued for an audience that includes this client
-		// This is a simplified check - you might want to implement more complex logic
+		// This is a simplified check - we might want to implement more complex logic
 		c.JSON(http.StatusOK, gin.H{"active": false})
 		return
 	}

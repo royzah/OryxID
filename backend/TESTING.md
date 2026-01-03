@@ -50,8 +50,8 @@ make up
 ./scripts/setup_test_app.sh
 
 # 3. Set environment
-export TEST_CLIENT_ID="your-client-id"
-export TEST_CLIENT_SECRET="your-secret"
+export TEST_CLIENT_ID="client-id"
+export TEST_CLIENT_SECRET="secret"
 export API_URL="http://localhost:9000"
 
 # 4. Run tests

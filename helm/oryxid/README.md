@@ -12,7 +12,7 @@ helm dependency update ./helm/oryxid
 helm install oryxid ./helm/oryxid \
   --namespace oryxid \
   --create-namespace \
-  --set admin.password=your-secure-password \
+  --set admin.password=secure-password \
   --set ingress.hosts[0].host=auth.example.com
 ```
 
@@ -28,15 +28,15 @@ make helm-install-prod  # Production values
 ### Required
 
 | Parameter | Description |
-|-----------|-------------|
+| ----------- | ------------- |
 | `admin.password` | Admin user password |
-| `ingress.hosts[0].host` | Your domain name |
+| `ingress.hosts[0].host` | Domain name |
 | `backend.oauth.issuer` | Token issuer URL |
 
 ### Images
 
 | Parameter | Default |
-|-----------|---------|
+| ----------- | --------- |
 | `backend.image.repository` | oryxid/backend |
 | `backend.image.tag` | latest |
 | `frontend.image.repository` | oryxid/frontend |
@@ -45,7 +45,7 @@ make helm-install-prod  # Production values
 ### Replicas
 
 | Parameter | Default |
-|-----------|---------|
+| ----------- | --------- |
 | `backend.replicaCount` | 2 |
 | `frontend.replicaCount` | 2 |
 
@@ -54,7 +54,7 @@ make helm-install-prod  # Production values
 Built-in PostgreSQL (Bitnami subchart):
 
 | Parameter | Default |
-|-----------|---------|
+| ----------- | --------- |
 | `postgresql.enabled` | true |
 | `postgresql.auth.username` | oryxid |
 | `postgresql.auth.database` | oryxid |
@@ -66,7 +66,7 @@ External PostgreSQL:
 postgresql:
   enabled: false
 externalDatabase:
-  host: your-postgres-host
+  host: postgres-host
   port: 5432
   user: oryxid
   password: secret
@@ -78,7 +78,7 @@ externalDatabase:
 Built-in Redis (Bitnami subchart):
 
 | Parameter | Default |
-|-----------|---------|
+| ----------- | --------- |
 | `redis.enabled` | true |
 | `redis.auth.enabled` | true |
 | `redis.master.persistence.size` | 2Gi |
@@ -86,7 +86,7 @@ Built-in Redis (Bitnami subchart):
 ### Ingress
 
 | Parameter | Default |
-|-----------|---------|
+| ----------- | --------- |
 | `ingress.enabled` | true |
 | `ingress.className` | nginx |
 | `ingress.annotations` | cert-manager, ssl-redirect |
@@ -103,6 +103,7 @@ helm install oryxid ./helm/oryxid \
 ```
 
 Includes:
+
 - 3 replicas with HPA
 - Higher resource limits
 - PodDisruptionBudget minAvailable: 2
